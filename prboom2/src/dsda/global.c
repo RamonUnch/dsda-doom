@@ -95,6 +95,7 @@ int g_door_raise_in_5_mins;
 int g_door_open;
 
 int g_st_height;
+int g_border_offset;
 int g_mf_translucent;
 int g_mf_shadow;
 
@@ -200,6 +201,7 @@ static void dsda_InitDoom(void) {
   g_door_open = openDoor;
 
   g_st_height = 32;
+  g_border_offset = 8;
   g_mf_translucent = MF_TRANSLUCENT;
   g_mf_shadow = MF_SHADOW;
 
@@ -249,7 +251,30 @@ static void dsda_InitDoom(void) {
     mobjinfo[i].droppeditem  = mobjinfo_p->droppeditem;
     mobjinfo[i].crashstate   = 0; // not in doom
     mobjinfo[i].flags2       = 0; // not in doom
+
+    // mbf21
+    mobjinfo[i].infighting_group = IG_DEFAULT;
+    mobjinfo[i].projectile_group = PG_DEFAULT;
+    mobjinfo[i].splash_group = SG_DEFAULT;
+    mobjinfo[i].ripsound = sfx_None;
   }
+
+  // don't want to reorganize info.c structure for a few tweaks...
+  mobjinfo[MT_VILE].flags2    = MF2_SHORTMRANGE | MF2_DMGIGNORED | MF2_NOTHRESHOLD;
+  mobjinfo[MT_CYBORG].flags2  = MF2_NORADIUSDMG | MF2_HIGHERMPROB | MF2_RANGEHALF |
+                                MF2_BOSS | MF2_E2M8BOSS | MF2_E4M6BOSS;
+  mobjinfo[MT_SPIDER].flags2  = MF2_NORADIUSDMG | MF2_RANGEHALF | MF2_BOSS |
+                                MF2_E3M8BOSS | MF2_E4M8BOSS;
+  mobjinfo[MT_SKULL].flags2   = MF2_RANGEHALF;
+  mobjinfo[MT_FATSO].flags2   = MF2_MAP07BOSS1;
+  mobjinfo[MT_BABY].flags2    = MF2_MAP07BOSS2;
+  mobjinfo[MT_BRUISER].flags2 = MF2_E1M8BOSS;
+  mobjinfo[MT_UNDEAD].flags2  = MF2_LONGMELEE | MF2_RANGEHALF;
+
+  mobjinfo[MT_BARREL].flags2 = MF2_NEUTRAL_SPLASH;
+
+  mobjinfo[MT_BRUISER].projectile_group = PG_BARON;
+  mobjinfo[MT_KNIGHT].projectile_group = PG_BARON;
 }
 
 static void dsda_InitHeretic(void) {
@@ -306,6 +331,7 @@ static void dsda_InitHeretic(void) {
   g_door_open = vld_open;
 
   g_st_height = 42;
+  g_border_offset = 4;
   g_mf_translucent = MF_SHADOW;
   g_mf_shadow = 0; // doesn't exist in heretic
 
@@ -356,7 +382,17 @@ static void dsda_InitHeretic(void) {
     mobjinfo[j].droppeditem  = 0; // not in heretic
     mobjinfo[j].crashstate   = mobjinfo_p->crashstate;
     mobjinfo[j].flags2       = mobjinfo_p->flags2;
+
+    // mbf21
+    mobjinfo[j].infighting_group = IG_DEFAULT;
+    mobjinfo[j].projectile_group = PG_DEFAULT;
+    mobjinfo[j].splash_group = SG_DEFAULT;
+    mobjinfo[i].ripsound = heretic_sfx_None;
   }
+
+  // don't want to reorganize info.c structure for a few tweaks...
+  mobjinfo[HERETIC_MT_SORCERER2].infighting_group = IG_WIZARD;
+  mobjinfo[HERETIC_MT_WIZARD].infighting_group = IG_WIZARD;
 
   // heretic doesn't use "clip" concept
   for (i = 0; i < NUMAMMO; ++i) clipammo[i] = 1;

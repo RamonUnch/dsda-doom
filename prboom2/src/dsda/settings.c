@@ -32,7 +32,7 @@ int dsda_skip_next_wipe;
 int dsda_wipe_at_full_speed;
 int dsda_track_attempts;
 int dsda_fine_sensitivity;
-int dsda_laggy_sleep_mode;
+int dsda_hide_horns;
 
 void dsda_InitSettings(void) {
   dsda_ChangeStrictMode();
@@ -63,10 +63,6 @@ void dsda_SetTas(void) {
   dsda_tas = true;
 }
 
-dboolean dsda_LaggySleepMode(void) {
-  return dsda_laggy_sleep_mode;
-}
-
 double dsda_FineSensitivity(int base) {
   return (double) base + (double) dsda_fine_sensitivity / 100;
 }
@@ -81,6 +77,10 @@ dboolean dsda_CycleGhostColors(void) {
 
 dboolean dsda_AlwaysSR50(void) {
   return movement_strafe50 && !dsda_StrictMode();
+}
+
+dboolean dsda_HideHorns(void) {
+  return dsda_hide_horns;
 }
 
 dboolean dsda_ExHud(void) {

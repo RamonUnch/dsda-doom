@@ -458,13 +458,18 @@ dboolean PIT_CheckLine (line_t* ld)
   // killough 8/10/98: allow bouncing objects to pass through as missiles
   if (!(tmthing->flags & (MF_MISSILE | MF_BOUNCES)))
   {
-    if (ld->flags & ML_BLOCKING)           // explicitly blocking everything
+    // explicitly blocking everything
+    // or blocking player
+    if (ld->flags & ML_BLOCKING || (mbf21 && tmthing->player && ld->flags & ML_BLOCKPLAYERS))
       return tmunstuck && !untouched(ld);  // killough 8/1/98: allow escape
 
     // killough 8/9/98: monster-blockers don't affect friends
     if (
       !(tmthing->flags & MF_FRIEND || tmthing->player) &&
-      ld->flags & ML_BLOCKMONSTERS &&
+      (
+        ld->flags & ML_BLOCKMONSTERS ||
+        (mbf21 && ld->flags & ML_BLOCKLANDMONSTERS && !(tmthing->flags & MF_FLOAT))
+      ) &&
       tmthing->type != HERETIC_MT_POD
     )
       return false; // block monsters only
@@ -506,6 +511,25 @@ dboolean PIT_CheckLine (line_t* ld)
 //
 // PIT_CheckThing
 //
+
+static dboolean P_ProjectileImmune(mobj_t *target, mobj_t *source)
+{
+  return
+    ( // PG_GROUPLESS means no immunity, even to own species
+      mobjinfo[target->type].projectile_group != PG_GROUPLESS ||
+      target == source
+    ) &&
+    (
+      ( // target type has default behaviour, and things are the same type
+        mobjinfo[target->type].projectile_group == PG_DEFAULT &&
+        source->type == target->type
+      ) ||
+      ( // target type has special behaviour, and things have the same group
+        mobjinfo[target->type].projectile_group != PG_DEFAULT &&
+        mobjinfo[target->type].projectile_group == mobjinfo[source->type].projectile_group
+      )
+    );
+}
 
 static dboolean PIT_CheckThing(mobj_t *thing) // killough 3/26/98: make static
 {
@@ -621,17 +645,10 @@ static dboolean PIT_CheckThing(mobj_t *thing) // killough 3/26/98: make static
     if (tmthing->z + tmthing->height < thing->z)
       return true;    // underneath
 
-    if (
-      tmthing->target &&
-      (
-        tmthing->target->type == thing->type ||
-        (tmthing->target->type == MT_KNIGHT && thing->type == MT_BRUISER) ||
-        (tmthing->target->type == MT_BRUISER && thing->type == MT_KNIGHT)
-      )
-    )
+    if (tmthing->target && P_ProjectileImmune(thing, tmthing->target))
     {
       if (thing == tmthing->target)
-        return true;                // Don't hit same species as originator.
+        return true;                // Don't hit self.
       else
         // e6y: Dehacked support - monsters infight
         if (thing->type != g_mt_player && !monsters_infight) // Explode, but do no damage.
@@ -664,12 +681,24 @@ static dboolean PIT_CheckThing(mobj_t *thing) // killough 3/26/98: make static
 
     if (tmthing->flags2 & MF2_RIP)
     {
-      if (!(thing->flags & MF_NOBLOOD))
-      {                   // Ok to spawn some blood
-        P_RipperBlood(tmthing);
+      if (heretic)
+      {
+        if (!(thing->flags & MF_NOBLOOD))
+        {                   // Ok to spawn some blood
+          P_RipperBlood(tmthing);
+        }
+        S_StartSound(tmthing, heretic_sfx_ripslop);
+        damage = ((P_Random(pr_heretic) & 3) + 2) * tmthing->damage;
       }
-      S_StartSound(tmthing, heretic_sfx_ripslop);
-      damage = ((P_Random(pr_heretic) & 3) + 2) * tmthing->damage;
+      else
+      {
+        damage = ((P_Random(pr_mbf21) & 3) + 2) * tmthing->info->damage;
+        if (!(thing->flags & MF_NOBLOOD))
+          P_SpawnBlood(tmthing->x, tmthing->y, tmthing->z, damage);
+        if (tmthing->info->ripsound)
+          S_StartSound(tmthing, tmthing->info->ripsound);
+      }
+
       P_DamageMobj(thing, tmthing, tmthing->target, damage);
       if (thing->flags2 & MF2_PUSHABLE && !(tmthing->flags2 & MF2_CANNOTPUSH))
       {                   // Push thing
@@ -992,7 +1021,7 @@ dboolean P_TryMove(mobj_t* thing,fixed_t x,fixed_t y,
      */
     if (!(thing->flags & (MF_DROPOFF|MF_FLOAT)))
     {
-      if (comp[comp_dropoff])
+      if (comp[comp_dropoff] || comp[comp_ledgeblock])
       {
         // e6y
         // Fix demosync bug in mbf compatibility mode
@@ -1004,7 +1033,7 @@ dboolean P_TryMove(mobj_t* thing,fixed_t x,fixed_t y,
         // http://www.doomworld.com/idgames/index.php?id=11138
         if (
           (
-            compatibility ||
+            comp[comp_ledgeblock] ||
             !dropoff ||
             (
               !prboom_comp[PC_NO_DROPOFF].state &&
@@ -2013,6 +2042,7 @@ void P_UseLines (player_t*  player)
 mobj_t *bombsource, *bombspot;
 //e6y static
 int bombdamage;
+int bombdistance;
 
 
 //
@@ -2021,17 +2051,29 @@ int bombdamage;
 // that caused the explosion at "bombspot".
 //
 
+static dboolean P_SplashImmune(mobj_t *target, mobj_t *source, mobj_t *spot)
+{
+  return // not neutral, not default behaviour, and same group
+    !(spot->flags2 & MF2_NEUTRAL_SPLASH) &&
+    mobjinfo[target->type].splash_group != SG_DEFAULT &&
+    mobjinfo[target->type].splash_group == mobjinfo[source->type].splash_group;
+}
+
 dboolean PIT_RadiusAttack (mobj_t* thing)
 {
   fixed_t dx;
   fixed_t dy;
   fixed_t dist;
+  int damage;
 
   /* killough 8/20/98: allow bouncers to take damage
    * (missile bouncers are already excluded with MF_NOBLOCKMAP)
    */
 
   if (!(thing->flags & (MF_SHOOTABLE | MF_BOUNCES)))
+    return true;
+
+  if (bombsource && P_SplashImmune(thing, bombsource, bombspot))
     return true;
 
   // Boss spider and cyborg
@@ -2042,11 +2084,8 @@ dboolean PIT_RadiusAttack (mobj_t* thing)
 
   if (bombspot->flags & MF_BOUNCES ?
       thing->type == MT_CYBORG && bombsource->type == MT_CYBORG :
-      thing->type == MT_CYBORG ||
-      thing->type == MT_SPIDER ||
-      thing->type == HERETIC_MT_MINOTAUR ||
-      thing->type == HERETIC_MT_SORCERER1 ||
-      thing->type == HERETIC_MT_SORCERER2)
+      thing->flags2 & (MF2_NORADIUSDMG | MF2_BOSS) &&
+      !(bombspot->flags2 & MF2_FORCERADIUSDMG))
     return true;
 
   dx = D_abs(thing->x - bombspot->x);
@@ -2058,13 +2097,21 @@ dboolean PIT_RadiusAttack (mobj_t* thing)
   if (dist < 0)
   dist = 0;
 
-  if (dist >= bombdamage)
+  if (dist >= bombdistance)
     return true;  // out of range
 
   if ( P_CheckSight (thing, bombspot) )
     {
     // must be in direct path
-    P_DamageMobj (thing, bombspot, bombsource, bombdamage - dist);
+
+    // [XA] independent damage/distance calculation.
+    //      same formula as eternity; thanks Quas :P
+    if (bombdamage == bombdistance)
+      damage = bombdamage - dist;
+    else
+      damage = (bombdamage * (bombdistance - dist) / bombdistance) + 1;
+
+    P_DamageMobj (thing, bombspot, bombsource, damage);
     }
 
   return true;
@@ -2075,7 +2122,7 @@ dboolean PIT_RadiusAttack (mobj_t* thing)
 // P_RadiusAttack
 // Source is the creature that caused the explosion at spot.
 //
-void P_RadiusAttack(mobj_t* spot,mobj_t* source,int damage)
+void P_RadiusAttack(mobj_t* spot,mobj_t* source, int damage, int distance)
 {
   int x;
   int y;
@@ -2087,7 +2134,7 @@ void P_RadiusAttack(mobj_t* spot,mobj_t* source,int damage)
 
   fixed_t dist;
 
-  dist = (damage+MAXRADIUS)<<FRACBITS;
+  dist = (distance+MAXRADIUS)<<FRACBITS;
   yh = P_GetSafeBlockY(spot->y + dist - bmaporgy);
   yl = P_GetSafeBlockY(spot->y - dist - bmaporgy);
   xh = P_GetSafeBlockX(spot->x + dist - bmaporgx);
@@ -2102,6 +2149,7 @@ void P_RadiusAttack(mobj_t* spot,mobj_t* source,int damage)
     bombsource = source;
   }
   bombdamage = damage;
+  bombdistance = distance;
 
   for (y=yl ; y<=yh ; y++)
     for (x=xl ; x<=xh ; x++)

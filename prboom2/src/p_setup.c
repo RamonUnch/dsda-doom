@@ -164,6 +164,8 @@ mobj_t    **blocklinks;           // for thing chains
 int blockmapxneg = -257;
 int blockmapyneg = -257;
 
+dboolean skipblstart;  // MaxW: Skip initial blocklist short
+
 //
 // REJECT
 // For fast sight rejection.
@@ -318,7 +320,9 @@ static void P_GetNodesVersion(int lumpnum, int gl_lumpnum)
   int ver = -1;
   nodesVersion = 0;
 
-  if ( (gl_lumpnum > lumpnum) && (forceOldBsp == false) && (compatibility_level >= prboom_2_compatibility) )
+  if ((gl_lumpnum > lumpnum) &&
+      (mbf21 || forceOldBsp == false) &&
+      (compatibility_level >= prboom_2_compatibility))
   {
     if (CheckForIdentifier(gl_lumpnum+ML_GL_VERTS, "gNd2", 4)) {
       if (CheckForIdentifier(gl_lumpnum+ML_GL_SEGS, "gNd3", 4)) {
@@ -2013,6 +2017,8 @@ static dboolean P_VerifyBlockMap(int count)
   int x, y;
   int *maxoffs = blockmaplump + count;
 
+  skipblstart = true;
+
   for(y = 0; y < bmapheight; y++)
   {
     for(x = 0; x < bmapwidth; x++)
@@ -2041,6 +2047,9 @@ static dboolean P_VerifyBlockMap(int count)
       }
 
       list   = blockmaplump + offset;
+
+      if (*list != 0)
+        skipblstart = false;
 
       // scan forward for a -1 terminator before maxoffs
       for(tmplist = list; ; tmplist++)

@@ -57,6 +57,18 @@
 #define TRUE 1
 #define FALSE 0
 
+static dboolean bfgcells_modified = false;
+
+void CheckDehConsistency(void)
+{
+  if (
+    bfgcells_modified &&
+    weaponinfo[MT_BFG].intflags & WIF_ENABLEAPS &&
+    bfgcells != weaponinfo[MT_BFG].ammopershot
+  )
+    I_Error("Mismatch between bfgcells and bfg ammo per shot modifications! Check your dehacked.");
+}
+
 // e6y: for compatibility with BOOM deh parser
 int deh_strcasecmp(const char *str1, const char *str2)
 {
@@ -1046,7 +1058,7 @@ typedef struct
 // killough 8/9/98: make DEH_BLOCKMAX self-adjusting
 #define DEH_BLOCKMAX (sizeof deh_blocks/sizeof*deh_blocks)  // size of array
 #define DEH_MAXKEYLEN 32 // as much of any key as we'll look at
-#define DEH_MOBJINFOMAX 25 // number of ints in the mobjinfo_t structure (!)
+#define DEH_MOBJINFOMAX 30 // number of mobjinfo configuration keys
 
 // Put all the block header values, and the function to be called when that
 // one is encountered, in this array:
@@ -1112,6 +1124,13 @@ static const char *deh_mobjinfo[DEH_MOBJINFOMAX] =
   "Bits2",               // .flags
   "Respawn frame",       // .raisestate
   "Dropped item",        // .droppeditem
+
+  // mbf21
+  "Infighting group",    // .infighting_group
+  "Projectile group",    // .projectile_group
+  "Splash group",        // .splash_group
+  "MBF21 Bits",          // .flags2
+  "Rip sound",           // .ripsound
 };
 
 // Strings that are used to indicate flags ("Bits" in mobjinfo)
@@ -1125,13 +1144,13 @@ static const char *deh_mobjinfo[DEH_MOBJINFOMAX] =
 
 #define DEH_MOBJFLAGMAX (sizeof deh_mobjflags/sizeof*deh_mobjflags)
 
-struct deh_mobjflags_s {
+struct deh_flag_s {
   const char *name; // CPhipps - const*
   uint_64_t value;
 };
 
 // CPhipps - static const
-static const struct deh_mobjflags_s deh_mobjflags[] = {
+static const struct deh_flag_s deh_mobjflags[] = {
   {"SPECIAL",      MF_SPECIAL}, // call  P_Specialthing when touched
   {"SOLID",        MF_SOLID}, // block movement
   {"SHOOTABLE",    MF_SHOOTABLE}, // can be hit
@@ -1172,6 +1191,40 @@ static const struct deh_mobjflags_s deh_mobjflags[] = {
   {"TOUCHY",       MF_TOUCHY},       // dies on contact with solid objects (MBF)
   {"BOUNCES",      MF_BOUNCES},      // bounces off floors, ceilings and maybe walls (MBF)
   {"FRIEND",       MF_FRIEND},       // a friend of the player(s) (MBF)
+};
+
+#define DEH_MOBJFLAGMAX_MBF21 (sizeof(deh_mobjflags_mbf21) / sizeof(*deh_mobjflags_mbf21))
+
+static const struct deh_flag_s deh_mobjflags_mbf21[] = {
+  {"LOGRAV",         MF2_LOGRAV}, // low gravity
+  {"SHORTMRANGE",    MF2_SHORTMRANGE}, // short missile range
+  {"DMGIGNORED",     MF2_DMGIGNORED}, // other things ignore its attacks
+  {"NORADIUSDMG",    MF2_NORADIUSDMG}, // doesn't take splash damage
+  {"FORCERADIUSDMG", MF2_FORCERADIUSDMG}, // causes splash damage even if target immune
+  {"HIGHERMPROB",    MF2_HIGHERMPROB}, // higher missile attack probability
+  {"RANGEHALF",      MF2_RANGEHALF}, // use half distance for missile attack probability
+  {"NOTHRESHOLD",    MF2_NOTHRESHOLD}, // no targeting threshold
+  {"LONGMELEE",      MF2_LONGMELEE}, // long melee range
+  {"BOSS",           MF2_BOSS}, // full volume see / death sound + splash immunity
+  {"MAP07BOSS1",     MF2_MAP07BOSS1}, // Tag 666 "boss" on doom 2 map 7
+  {"MAP07BOSS2",     MF2_MAP07BOSS2}, // Tag 667 "boss" on doom 2 map 7
+  {"E1M8BOSS",       MF2_E1M8BOSS}, // E1M8 boss
+  {"E2M8BOSS",       MF2_E2M8BOSS}, // E2M8 boss
+  {"E3M8BOSS",       MF2_E3M8BOSS}, // E3M8 boss
+  {"E4M6BOSS",       MF2_E4M6BOSS}, // E4M6 boss
+  {"E4M8BOSS",       MF2_E4M8BOSS}, // E4M8 boss
+  {"NEUTRAL_SPLASH", MF2_NEUTRAL_SPLASH}, // splash damage ignores splash groups
+  {"RIP",            MF2_RIP}, // projectile rips through targets
+};
+
+static const struct deh_flag_s deh_weaponflags_mbf21[] = {
+  { "NOTHRUST",       WPF_NOTHRUST }, // doesn't thrust Mobj's
+  { "SILENT",         WPF_SILENT }, // weapon is silent
+  { "NOAUTOFIRE",     WPF_NOAUTOFIRE }, // weapon won't autofire in A_WeaponReady
+  { "FLEEMELEE",      WPF_FLEEMELEE }, // monsters consider it a melee weapon
+  { "AUTOSWITCHFROM", WPF_AUTOSWITCHFROM }, // can be switched away from when ammo is picked up
+  { "AUTOSWITCHTO",   WPF_AUTOSWITCHTO }, // can be switched to when ammo is picked up
+  { NULL }
 };
 
 // STATE - Dehacked block name = "Frame" and "Pointer"
@@ -1252,7 +1305,9 @@ static const char *deh_weapon[] = // CPhipps - static const*
   "Select frame",   // .downstate
   "Bobbing frame",  // .readystate
   "Shooting frame", // .atkstate
-  "Firing frame"    // .flashstate
+  "Firing frame",   // .flashstate
+  "Ammo per shot",  // .ammopershot [XA] new to mbf21
+  "MBF21 Bits",     // .flags
 };
 
 // CHEATS - Dehacked block name = "Cheat"
@@ -1392,6 +1447,20 @@ static const deh_bexptr deh_bexptrs[] = // CPhipps - static const
   {A_FireOldBFG,      "A_FireOldBFG"},      // killough 7/19/98: classic BFG firing function
   {A_BetaSkullAttack, "A_BetaSkullAttack"}, // killough 10/98: beta lost souls attacked different
   {A_Stop,            "A_Stop"},
+
+  // [XA] New mbf21 codepointers
+  {A_SpawnFacing,         "A_SpawnFacing"},
+  {A_MonsterProjectile,   "A_MonsterProjectile"},
+  {A_MonsterBulletAttack, "A_MonsterBulletAttack"},
+  {A_RadiusDamage,        "A_RadiusDamage"},
+  {A_WeaponProjectile,    "A_WeaponProjectile"},
+  {A_WeaponBulletAttack,  "A_WeaponBulletAttack"},
+  {A_WeaponSound,         "A_WeaponSound"},
+  {A_WeaponJump,          "A_WeaponJump"},
+  {A_ConsumeAmmo,         "A_ConsumeAmmo"},
+  {A_CheckAmmo,           "A_CheckAmmo"},
+  {A_RefireTo,            "A_RefireTo"},
+  {A_GunFlashTo,          "A_GunFlashTo"},
 
   // This NULL entry must be the last in the list
   {NULL,              "A_NULL"},  // Ty 05/16/98
@@ -1874,6 +1943,37 @@ static void setMobjInfoValue(int mobjInfoIndex, int keyIndex, uint_64_t value) {
       }
       break;
     case 24: mi->droppeditem = (int)(value-1); return; // make it base zero (deh is 1-based)
+
+    // mbf21
+    // custom groups count from the end of the vanilla list
+    // -> no concern for clashes
+    case 25:
+      mi->infighting_group = (int)(value);
+      if (mi->infighting_group < 0)
+      {
+        I_Error("Infighting groups must be >= 0 (check your dehacked)");
+        return;
+      }
+      mi->infighting_group = mi->infighting_group + IG_END;
+      return;
+    case 26:
+      mi->projectile_group = (int)(value);
+      if (mi->projectile_group < 0)
+        mi->projectile_group = PG_GROUPLESS;
+      else
+        mi->projectile_group = mi->projectile_group + PG_END;
+      return;
+    case 27:
+      mi->splash_group = (int)(value);
+      if (mi->splash_group < 0)
+      {
+        I_Error("Splash groups must be >= 0 (check your dehacked)");
+        return;
+      }
+      mi->splash_group = mi->splash_group + SG_END;
+      return;
+    case 29: mi->ripsound = (int)value; return;
+
     default: return;
   }
 }
@@ -1940,7 +2040,25 @@ static void deh_procThing(DEHFILE *fpin, FILE* fpout, char *line)
       for (ix=0; ix<DEH_MOBJINFOMAX; ix++) {
         if (deh_strcasecmp(key,deh_mobjinfo[ix])) continue;
 
-        if (deh_strcasecmp(key,"Bits")) {
+        if (!deh_strcasecmp(key, "MBF21 Bits")) {
+          for (value = 0; (strval = strtok(strval, deh_getBitsDelims())); strval = NULL) {
+            size_t iy;
+
+            for (iy = 0; iy < DEH_MOBJFLAGMAX_MBF21; iy++) {
+              if (deh_strcasecmp(strval, deh_mobjflags_mbf21[iy].name)) continue;
+
+              value |= deh_mobjflags_mbf21[iy].value;
+              break;
+            }
+
+            if (iy >= DEH_MOBJFLAGMAX_MBF21 && fpout) {
+              fprintf(fpout, "Could not find MBF21 bit mnemonic %s\n", strval);
+            }
+          }
+
+          mobjinfo[indexnum].flags2 = value;
+        }
+        else if (deh_strcasecmp(key,"Bits")) {
           // standard value set
 
           // The old code here was the cause of a DEH-related bug in prboom.
@@ -2301,6 +2419,7 @@ static void deh_procWeapon(DEHFILE *fpin, FILE* fpout, char *line)
   char inbuffer[DEH_BUFFERMAX];
   uint_64_t value;      // All deh values are ints or longs
   int indexnum;
+  char *strval;
 
   strncpy(inbuffer,line,DEH_BUFFERMAX-1);
 
@@ -2317,7 +2436,7 @@ static void deh_procWeapon(DEHFILE *fpin, FILE* fpout, char *line)
       if (!dehfgets(inbuffer, sizeof(inbuffer), fpin)) break;
       lfstrip(inbuffer);
       if (!*inbuffer) break;       // killough 11/98
-      if (!deh_GetData(inbuffer,key,&value,NULL,fpout)) // returns TRUE if ok
+      if (!deh_GetData(inbuffer,key,&value,&strval,fpout)) // returns TRUE if ok
         {
           if (fpout) fprintf(fpout,"Bad data pair in '%s'\n",inbuffer);
           continue;
@@ -2343,7 +2462,33 @@ static void deh_procWeapon(DEHFILE *fpin, FILE* fpout, char *line)
                 if (!deh_strcasecmp(key,deh_weapon[5]))  // Firing frame
                   weaponinfo[indexnum].flashstate = (int)value;
                 else
-                  if (fpout) fprintf(fpout,"Invalid weapon string index for '%s'\n",key);
+                  if (!deh_strcasecmp(key,deh_weapon[6]))  // Ammo per shot
+                    {
+                      weaponinfo[indexnum].ammopershot = (int)value;
+                      weaponinfo[indexnum].intflags |= WIF_ENABLEAPS;
+                    }
+                  else
+                    if (!deh_strcasecmp(key,deh_weapon[7]))  // MBF21 Bits
+                    {
+                      for (value = 0; (strval = strtok(strval, deh_getBitsDelims())); strval = NULL) {
+                        const struct deh_flag_s *flag;
+
+                        for (flag = deh_weaponflags_mbf21; flag->name; flag++) {
+                          if (deh_strcasecmp(strval, flag->name)) continue;
+
+                          value |= flag->value;
+                          break;
+                        }
+
+                        if (!flag->name && fpout) {
+                          fprintf(fpout, "Could not find MBF21 weapon bit mnemonic %s\n", strval);
+                        }
+                      }
+
+                      weaponinfo[indexnum].flags = value;
+                    }
+                    else
+                      if (fpout) fprintf(fpout,"Invalid weapon string index for '%s'\n",key);
     }
   return;
 }
@@ -2621,7 +2766,10 @@ static void deh_procMisc(DEHFILE *fpin, FILE* fpout, char *line) // done
                                   idkfa_armor_class = (int)value;
                                 else
                                   if (!deh_strcasecmp(key,deh_misc[14]))  // BFG Cells/Shot
-                                    bfgcells = (int)value;
+                                  {
+                                    weaponinfo[MT_BFG].ammopershot = bfgcells = (int)value;
+                                    bfgcells_modified = true;
+                                  }
                                   else
                                     if (!deh_strcasecmp(key,deh_misc[15])) { // Monsters Infight
                                       // e6y: Dehacked support - monsters infight

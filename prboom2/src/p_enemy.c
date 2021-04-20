@@ -230,27 +230,23 @@ static dboolean P_CheckMissileRange(mobj_t *actor)
 
   dist >>= FRACBITS;
 
-  if (actor->type == MT_VILE)
+  if (actor->flags2 & MF2_SHORTMRANGE)
     if (dist > 14*64)
       return false;     // too far away
 
-  if (actor->type == MT_UNDEAD)
+  if (actor->flags2 & MF2_LONGMELEE)
   {
     if (dist < 196)
       return false;   // close for fist attack
-    dist >>= 1;
   }
 
-  if (actor->type == MT_CYBORG ||
-      actor->type == MT_SPIDER ||
-      actor->type == MT_SKULL  ||
-      actor->type == HERETIC_MT_IMP) // Imp's fly attack from far away
+  if (actor->flags2 & MF2_RANGEHALF)
     dist >>= 1;
 
   if (dist > 200)
     dist = 200;
 
-  if (actor->type == MT_CYBORG && dist > 160)
+  if (actor->flags2 & MF2_HIGHERMPROB && dist > 160)
     dist = 160;
 
   if (P_Random(pr_missrange) < dist)
@@ -678,47 +674,55 @@ static void P_NewChaseDir(mobj_t *actor)
   actor->strafecount = 0;
 
   if (mbf_features) {
-    if (actor->floorz - actor->dropoffz > FRACUNIT*24 &&
-  actor->z <= actor->floorz &&
-  !(actor->flags & (MF_DROPOFF|MF_FLOAT)) &&
-  !comp[comp_dropoff] &&
-  P_AvoidDropoff(actor)) /* Move away from dropoff */
-      {
-  P_DoNewChaseDir(actor, dropoff_deltax, dropoff_deltay);
+    if (
+      actor->floorz - actor->dropoffz > FRACUNIT*24 &&
+      actor->z <= actor->floorz &&
+      !(actor->flags & (MF_DROPOFF|MF_FLOAT)) &&
+      !comp[comp_dropoff] &&
+      P_AvoidDropoff(actor)
+    ) /* Move away from dropoff */
+    {
+      P_DoNewChaseDir(actor, dropoff_deltax, dropoff_deltay);
 
-  // If moving away from dropoff, set movecount to 1 so that
-  // small steps are taken to get monster away from dropoff.
+      // If moving away from dropoff, set movecount to 1 so that
+      // small steps are taken to get monster away from dropoff.
 
-  actor->movecount = 1;
-  return;
-      }
-    else
-      {
-  fixed_t dist = P_AproxDistance(deltax, deltay);
-
-  // Move away from friends when too close, except
-  // in certain situations (e.g. a crowded lift)
-
-  if (actor->flags & target->flags & MF_FRIEND &&
-      distfriend << FRACBITS > dist &&
-      !P_IsOnLift(target) && !P_IsUnderDamage(actor))
-  {
-    deltax = -deltax, deltay = -deltay;
-  } else
-    if (target->health > 0 && (actor->flags ^ target->flags) & MF_FRIEND)
-      {   // Live enemy target
-        if (monster_backing &&
-      actor->info->missilestate && actor->type != MT_SKULL &&
-      ((!target->info->missilestate && dist < MELEERANGE*2) ||
-       (target->player && dist < MELEERANGE*3 &&
-        (target->player->readyweapon == wp_fist ||
-         target->player->readyweapon == wp_chainsaw))))
-    {       // Back away from melee attacker
-      actor->strafecount = P_Random(pr_enemystrafe) & 15;
-      deltax = -deltax, deltay = -deltay;
+      actor->movecount = 1;
+      return;
     }
+    else
+    {
+      fixed_t dist = P_AproxDistance(deltax, deltay);
+
+      // Move away from friends when too close, except
+      // in certain situations (e.g. a crowded lift)
+
+      if (actor->flags & target->flags & MF_FRIEND &&
+          distfriend << FRACBITS > dist &&
+          !P_IsOnLift(target) && !P_IsUnderDamage(actor))
+      {
+        deltax = -deltax, deltay = -deltay;
       }
+      else if (target->health > 0 && (actor->flags ^ target->flags) & MF_FRIEND)
+      {   // Live enemy target
+        if (
+          monster_backing &&
+          actor->info->missilestate &&
+          actor->type != MT_SKULL &&
+          (
+            (!target->info->missilestate && dist < MELEERANGE*2) ||
+            (
+              target->player && dist < MELEERANGE*3 &&
+              weaponinfo[target->player->readyweapon].flags & WPF_FLEEMELEE
+            )
+          )
+        )
+        {       // Back away from melee attacker
+          actor->strafecount = P_Random(pr_enemystrafe) & 15;
+          deltax = -deltax, deltay = -deltay;
+        }
       }
+    }
   }
 
   P_DoNewChaseDir(actor, deltax, deltay);
@@ -1131,7 +1135,7 @@ void A_Look(mobj_t *actor)
           break;
       }
 
-    if (actor->type == MT_SPIDER || actor->type == MT_CYBORG || actor->flags2 & MF2_BOSS)
+    if (actor->flags2 & MF2_BOSS)
       S_StartSound(NULL, sound);          // full volume
     else
       S_StartSound(actor, sound);
@@ -1264,18 +1268,25 @@ void A_Chase(mobj_t *actor)
        * changing targets */
       actor->pursuecount = BASETHRESHOLD;
 
-      /* Unless (we have a live target
-       *         and it's not friendly
-       *         and we can see it)
-       *  try to find a new one; return if sucessful */
-
-      if (!(actor->target && actor->target->health > 0 &&
-            ((comp[comp_pursuit] && !netgame) ||
-             (((actor->target->flags ^ actor->flags) & MF_FRIEND ||
-         (!(actor->flags & MF_FRIEND) && monster_infighting)) &&
-        P_CheckSight(actor, actor->target))))
-          && P_LookForTargets(actor, true))
-            return;
+      // look for new target, unless conditions are met
+      if (
+        !(
+          actor->target &&                       // have a target
+          actor->target->health > 0 &&           // and the target is alive
+          (
+            (comp[comp_pursuit] && !netgame) ||  // and using old pursuit behaviour
+            (
+              (                                  // or the target is not friendly
+                (actor->target->flags ^ actor->flags) & MF_FRIEND ||
+                (!(actor->flags & MF_FRIEND) && monster_infighting)
+              ) &&
+              P_CheckSight(actor, actor->target) // and we can see it
+            )
+          )
+        ) &&
+        P_LookForTargets(actor, true)
+      )
+        return;
 
       /* (Current target was good, or no new target was found.)
        *
@@ -1976,7 +1987,7 @@ void A_VileAttack(mobj_t *actor)
   // move the fire between the vile and the player
   fire->x = actor->target->x - FixedMul (24*FRACUNIT, finecosine[an]);
   fire->y = actor->target->y - FixedMul (24*FRACUNIT, finesine[an]);
-  P_RadiusAttack(fire, actor, 70);
+  P_RadiusAttack(fire, actor, 70, 70);
 }
 
 //
@@ -2257,7 +2268,7 @@ void A_Scream(mobj_t *actor)
     }
 
   // Check for bosses.
-  if (actor->type==MT_SPIDER || actor->type == MT_CYBORG)
+  if (actor->flags2 & MF2_BOSS)
     S_StartSound(NULL, sound); // full volume
   else
     S_StartSound(actor, sound);
@@ -2339,7 +2350,7 @@ void A_Explode(mobj_t *thingy)
       break;
   }
 
-  P_RadiusAttack(thingy, thingy->target, damage);
+  P_RadiusAttack(thingy, thingy->target, damage, damage);
   if (heretic) P_HitFloor(thingy);
 }
 
@@ -2411,8 +2422,7 @@ void A_BossDeath(mobj_t *mo)
       if (gamemap != 7)
         return;
 
-      if ((mo->type != MT_FATSO)
-          && (mo->type != MT_BABY))
+      if (!(mo->flags2 & (MF2_MAP07BOSS1 | MF2_MAP07BOSS2)))
         return;
     }
   else
@@ -2430,7 +2440,7 @@ void A_BossDeath(mobj_t *mo)
         // http://www.doomworld.com/idgames/index.php?id=6909
         if (gamemap != 8)
           return;
-        if (mo->type == MT_BRUISER && gameepisode != 1)
+        if (mo->flags2 & MF2_E1M8BOSS && gameepisode != 1)
           return;
       }
       else
@@ -2441,7 +2451,7 @@ void A_BossDeath(mobj_t *mo)
           if (gamemap != 8)
             return;
 
-          if (mo->type != MT_BRUISER)
+          if (!(mo->flags2 & MF2_E1M8BOSS))
             return;
           break;
 
@@ -2449,7 +2459,7 @@ void A_BossDeath(mobj_t *mo)
           if (gamemap != 8)
             return;
 
-          if (mo->type != MT_CYBORG)
+          if (!(mo->flags2 & MF2_E2M8BOSS))
             return;
           break;
 
@@ -2457,7 +2467,7 @@ void A_BossDeath(mobj_t *mo)
           if (gamemap != 8)
             return;
 
-          if (mo->type != MT_SPIDER)
+          if (!(mo->flags2 & MF2_E3M8BOSS))
             return;
 
           break;
@@ -2466,12 +2476,12 @@ void A_BossDeath(mobj_t *mo)
           switch(gamemap)
             {
             case 6:
-              if (mo->type != MT_CYBORG)
+              if (!(mo->flags2 & MF2_E4M6BOSS))
                 return;
               break;
 
             case 8:
-              if (mo->type != MT_SPIDER)
+              if (!(mo->flags2 & MF2_E4M8BOSS))
                 return;
               break;
 
@@ -2513,14 +2523,14 @@ void A_BossDeath(mobj_t *mo)
     {
       if (gamemap == 7)
         {
-          if (mo->type == MT_FATSO)
+          if (mo->flags2 & MF2_MAP07BOSS1)
             {
               junk.tag = 666;
               EV_DoFloor(&junk,lowerFloorToLowest);
               return;
             }
 
-          if (mo->type == MT_BABY)
+          if (mo->flags2 & MF2_MAP07BOSS2)
             {
               junk.tag = 667;
               EV_DoFloor(&junk,raiseToTexture);
@@ -2822,7 +2832,7 @@ void A_Detonate(mobj_t *mo)
       !prboom_comp[PC_APPLY_MBF_CODEPOINTERS_TO_ANY_COMPLEVEL].state)
     return;
 
-  P_RadiusAttack(mo, mo->target, mo->info->damage);
+  P_RadiusAttack(mo, mo->target, mo->info->damage, mo->info->damage);
 }
 
 //
@@ -2963,6 +2973,106 @@ void A_LineEffect(mobj_t *mo)
   mo->state->misc1 = junk.special;
   mo->player = oldplayer;
 }
+
+//
+// [XA] New mbf21 codepointers
+//
+
+//
+// A_SpawnFacing
+// Spawns an actor facing the same direction as the caller.
+// Basically just A_Spawn with a major quality-of-life tweak.
+//   misc1: Type of actor to spawn
+//   misc2: Height to spawn at, relative to calling actor
+//
+void A_SpawnFacing(mobj_t *actor)
+{
+  mobj_t *mo;
+
+  if (!mbf21 || !actor->state->misc1)
+    return;
+
+  mo = P_SpawnMobj(actor->x, actor->y, (actor->state->misc2 << FRACBITS) + actor->z, actor->state->misc1 - 1);
+  if (mo)
+    mo->angle = actor->angle;
+
+  // [XA] don't bother with the dont-inherit-friendliness hack
+  // that exists in A_Spawn, 'cause WTF is that about anyway?
+}
+
+//
+// A_MonsterProjectile
+// A parameterized monster projectile attack.
+//   misc1: Type of actor to spawn
+//   misc2: Angle (degrees, in fixed point), relative to calling actor's angle
+//
+void A_MonsterProjectile(mobj_t *actor)
+{
+  mobj_t *mo;
+  int an;
+
+  if (!mbf21 || !actor->target || !actor->state->misc1)
+    return;
+
+  A_FaceTarget(actor);
+  mo = P_SpawnMissile(actor, actor->target, actor->state->misc1 - 1);
+  if (!mo)
+    return;
+
+  // adjust the angle by misc2;
+  mo->angle += (unsigned int)(((int_64_t)actor->state->misc2 << 16) / 360);
+  an = mo->angle >> ANGLETOFINESHIFT;
+  mo->momx = FixedMul(mo->info->speed, finecosine[an]);
+  mo->momy = FixedMul(mo->info->speed, finesine[an]);
+
+  // always set the 'tracer' field, so this pointer
+  // can be used to fire seeker missiles at will.
+  P_SetTarget(&mo->tracer, actor->target);
+}
+
+//
+// A_MonsterBulletAttack
+// A parameterized monster bullet attack.
+//   misc1: Damage of attack (times 1d5)
+//   misc2: Horizontal spread (degrees, in fixed point);
+//          if negative, also use 2/3 of this value for vertical spread
+//
+void A_MonsterBulletAttack(mobj_t *actor)
+{
+  int damage, angle, slope, t;
+  int_64_t spread;
+
+  if (!mbf21 || !actor->target)
+    return;
+
+  A_FaceTarget(actor);
+  S_StartSound(actor, actor->info->attacksound);
+
+  damage = (P_Random(pr_mbf21) % 5 + 1) * actor->state->misc1;
+
+  angle = (int)actor->angle + P_RandomHitscanAngle(pr_mbf21, actor->state->misc2);;
+  slope = P_AimLineAttack(actor, angle, MISSILERANGE, 0);
+
+  if (actor->state->misc2 < 0)
+    slope += P_RandomHitscanSlope(pr_mbf21, actor->state->misc2 * 2 / 3);
+
+  P_LineAttack(actor, angle, MISSILERANGE, slope, damage);
+}
+
+//
+// A_RadiusDamage
+// A parameterized version of A_Explode. Friggin' finally. :P
+//   misc1: Damage (int)
+//   misc2: Radius (also int; no real need for fractional precision here)
+//
+void A_RadiusDamage(mobj_t *actor)
+{
+  if (!mbf21 || !actor->state)
+    return;
+
+  P_RadiusAttack(actor, actor->target, actor->state->misc1, actor->state->misc2);
+}
+
 
 // heretic
 
@@ -4114,7 +4224,7 @@ void A_VolcBallImpact(mobj_t * ball)
         ball->z += 28 * FRACUNIT;
         //ball->momz = 3*FRACUNIT;
     }
-    P_RadiusAttack(ball, ball->target, 25);
+    P_RadiusAttack(ball, ball->target, 25, 25);
     for (i = 0; i < 4; i++)
     {
         tiny = P_SpawnMobj(ball->x, ball->y, ball->z, HERETIC_MT_VOLCANOTBLAST);

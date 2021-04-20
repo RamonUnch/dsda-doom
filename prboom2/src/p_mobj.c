@@ -878,9 +878,7 @@ static void P_NightmareRespawn(mobj_t* mobj)
    * regardless of that point's nature. SMMU and Eternity need this for
    * script-spawned things like Halif Swordsmythe, as well.
    *
-   * cph - copied from eternity, except comp_respawnfix becomes comp_respawn
-   *   and the logic is reversed (i.e. like the rest of comp_ it *disables*
-   *   the fix)
+   * cph - copied from eternity, alias comp_respawnfix
    */
   if(!comp[comp_respawn] && !x && !y)
   {
@@ -1058,6 +1056,26 @@ void P_MobjThinker (mobj_t* mobj)
       P_ApplyTorque(mobj);               // Apply torque
     else
       mobj->intflags &= ~MIF_FALLING, mobj->gear = 0;  // Reset torque
+  }
+
+  if (mbf21)
+  {
+    sector_t* sector = mobj->subsector->sector;
+
+    if (
+      sector->special & KILL_MONSTERS_MASK &&
+      mobj->z == mobj->floorz &&
+      mobj->player == NULL &&
+      mobj->flags & MF_SHOOTABLE &&
+      !(mobj->flags & MF_FLOAT)
+    )
+    {
+      P_DamageMobj(mobj, NULL, NULL, 10000);
+
+      // must have been removed
+      if (mobj->thinker.function != P_MobjThinker)
+        return;
+    }
   }
 
   // cycle through states,

@@ -1374,6 +1374,17 @@ void P_CrossSpecialLine(line_t *line, int side, mobj_t *thing, dboolean bossacti
         return;
       linefunc = EV_DoGenStairs;
     }
+    else if (mbf21 && (unsigned)line->special >= GenCrusherBase)
+    {
+      // haleyjd 06/09/09: This was completely forgotten in BOOM, disabling
+      // all generalized walk-over crusher types!
+      if (!thing->player && !bossaction)
+        if (!(line->special & StairMonster))
+          return; // monsters disallowed
+      if (!comperr(comperr_zerotag) && !line->tag) //e6y //jff 2/27/98 all walk generalized types require tag
+        return;
+      linefunc = EV_DoGenCrusher;
+    }
 
     if (linefunc) // if it was a valid generalized type
       switch((line->special & TriggerType) >> TriggerTypeShift)
@@ -2434,28 +2445,58 @@ void P_PlayerInSpecialSector (player_t* player)
   }
   else //jff 3/14/98 handle extended sector types for secrets and damage
   {
-    switch ((sector->special&DAMAGE_MASK)>>DAMAGE_SHIFT)
+    if (mbf21 && sector->special & DEATH_MASK)
     {
-      case 0: // no damage
-        break;
-      case 1: // 2/5 damage per 31 ticks
-        if (!player->powers[pw_ironfeet])
-          if (!(leveltime&0x1f))
-            P_DamageMobj (player->mo, NULL, NULL, 5);
-        break;
-      case 2: // 5/10 damage per 31 ticks
-        if (!player->powers[pw_ironfeet])
-          if (!(leveltime&0x1f))
-            P_DamageMobj (player->mo, NULL, NULL, 10);
-        break;
-      case 3: // 10/20 damage per 31 ticks
-        if (!player->powers[pw_ironfeet]
-            || (P_Random(pr_slimehurt)<5))  // take damage even with suit
-        {
-          if (!(leveltime&0x1f))
-            P_DamageMobj (player->mo, NULL, NULL, 20);
-        }
-        break;
+      int i;
+
+      switch ((sector->special & DAMAGE_MASK) >> DAMAGE_SHIFT)
+      {
+        case 0:
+          if (!player->powers[pw_invulnerability] && !player->powers[pw_ironfeet])
+            P_DamageMobj(player->mo, NULL, NULL, 10000);
+          break;
+        case 1:
+          P_DamageMobj(player->mo, NULL, NULL, 10000);
+          break;
+        case 2:
+          for (i = 0; i < MAXPLAYERS; i++)
+            if (playeringame[i])
+              P_DamageMobj(players[i].mo, NULL, NULL, 10000);
+          G_ExitLevel();
+          break;
+        case 3:
+          for (i = 0; i < MAXPLAYERS; i++)
+            if (playeringame[i])
+              P_DamageMobj(players[i].mo, NULL, NULL, 10000);
+          G_SecretExitLevel();
+          break;
+      }
+    }
+    else
+    {
+      switch ((sector->special&DAMAGE_MASK)>>DAMAGE_SHIFT)
+      {
+        case 0: // no damage
+          break;
+        case 1: // 2/5 damage per 31 ticks
+          if (!player->powers[pw_ironfeet])
+            if (!(leveltime&0x1f))
+              P_DamageMobj (player->mo, NULL, NULL, 5);
+          break;
+        case 2: // 5/10 damage per 31 ticks
+          if (!player->powers[pw_ironfeet])
+            if (!(leveltime&0x1f))
+              P_DamageMobj (player->mo, NULL, NULL, 10);
+          break;
+        case 3: // 10/20 damage per 31 ticks
+          if (!player->powers[pw_ironfeet]
+              || (P_Random(pr_slimehurt)<5))  // take damage even with suit
+          {
+            if (!(leveltime&0x1f))
+              P_DamageMobj (player->mo, NULL, NULL, 20);
+          }
+          break;
+      }
     }
     if (sector->special&SECRET_MASK)
     {
@@ -3055,6 +3096,27 @@ static void P_SpawnScrollers(void)
           s = lines[i].sidenum[0];
           Add_Scroller(sc_side, -sides[s].textureoffset,
                        sides[s].rowoffset, -1, s, accel);
+          break;
+
+        case 1024: // special 255 with tag control
+        case 1025:
+        case 1026:
+          if (l->tag == 0)
+            I_Error("Line %d is missing a tag!", i);
+
+          if (special > 1024)
+            control = sides[*l->sidenum].sector->iSectorID;
+
+          if (special == 1026)
+            accel = 1;
+
+          s = lines[i].sidenum[0];
+          dx = -sides[s].textureoffset;
+          dy = sides[s].rowoffset;
+          for (s = -1; (s = P_FindLineFromLineTag(l, s)) >= 0;)
+            if (s != i)
+              Add_Scroller(sc_side, dx, dy, control, lines[s].sidenum[0], accel);
+
           break;
 
         case 48:                  // scroll first side

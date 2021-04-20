@@ -56,8 +56,6 @@
 #include "heretic/def.h"
 #include "heretic/sb_bar.h"
 
-#define BONUSADD        6
-
 // Ty 03/07/98 - add deh externals
 // Maximums and such were hardcoded values.  Need to externalize those for
 // dehacked support (and future flexibility).  Most var names came from the key
@@ -110,6 +108,34 @@ static weapontype_t GetAmmoChange[] = {
 // Returns false if the ammo can't be picked up at all
 //
 
+static dboolean P_GiveAmmoAutoSwitch(player_t *player, ammotype_t ammo, int oldammo)
+{
+  int i;
+
+  if (
+    weaponinfo[player->readyweapon].flags & WPF_AUTOSWITCHFROM &&
+    weaponinfo[player->readyweapon].ammo != ammo
+  )
+  {
+    for (i = NUMWEAPONS - 1; i > player->readyweapon; --i)
+    {
+      if (
+        player->weaponowned[i] &&
+        weaponinfo[i].flags & WPF_AUTOSWITCHTO &&
+        weaponinfo[i].ammo == ammo &&
+        weaponinfo[i].ammopershot > oldammo &&
+        weaponinfo[i].ammopershot <= player->ammo[ammo]
+      )
+      {
+        player->pendingweapon = i;
+        break;
+      }
+    }
+  }
+
+  return true;
+}
+
 static dboolean P_GiveAmmo(player_t *player, ammotype_t ammo, int num)
 {
   int oldammo;
@@ -141,6 +167,9 @@ static dboolean P_GiveAmmo(player_t *player, ammotype_t ammo, int num)
 
   if (player->ammo[ammo] > player->maxammo[ammo])
     player->ammo[ammo] = player->maxammo[ammo];
+
+  if (mbf21)
+    return P_GiveAmmoAutoSwitch(player, ammo, oldammo);
 
   // If non zero ammo, don't change up weapons, player was lower on purpose.
   if (oldammo)
@@ -893,6 +922,13 @@ static void P_KillMobj(mobj_t *source, mobj_t *target)
 // and other environmental stuff.
 //
 
+static dboolean P_InfightingImmune(mobj_t *target, mobj_t *source)
+{
+  return // not default behaviour, and same group
+    mobjinfo[target->type].infighting_group != IG_DEFAULT &&
+    mobjinfo[target->type].infighting_group == mobjinfo[source->type].infighting_group;
+}
+
 void P_DamageMobj(mobj_t *target,mobj_t *inflictor, mobj_t *source, int damage)
 {
   player_t *player;
@@ -1002,7 +1038,11 @@ void P_DamageMobj(mobj_t *target,mobj_t *inflictor, mobj_t *source, int damage)
   if (
     inflictor &&
     !(target->flags & MF_NOCLIP) &&
-    (!source || !source->player ||source->player->readyweapon != g_wp_chainsaw) &&
+    !(
+      source &&
+      source->player &&
+      weaponinfo[source->player->readyweapon].flags & WPF_NOTHRUST
+    ) &&
     !(inflictor->flags2 & MF2_NODMGTHRUST)
   )
   {
@@ -1175,11 +1215,11 @@ void P_DamageMobj(mobj_t *target,mobj_t *inflictor, mobj_t *source, int damage)
   if (
     source &&
     (source != target || compatibility_level == doom_12_compatibility) &&
-    source->type != MT_VILE &&
-    (!target->threshold || target->type == MT_VILE) &&
+    !(source->flags2 & MF2_DMGIGNORED) &&
+    (!target->threshold || target->flags2 & MF2_NOTHRESHOLD) &&
     ((source->flags ^ target->flags) & MF_FRIEND || monster_infighting || !mbf_features) &&
-    !(source->flags2 & MF2_BOSS) &&
-    !(target->type == HERETIC_MT_SORCERER2 && source->type == HERETIC_MT_WIZARD)
+    !(heretic && source->flags2 & MF2_BOSS) &&
+    !P_InfightingImmune(target, source)
   )
   {
     /* if not intent on another player, chase after this one
