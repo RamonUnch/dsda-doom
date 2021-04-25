@@ -93,11 +93,11 @@ static dboolean sound_inited = false;
 static dboolean first_sound_init = true;
 
 // Needed for calling the actual sound output.
-static int SAMPLECOUNT =   512;
 #define MAX_CHANNELS    32
 
 // MWM 2000-01-08: Sample rate in samples/second
 int snd_samplerate = 11025;
+int snd_samplecount = 512; //SAMPLECOUNT
 
 // The actual output device.
 int audio_fd;
@@ -494,7 +494,7 @@ static void I_UpdateSound(void *unused, Uint8 *stream, int len)
   leftend = leftout + (len / 4) * step;
 
   // Mix sounds into the mixing buffer.
-  // Loop over step*SAMPLECOUNT,
+  // Loop over step*snd_samplecount,
   //  that is 512 values for two channels.
   while (leftout != leftend)
   {
@@ -617,6 +617,7 @@ void I_InitSound(void)
 
   // Secure and configure sound device first.
   lprintf(LO_INFO, "I_InitSound: ");
+  int SAMPLECOUNT = snd_samplecount;
 
   if (!use_experimental_music)
   {
@@ -625,7 +626,6 @@ void I_InitSound(void)
     /* Initialize variables */
     audio_rate = snd_samplerate;
     audio_channels = 2;
-    SAMPLECOUNT = 512;
     audio_buffers = SAMPLECOUNT*snd_samplerate/11025;
 
     if (Mix_OpenAudio(audio_rate, MIX_DEFAULT_FORMAT, audio_channels, audio_buffers) < 0)
@@ -654,7 +654,7 @@ void I_InitSound(void)
     audio.format = AUDIO_S16LSB;
 #endif
     audio.channels = 2;
-    audio.samples = SAMPLECOUNT * snd_samplerate / 11025;
+    audio.samples = snd_samplecount * snd_samplerate / 11025;
     audio.callback = I_UpdateSound;
     if ( SDL_OpenAudio(&audio, NULL) < 0 )
     {
