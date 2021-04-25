@@ -19,6 +19,8 @@ set(COMMON_SRC
     doomtype.h
     dsda.c
     dsda.h
+    dsda/command_display.c
+    dsda/command_display.h
     dsda/demo.c
     dsda/demo.h
     dsda/ghost.c
@@ -37,6 +39,8 @@ set(COMMON_SRC
     dsda/options.h
     dsda/palette.c
     dsda/palette.h
+    dsda/save.c
+    dsda/save.h
     dsda/settings.c
     dsda/settings.h
     dsda/time.c
@@ -446,6 +450,8 @@ if(BUILD_SERVER AND SDL2_NET_FOUND)
         set(PRBOOM_PLUS_GAME_SERVER_SOURCES
             ${PRBOOM_PLUS_GAME_SERVER_SOURCES}
             SDL/i_system.c
+            dsda/time.c
+            dsda/time.h
         )
     else()
         set(PRBOOM_PLUS_GAME_SERVER_SOURCES

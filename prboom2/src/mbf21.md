@@ -53,6 +53,10 @@ This is proof-of-concept implemented in dsda-doom.
 - Already fixed in pr+ / EE.
 - [code](https://github.com/kraflab/dsda-doom/blob/cd2ce9f532a80b871f0fdef2ae3ce6331b6e47b4/prboom2/src/p_sight.c#L408)
 
+#### P_InterceptVector precision / overflow fix
+- Already fixed in pr+ / EE.
+- [code](https://github.com/kraflab/dsda-doom/blob/cd2ce9f532a80b871f0fdef2ae3ce6331b6e47b4/prboom2/src/p_maputl.c#L161-L166)
+
 #### Fix generalized crusher walkover lines
 - Already fixed in EE, but not in pr+.
 - [commit](https://github.com/kraflab/dsda-doom/commit/76776f721b5d1d8a1a0ae95daab525cf8183ce44)
@@ -66,28 +70,13 @@ This is proof-of-concept implemented in dsda-doom.
 - [code](https://github.com/kraflab/dsda-doom/blob/cd2ce9f532a80b871f0fdef2ae3ce6331b6e47b4/prboom2/src/p_map.c#L1037)
 - [EE](https://github.com/team-eternity/eternity/blob/0fc2a38da688d9f5001fef723b40ef92c5db0956/source/p_map.cpp#L1342)
 
-#### P_InterceptVector precision / overflow fix
-- Already fixed in pr+, but not in EE.
-- [code](https://github.com/kraflab/dsda-doom/blob/cd2ce9f532a80b871f0fdef2ae3ce6331b6e47b4/prboom2/src/p_maputl.c#L161-L166)
-- [EE](https://github.com/team-eternity/eternity/blob/0fc2a38da688d9f5001fef723b40ef92c5db0956/source/p_maputl.cpp#L275)
-
 #### P_KillMobj thinker updates
-- Changed in pr+, but not in EE.
-- [code](https://github.com/kraflab/dsda-doom/blob/6006aa42d3fba0ad2822ea35b144a921678821bf/prboom2/src/p_inter.c#L748-L753)
-- [EE](https://github.com/team-eternity/eternity/blob/0fc2a38da688d9f5001fef723b40ef92c5db0956/source/p_inter.cpp#L971)
-- Why? Needs investigation.
-
-#### A_Spawn friendliness inheritance
-- Changed in pr+, but not in EE.
-- [code](https://github.com/kraflab/dsda-doom/blob/6006aa42d3fba0ad2822ea35b144a921678821bf/prboom2/src/p_enemy.c#L2894-L2897)
-- [EE](https://github.com/team-eternity/eternity/blob/0fc2a38da688d9f5001fef723b40ef92c5db0956/source/a_general.cpp#L189)
-- Why? Needs investigation.
+- Changed in pr+, reverted for mbf21.
+- [commit](https://github.com/kraflab/dsda-doom/commit/c5d99305ef2aa79983f5e95ac6cdc13ce415b54c)
 
 #### A_Mushroom changes
-- Changed in pr+, but not in EE.
-- [code](https://github.com/kraflab/dsda-doom/blob/6006aa42d3fba0ad2822ea35b144a921678821bf/prboom2/src/p_enemy.c#L2848-L2851)
-- [EE](https://github.com/team-eternity/eternity/blob/0fc2a38da688d9f5001fef723b40ef92c5db0956/source/a_general.cpp#L116-L120)
-- Why? Needs investigation.
+- Changed in pr+, reverted for mbf21.
+- [commit](https://github.com/kraflab/dsda-doom/commit/a330db45dee7f255510f6b2c06006e97dc04d578)
 
 #### Block land monsters line flag
 - [PR](https://github.com/kraflab/dsda-doom/pull/19)
@@ -112,6 +101,11 @@ This is proof-of-concept implemented in dsda-doom.
 
 #### New comp flags
 - comp_ledgeblock: [commit](https://github.com/kraflab/dsda-doom/commit/4423cbcf8580e4d3839ddf4403b1fb4a0f993507)
+  - Ledges block ground enemies
+  - Exception: movement due to scrolling / pushers / pullers disables comp_ledgeblock for the next xy movement: [commit](https://github.com/kraflab/dsda-doom/commit/db8c3d606ed23dfb6b2408c4ddbf0af91d33f3de)
+- comp_friendlyspawn: [PR](https://github.com/kraflab/dsda-doom/pull/34)
+  - When on: A_Spawn new thing inherits friend flag from source thing.
+  - When off: A_Spawn new thing keeps its default friend flag.
 
 Summary of comp flags since mbf in pr+ and changes:
 
@@ -127,6 +121,7 @@ Summary of comp flags since mbf in pr+ and changes:
 | comp_maxhealth-    | 26    | 0       | Max health in deh only applies to potions     |
 | comp_translucency- | 27    | 0       | Disable some predefined translucency          |
 | comp_ledgeblock    | 28    | 1       | Ledges block ground enemies                   |
+| comp_friendlyspawn | 29    | 1       | A_Spawn new thing inherits friendliness       |
 
 - Comp options marked with a `-` have been deoptionalized in mbf21 (forced to `0`). Many of these have nothing to do with demo compatibility - others are simple bug fixes.
 - Comp options marked with a `*` are already implemented in EE.
@@ -235,32 +230,39 @@ In this example:
 | NOAUTOFIRE     | Weapon won't autofire when swapped to            |
 | FLEEMELEE      | Monsters consider it a melee weapon              |
 | AUTOSWITCHFROM | Can be switched away from when ammo is picked up |
-| AUTOSWITCHTO   | Can be switch to when ammo is picked up          |
+| NOAUTOSWITCHTO | Cannot be switched to when ammo is picked up     |
 
 MBF21 defaults:
 
-| Weapon          | Flags                       |
-|-----------------|-----------------------------|
-| Fist            | FLEEMELEE+AUTOSWITCHFROM    |
-| Pistol          | AUTOSWITCHFROM+AUTOSWITCHTO |
-| Shotgun         | AUTOSWITCHTO                |
-| Chaingun        | AUTOSWITCHTO                |
-| Rocket Launcher | NOAUTOFIRE+AUTOSWITCHTO     |
-| Plasma Rifle    | AUTOSWITCHTO                |
-| BFG             | NOAUTOFIRE+AUTOSWITCHTO     |
-| Chainsaw        | NOTHRUST+FLEEMELEE          |
-| Super Shotgun   | AUTOSWITCHTO                |
+| Weapon          | Flags                                   |
+|-----------------|-----------------------------------------|
+| Fist            | FLEEMELEE+AUTOSWITCHFROM+NOAUTOSWITCHTO |
+| Pistol          | AUTOSWITCHFROM                          |
+| Shotgun         |                                         |
+| Chaingun        |                                         |
+| Rocket Launcher | NOAUTOFIRE                              |
+| Plasma Rifle    |                                         |
+| BFG             | NOAUTOFIRE                              |
+| Chainsaw        | NOTHRUST+FLEEMELEE+NOAUTOSWITCHTO       |
+| Super Shotgun   |                                         |
 
 #### Ammo pickup weapon autoswitch changes
 
 - [PR](https://github.com/kraflab/dsda-doom/pull/26)
-- Weapon autoswitch on ammo pickup now accounts for the ammo per shot of a weapon, as well as the `AUTOSWITCHTO` and `AUTOSWITCHFROM` weapon flags, allowing more accuracy and customization of this behaviour.
+- Weapon autoswitch on ammo pickup now accounts for the ammo per shot of a weapon, as well as the `NOAUTOSWITCHTO` and `AUTOSWITCHFROM` weapon flags, allowing more accuracy and customization of this behaviour.
 - If the current weapon is enabled for `AUTOSWITCHFROM` and the player picks up ammo for a different weapon, autoswitch will occur for the highest ranking weapon (by index) matching these conditions:
   - player has the weapon
-  - weapon is enabled for `AUTOSWITCHTO`
+  - weapon is not flagged with `NOAUTOSWITCHTO`
   - weapon uses the ammo that was picked up
   - player did not have enough ammo to fire the weapon before
   - player now has enough ammo to fire the weapon
+
+#### New "Args" fields for DEHACKED states
+- [PR](https://github.com/kraflab/dsda-doom/pull/30)
+- Defines 8 new integer fields in the state table for use as codepointer arguments
+- Args are defined in dehacked by adding `Args1 = X`, `Args2 = X`... up to `Args8 = X` in the State definition.
+- Default value for every arg is 0
+- For future-proofing, if more nonzero args are defined on a state than its action pointer expects (e.g. defining Args3 on a state that uses A_WeaponSound), an error will be thrown on startup.
 
 #### New DEHACKED "Ammo per shot" Weapon field
 - [PR](https://github.com/kraflab/dsda-doom/pull/24)
@@ -278,6 +280,7 @@ MBF21 defaults:
 
 #### New DEHACKED Codepointers
 - [PR](https://github.com/kraflab/dsda-doom/pull/20)
+- All new MBF21 pointers use the new "Args" fields for params, rather than misc1/misc2 fields
 - Actor pointers:
   - **A_SpawnFacing(type, height)** -- spawns an actor of `type` at `height` z units and sets its angle to the caller's angle.
   - **A_MonsterProjectile(type, angle)** -- generic monster projectile attack; always sets `tracer` field.

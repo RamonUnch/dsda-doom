@@ -88,6 +88,7 @@
 #include "dsda.h"
 #include "dsda/demo.h"
 #include "dsda/key_frame.h"
+#include "dsda/save.h"
 #include "dsda/settings.h"
 #include "dsda/input.h"
 #include "dsda/options.h"
@@ -1301,15 +1302,6 @@ void G_Ticker (void)
                   gameaction = ga_savegame;
                   break;
 
-      // CPhipps - remote loadgame request
-                case BTS_LOADGAME:
-                  savegameslot =
-                    (players[i].cmd.buttons & BTS_SAVEMASK)>>BTS_SAVESHIFT;
-                  gameaction = ga_loadgame;
-      forced_loadgame = netgame; // Force if a netgame
-      command_loadgame = false;
-                  break;
-
       // CPhipps - Restart the level
     case BTS_RESTARTLEVEL:
                   if (demoplayback || (compatibility_level < lxdoom_1_compatibility))
@@ -2110,22 +2102,17 @@ void G_ForcedLoadGame(void)
 void G_LoadGame(int slot, dboolean command)
 {
   if (!demoplayback && !command) {
-    // CPhipps - handle savegame filename in G_DoLoadGame
-    //         - Delay load so it can be communicated in net game
-    //         - store info in special_event
-    special_event = BT_SPECIAL | (BTS_LOADGAME & BT_SPECIALMASK) |
-      ((slot << BTS_SAVESHIFT) & BTS_SAVEMASK);
     forced_loadgame = netgame; // CPhipps - always force load netgames
   } else {
-    // Do the old thing, immediate load
-    gameaction = ga_loadgame;
     forced_loadgame = false;
-    savegameslot = slot;
     demoplayback = false;
     // Don't stay in netgame state if loading single player save
     // while watching multiplayer demo
     netgame = false;
   }
+
+  gameaction = ga_loadgame;
+  savegameslot = slot;
   command_loadgame = command;
   R_SmoothPlaying_Reset(NULL); // e6y
 }
@@ -2219,9 +2206,7 @@ void G_DoLoadGame(void)
   char maplump[8];
   int time, ttime;
 
-  length = G_SaveGameName(NULL, 0, savegameslot, demoplayback);
-  name = malloc(length+1);
-  G_SaveGameName(name, length+1, savegameslot, demoplayback);
+  name = dsda_SaveGameName(savegameslot, demoplayback);
 
   gameaction = ga_nothing;
 
@@ -2379,16 +2364,10 @@ void G_DoLoadGame(void)
 void G_SaveGame(int slot, char *description)
 {
   strcpy(savedescription, description);
-  if (demoplayback) {
-    /* cph - We're doing a user-initiated save game while a demo is
-     * running so, go outside normal mechanisms
-     */
-    savegameslot = slot;
-    G_DoSaveGame(true);
-  }
-  // CPhipps - store info in special_event
-  special_event = BT_SPECIAL | (BTS_SAVEGAME & BT_SPECIALMASK) |
-    ((slot << BTS_SAVESHIFT) & BTS_SAVEMASK);
+
+  savegameslot = slot;
+  G_DoSaveGame(true);
+
 #ifdef HAVE_NET
   D_NetSendMisc(nm_savegamename, strlen(savedescription)+1, savedescription);
 #endif
@@ -2418,22 +2397,11 @@ void (CheckSaveGame)(size_t size, const char* file, int line)
            savegamesize += (size+1023) & ~1023)) + pos;
 }
 
-/* killough 3/22/98: form savegame name in one location
- * (previously code was scattered around in multiple places)
- * cph - Avoid possible buffer overflow problems by passing
- * size to this function and using snprintf */
-
-int G_SaveGameName(char *name, size_t size, int slot, dboolean demoplayback)
-{
-  const char* sgn = demoplayback ? "demosav" : savegamename;
-  return doom_snprintf (name, size, "%s/%s%d.dsg", basesavegame, sgn, slot);
-}
-
 static void G_DoSaveGame (dboolean menu)
 {
   char *name;
   char *description;
-  int  length, i;
+  int  i;
   //e6y: numeric version number of package
   unsigned int packageversion = GetPackageVersion();
   char maplump[8];
@@ -2442,9 +2410,7 @@ static void G_DoSaveGame (dboolean menu)
   gameaction = ga_nothing; // cph - cancel savegame at top of this function,
     // in case later problems cause a premature exit
 
-  length = G_SaveGameName(NULL, 0, savegameslot, demoplayback && !menu);
-  name = malloc(length+1);
-  G_SaveGameName(name, length+1, savegameslot, demoplayback && !menu);
+  name = dsda_SaveGameName(savegameslot, demoplayback && !menu);
 
   description = savedescription;
 
@@ -2660,8 +2626,8 @@ void G_Compatibility(void)
     { boom_compatibility_compatibility, prboom_6_compatibility },
     // comp_ledgeblock - ground monsters are blocked by ledges
     { boom_compatibility, mbf21_compatibility },
-    // comp_placeholder_30 - Not defined yet
-    { 255, 255 },
+    // comp_friendlyspawn - A_Spawn new mobj inherits friendliness
+    { prboom_1_compatibility, mbf21_compatibility },
     // comp_placeholder_31 - Not defined yet
     { 255, 255 },
     // comp_placeholder_32 - Not defined yet
@@ -2805,6 +2771,7 @@ void G_ReloadDefaults(void)
     comp[comp_maxhealth] = options->comp_maxhealth;
     comp[comp_translucency] = options->comp_translucency;
     comp[comp_ledgeblock] = options->comp_ledgeblock;
+    comp[comp_friendlyspawn] = options->comp_friendlyspawn;
   }
 
   G_Compatibility();
@@ -3591,6 +3558,8 @@ void G_BeginRecording (void)
 
   dsda_WriteToDemo(demostart, demo_p - demostart);
   dsda_ContinueKeyFrame();
+
+  R_DemoEx_ResetMLook();
 
   free(demostart);
 }
