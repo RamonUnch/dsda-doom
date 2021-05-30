@@ -331,9 +331,6 @@ default_t defaults[] =
   {"Game settings",{NULL},{0},UL,UL,def_none,ss_none},
   {"default_skill",{&defaultskill},{3},1,5, // jff 3/24/98 allow default skill setting
    def_int,ss_none}, // selects default skill 1=TYTD 2=NTR 3=HMP 4=UV 5=NM
-  /* killough 10/98 - toggle between SG/SSG and Fist/Chainsaw */
-  {"doom_weapon_toggles",{&doom_weapon_toggles}, {1}, 0, 1,
-   def_bool, ss_weap },
   {"player_bobbing",{&default_player_bobbing},{1},0,1,         // phares 2/25/98
    def_bool,ss_weap, &player_bobbing},
   {"weapon_attack_alignment",{&weapon_attack_alignment},{0},0,3,         // phares 2/25/98
@@ -365,6 +362,7 @@ default_t defaults[] =
   {"pitched_sounds",{&pitched_sounds},{0},0,1, // killough 2/21/98
    def_bool,ss_none}, // enables variable pitch in sound effects (from id's original code)
   {"samplerate",{&snd_samplerate},{44100},11025,48000, def_int,ss_none},
+  {"slice_samplecount",{&snd_samplecount},{512},32,8192, def_int,ss_none},
   {"sfx_volume",{&snd_SfxVolume},{8},0,15, def_int,ss_none},
   {"music_volume",{&snd_MusicVolume},{8},0,15, def_int,ss_none},
   {"mus_pause_opt",{&mus_pause_opt},{1},0,2, // CPhipps - music pausing
@@ -379,6 +377,7 @@ default_t defaults[] =
   {"snd_soundfont",{NULL, &snd_soundfont},{0,"/usr/share/sounds/sf3/default-GM.sf3"},UL,UL,def_str,ss_none}, // soundfont name for synths that support it
 #endif
   {"snd_mididev",{NULL, &snd_mididev},{0,""},UL,UL,def_str,ss_none}, // midi device to use for portmidiplayer
+  {"full_sounds",{&full_sounds},{0},0,1,def_bool,ss_none}, // disable sound cutoffs
 
 #ifdef _WIN32
   {"mus_extend_volume",{&mus_extend_volume},{0},0,1,
@@ -706,6 +705,12 @@ default_t defaults[] =
     dsda_input_idrate, { 0, -1, -1 } },
   { "input_iddt", { NULL }, { 0 }, UL, UL, def_input, ss_keys, NULL, NULL,
     dsda_input_iddt, { 0, -1, -1 } },
+  { "input_ponce", { NULL }, { 0 }, UL, UL, def_input, ss_keys, NULL, NULL,
+    dsda_input_ponce, { 0, -1, -1 } },
+  { "input_shazam", { NULL }, { 0 }, UL, UL, def_input, ss_keys, NULL, NULL,
+    dsda_input_shazam, { 0, -1, -1 } },
+  { "input_chicken", { NULL }, { 0 }, UL, UL, def_input, ss_keys, NULL, NULL,
+    dsda_input_chicken, { 0, -1, -1 } },
 
   { "input_lookup", { NULL }, { 0 }, UL, UL, def_input, ss_keys, NULL, NULL,
     dsda_input_lookup, { 0, -1, -1 } },
@@ -751,6 +756,12 @@ default_t defaults[] =
     dsda_input_cycle_palette, { 0, -1, -1 } },
   { "input_command_display", { NULL }, { 0 }, UL, UL, def_input, ss_keys, NULL, NULL,
     dsda_input_command_display, { 0, -1, -1 } },
+  { "input_strict_mode", { NULL }, { 0 }, UL, UL, def_input, ss_keys, NULL, NULL,
+    dsda_input_strict_mode, { 0, -1, -1 } },
+  { "input_console", { NULL }, { 0 }, UL, UL, def_input, ss_keys, NULL, NULL,
+    dsda_input_console, { 0, -1, -1 } },
+  { "input_coordinate_display", { NULL }, { 0 }, UL, UL, def_input, ss_keys, NULL, NULL,
+    dsda_input_coordinate_display, { 0, -1, -1 } },
 
   {"Mouse settings",{NULL},{0},UL,UL,def_none,ss_none},
   {"use_mouse",{&usemouse},{1},0,1,
@@ -968,13 +979,11 @@ default_t defaults[] =
    def_bool,ss_stat},
 
   {"Prboom-plus demos settings",{NULL},{0},UL,UL,def_none,ss_none},
-  {"demo_extendedformat", {&demo_extendedformat_default},  {1},0,1,
-   def_bool,ss_stat},
   {"demo_demoex_filename", {NULL,&demo_demoex_filename}, {0,""},UL,UL,
    def_str,ss_none},
   {"getwad_cmdline", {NULL, &getwad_cmdline}, {0,""},UL,UL,
    def_str,ss_none},
-  {"demo_overwriteexisting", {&demo_overwriteexisting},  {1},0,1,
+  {"demo_overwriteexisting", {&demo_overwriteexisting},  {0},0,1,
    def_bool,ss_stat},
   {"quickstart_window_ms", {&quickstart_window_ms},  {0},0,1000,
    def_int,ss_stat},
@@ -1014,13 +1023,17 @@ default_t defaults[] =
   { "dsda_auto_key_frame_depth", { &dsda_auto_key_frame_depth }, { 60 }, 0, 600, def_int, ss_stat },
   { "dsda_exhud", { &dsda_exhud }, { 0 }, 0, 1, def_bool, ss_stat },
   { "dsda_wipe_at_full_speed", { &dsda_wipe_at_full_speed }, { 1 }, 0, 1, def_bool, ss_stat },
-  { "dsda_track_attempts", { &dsda_track_attempts }, { 1 }, 0, 1, def_bool, ss_stat },
+  { "dsda_show_demo_attempts", { &dsda_show_demo_attempts }, { 1 }, 0, 1, def_bool, ss_stat },
   { "dsda_fine_sensitivity", { &dsda_fine_sensitivity }, { 0 }, 0, 99, def_int, ss_stat },
   { "dsda_hide_horns", { &dsda_hide_horns }, { 0 }, 0, 1, def_bool, ss_stat },
-  { "dsda_organized_saves", { &dsda_organized_saves }, { 0 }, 0, 1, def_bool, ss_stat },
+  { "dsda_organized_saves", { &dsda_organized_saves }, { 1 }, 0, 1, def_bool, ss_stat },
   { "dsda_command_display", { &dsda_command_display }, { 0 }, 0, 1, def_bool, ss_stat },
   { "dsda_command_history_size", { &dsda_command_history_size }, { 10 }, 1, 20, def_int, ss_stat },
   { "dsda_hide_empty_commands", { &dsda_hide_empty_commands }, { 1 }, 0, 1, def_bool, ss_stat },
+  { "dsda_coordinate_display", { &dsda_coordinate_display }, { 0 }, 0, 1, def_bool, ss_stat },
+  { "dsda_skip_quit_prompt", { &dsda_skip_quit_prompt }, { 0 }, 0, 1, def_bool, ss_stat },
+  { "dsda_show_split_data", { &dsda_show_split_data }, { 1 }, 0, 1, def_bool, ss_stat },
+  { "dsda_player_name", { 0, &dsda_player_name }, { 0, "Anonymous" }, UL, UL, def_str,ss_chat },
 
   // NSM
   {"Video capture encoding settings",{NULL},{0},UL,UL,def_none,ss_none},

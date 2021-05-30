@@ -92,6 +92,8 @@
 #include "dsda/settings.h"
 #include "dsda/input.h"
 #include "dsda/options.h"
+#include "dsda/tas.h"
+#include "dsda/split_tracker.h"
 #include "statdump.h"
 
 // ano - used for version 255+ demos, like EE or MBF
@@ -666,7 +668,7 @@ void G_BuildTiccmd(ticcmd_t* cmd)
 
   // Make Boom insert only a single weapon change command on autoswitch.
   if ((!demo_compatibility && players[consoleplayer].attackdown && // killough
-       !P_CheckAmmo(&players[consoleplayer]) && !done_autoswitch && boom_autoswitch) ||
+       !P_CheckAmmo(&players[consoleplayer]) && !(done_autoswitch && boom_autoswitch)) ||
        dsda_InputActive(dsda_input_toggleweapon))
   {
     newweapon = P_SwitchWeapon(&players[consoleplayer]);           // phares
@@ -884,16 +886,20 @@ void G_BuildTiccmd(ticcmd_t* cmd)
     special_event = 0;
   }
 
-  if (leveltime == 0 && totalleveltimes == 0 && !dsda_StrictMode()) {
-    int p = M_CheckParm("-first_input");
+  if (!dsda_StrictMode()) {
+    if (leveltime == 0 && totalleveltimes == 0) {
+      int p = M_CheckParm("-first_input");
 
-    if (p && (p + 3 < myargc)) {
-      cmd->forwardmove = (signed char) atoi(myargv[p + 1]);
-      cmd->sidemove = (signed char) atoi(myargv[p + 2]);
-      cmd->angleturn = (signed short) (atoi(myargv[p + 3]) << 8);
+      if (p && (p + 3 < myargc)) {
+        cmd->forwardmove = (signed char) atoi(myargv[p + 1]);
+        cmd->sidemove = (signed char) atoi(myargv[p + 2]);
+        cmd->angleturn = (signed short) (atoi(myargv[p + 3]) << 8);
 
-      dsda_JoinDemoCmd(cmd);
+        dsda_JoinDemoCmd(cmd);
+      }
     }
+    else
+      dsda_ApplyTasCommand(cmd);
   }
 }
 
@@ -993,7 +999,7 @@ static void G_DoLoadLevel (void)
 
   // initialize the msecnode_t freelist.                     phares 3/25/98
   // any nodes in the freelist are gone by now, cleared
-  // by Z_FreeTags() when the previous level ended or player
+  // by Z_FreeTag() when the previous level ended or player
   // died.
   P_FreeSecNodeList();
 
@@ -1001,7 +1007,6 @@ static void G_DoLoadLevel (void)
   if (!demoplayback) // Don't switch views if playing a demo
     displayplayer = consoleplayer;    // view the guy you are playing
   gameaction = ga_nothing;
-  Z_CheckHeap ();
 
   // clear cmd building stuff
   dsda_InputFlush();
@@ -1329,13 +1334,6 @@ void G_Ticker (void)
   if (gamestate != prevgamestate) {
     switch (prevgamestate) {
     case GS_LEVEL:
-      // This causes crashes at level end - Neil Stevens
-      // The crash is because the sounds aren't stopped before freeing them
-      // the following is a possible fix
-      // This fix does avoid the crash wowever, with this fix in, the exit
-      // switch sound is cut off
-      // S_Stop();
-      // Z_FreeTags(PU_LEVEL, PU_PURGELEVEL-1);
       break;
     case GS_INTERMISSION:
       WI_End();
@@ -2482,10 +2480,7 @@ static void G_DoSaveGame (dboolean menu)
   // killough 11/98: save revenant tracer state
   *save_p++ = (gametic-basetic) & 255;
 
-  // killough 3/22/98: add Z_CheckHeap after each call to ensure consistency
-  Z_CheckHeap();
   P_ArchivePlayers();
-  Z_CheckHeap();
 
   // phares 9/13/98: Move mobj_t->index out of P_ArchiveThinkers so the
   // indices can be used by P_ArchiveWorld when the sectors are saved.
@@ -2494,7 +2489,6 @@ static void G_DoSaveGame (dboolean menu)
   P_ThinkerToIndex();
 
   P_ArchiveWorld();
-  Z_CheckHeap();
   P_TrueArchiveThinkers();
 
   // phares 9/13/98: Move index->mobj_t out of P_ArchiveThinkers, simply
@@ -2502,14 +2496,11 @@ static void G_DoSaveGame (dboolean menu)
 
   P_IndexToThinker();
 
-  Z_CheckHeap();
   P_ArchiveRNG();    // killough 1/18/98: save RNG information
-  Z_CheckHeap();
   P_ArchiveMap();    // killough 1/22/98: save automap information
 
   *save_p++ = 0xe6;   // consistancy marker
 
-  Z_CheckHeap();
   doom_printf( "%s", M_WriteFile(name, savebuffer, save_p - savebuffer)
          ? s_GGSAVED /* Ty - externalised */
          : "Game save failed!"); // CPhipps - not externalised
@@ -2635,7 +2626,7 @@ void G_Compatibility(void)
   };
   unsigned int i;
 
-  if (sizeof(levels)/sizeof(*levels) != COMP_NUM)
+  if (sizeof(levels)/sizeof(*levels) != MBF_COMP_TOTAL)
     I_Error("G_Compatibility: consistency error");
 
   for (i = 0; i < sizeof(levels)/sizeof(*levels); i++)
@@ -2784,11 +2775,13 @@ void G_ReloadDefaults(void)
 
 void G_DoNewGame (void)
 {
+  extern int solo_net;
+
   // e6y: allow new level's music to be loaded
   idmusnum = -1;
 
   G_ReloadDefaults();            // killough 3/1/98
-  netgame = false;               // killough 3/29/98
+  netgame = solo_net;
   deathmatch = false;
   G_InitNew (d_skill, d_episode, d_map);
   gameaction = ga_nothing;
@@ -2820,23 +2813,26 @@ void G_SetFastParms(int fast_pending)
   }
 
   if (fast != fast_pending) {     /* only change if necessary */
+    for (i = 0; i < num_mobj_types; ++i)
+      if (mobjinfo[i].altspeed != NO_ALTSPEED)
+      {
+        int swap = mobjinfo[i].speed;
+        mobjinfo[i].speed = mobjinfo[i].altspeed;
+        mobjinfo[i].altspeed = swap;
+      }
+
     if ((fast = fast_pending))
-      {
-        for (i=S_SARG_RUN1; i<=S_SARG_PAIN2; i++)
-          if (states[i].tics != 1 || demo_compatibility) // killough 4/10/98
-            states[i].tics >>= 1;  // don't change 1->0 since it causes cycles
-        mobjinfo[MT_BRUISERSHOT].speed = 20*FRACUNIT;
-        mobjinfo[MT_HEADSHOT].speed = 20*FRACUNIT;
-        mobjinfo[MT_TROOPSHOT].speed = 20*FRACUNIT;
-      }
+    {
+      for (i = 0; i < num_states; i++)
+        if (states[i].flags & STATEF_SKILL5FAST && (states[i].tics != 1 || demo_compatibility))
+          states[i].tics >>= 1;  // don't change 1->0 since it causes cycles
+    }
     else
-      {
-        for (i=S_SARG_RUN1; i<=S_SARG_PAIN2; i++)
+    {
+      for (i = 0; i < num_states; i++)
+        if (states[i].flags & STATEF_SKILL5FAST)
           states[i].tics <<= 1;
-        mobjinfo[MT_BRUISERSHOT].speed = 15*FRACUNIT;
-        mobjinfo[MT_HEADSHOT].speed = 10*FRACUNIT;
-        mobjinfo[MT_TROOPSHOT].speed = 10*FRACUNIT;
-      }
+    }
   }
 }
 
@@ -2983,6 +2979,12 @@ void G_InitNew(skill_t skill, int episode, int map)
       if (map > 9 && gamemode != commercial)
         map = 9;
     }
+  }
+
+  {
+    extern int dsda_startmap;
+
+    dsda_startmap = map;
   }
 
   G_SetFastParms(fastparm || skill == sk_nightmare);  // killough 4/10/98
@@ -3558,6 +3560,7 @@ void G_BeginRecording (void)
 
   dsda_WriteToDemo(demostart, demo_p - demostart);
   dsda_ContinueKeyFrame();
+  dsda_ResetSplits();
 
   R_DemoEx_ResetMLook();
 
@@ -4168,13 +4171,13 @@ dboolean G_CheckDemoStatus (void)
       lprintf(LO_INFO, "Timed %u gametics in %u realtics = %-.1f frames per second\n",
                (unsigned) gametic,realtics,
                (unsigned) gametic * (double) TICRATE / realtics);
-      exit(0);
+      I_SafeExit(0);
     }
 
   if (demoplayback)
     {
       if (singledemo)
-        exit(0);  // killough
+        I_SafeExit(0);  // killough
 
       if (demolumpnum != -1) {
   // cph - unlock the demo lump

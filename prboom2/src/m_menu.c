@@ -72,6 +72,7 @@
 #include "dsda/input.h"
 #include "dsda/palette.h"
 #include "dsda/save.h"
+#include "dsda/console.h"
 #include "heretic/mn_menu.h"
 #ifdef _WIN32
 #include "e6y_launcher.h"
@@ -248,7 +249,6 @@ void M_DrawSetup(void);                                     // phares 3/21/98
 void M_DrawHelp (void);                                     // phares 5/04/98
 
 void M_DrawSaveLoadBorder(int x,int y);
-void M_SetupNextMenu(menu_t *menudef);
 void M_DrawThermo(int x,int y,int thermWidth,int thermDot);
 void M_DrawEmptyCell(menu_t *menu,int item);
 void M_DrawSelCell(menu_t *menu,int item);
@@ -544,26 +544,31 @@ short EpiMenuMap[8] = { 1, 1, 1, 1, -1, -1, -1, -1 }, EpiMenuEpi[8] = { 1,2,3,4,
 //
 int epiChoice;
 
-void M_AddEpisode(const char *map, char *def)
+void M_ClearEpisodes(void)
 {
-  EpiCustom = true;
-  if (*def == '-')  // means 'clear'
+  EpiDef.numitems = 0;
+}
+
+void M_AddEpisode(const char *map, const char *gfx, const char *txt, const char *alpha)
+{
+  if (!EpiCustom)
   {
-    EpiDef.numitems = 0;
+    EpiCustom = true;
+    NewDef.prevMenu = &EpiDef;
+
+    if (gamemode == commercial || gamemission == chex)
+      EpiDef.numitems = 0;
   }
-  else
+
   {
     int epi, mapnum;
-    const char *gfx = strtok(def, "\n");
-    const char *txt = strtok(NULL, "\n");
-    const char *alpha = strtok(NULL, "\n");
     if (EpiDef.numitems >= 8) return;
     G_ValidateMapName(map, &epi, &mapnum);
     EpiMenuEpi[EpiDef.numitems] = epi;
     EpiMenuMap[EpiDef.numitems] = mapnum;
     strncpy(EpisodeMenu[EpiDef.numitems].name, gfx, 8);
     EpisodeMenu[EpiDef.numitems].name[8] = 0;
-    EpisodeMenu[EpiDef.numitems].alttext = txt;
+    EpisodeMenu[EpiDef.numitems].alttext = txt ? strdup(txt) : NULL;
     EpisodeMenu[EpiDef.numitems].alphaKey = alpha ? *alpha : 0;
     EpiDef.numitems++;
   }
@@ -665,7 +670,7 @@ static void M_RestartLevelResponse(int ch)
     return;
 
   if (demorecording)
-    exit(0);
+    I_SafeExit(0);
 
   currentMenu->lastOn = itemOn;
   M_ClearMenus ();
@@ -1156,7 +1161,10 @@ void M_QuitDOOM(int choice)
   else         // killough 1/18/98: fix endgame message calculation:
     sprintf(endstring,"%s\n\n%s", endmsg[gametic%(NUM_QUITMESSAGES-1)+1], s_DOSY);
 
-  M_StartMessage(endstring,M_QuitResponse,true);
+  if (dsda_SkipQuitPrompt())
+    M_QuitResponse('y');
+  else
+    M_StartMessage(endstring,M_QuitResponse,true);
 }
 
 /////////////////////////////
@@ -2215,7 +2223,7 @@ static void M_DrawInstructions(void)
   // are changing an item or just sitting on it.
 
   if (setup_select) {
-    switch (flags & (S_INPUT | S_YESNO | S_WEAP | S_NUM | S_COLOR | S_CRITEM | S_CHAT | S_RESET | S_FILE | S_CHOICE)) {
+    switch (flags & (S_INPUT | S_YESNO | S_WEAP | S_NUM | S_COLOR | S_CRITEM | S_CHAT | S_RESET | S_FILE | S_CHOICE | S_NAME)) {
       case S_INPUT:
         M_DrawStringCentered(160, 20, g_menu_cr_select, "Press key or button for this action");
         break;
@@ -2243,6 +2251,9 @@ static void M_DrawInstructions(void)
       break;
     case S_CHOICE:
       M_DrawStringCentered(160, 20, g_menu_cr_select, "Press left or right to choose");
+      break;
+    case S_NAME:
+      M_DrawStringCentered(160, 20, g_menu_cr_select, "Type / edit author and Press ENTER");
       break;
     case S_RESET:
       break;
@@ -2536,6 +2547,9 @@ setup_menu_t keys_settings8[] =
   { "Show Position", S_INPUT, m_scrn, KB_X, KB_Y + 13 * 8, { 0 }, dsda_input_idmypos },
   { "Show FPS", S_INPUT, m_scrn, KB_X, KB_Y + 14 * 8, { 0 }, dsda_input_idrate },
   { "Reveal Map", S_INPUT, m_scrn, KB_X, KB_Y + 15 * 8, { 0 }, dsda_input_iddt },
+  { "Reset Health", S_INPUT, m_scrn, KB_X, KB_Y + 16 * 8, { 0 }, dsda_input_ponce },
+  { "Tome of Power", S_INPUT, m_scrn, KB_X, KB_Y + 17 * 8, { 0 }, dsda_input_shazam },
+  { "Chicken", S_INPUT, m_scrn, KB_X, KB_Y + 18 * 8, { 0 }, dsda_input_chicken },
 
   { "<- PREV", S_SKIP | S_PREV, m_null, KB_PREV, KB_Y + 20 * 8, { keys_settings7 } },
   { "NEXT ->", S_SKIP | S_NEXT, m_null, KB_NEXT, KB_Y + 20 * 8, { heretic_keys_settings1 } },
@@ -2566,7 +2580,7 @@ setup_menu_t heretic_keys_settings2[] = {
   { "USE TOME OF POWER", S_INPUT, m_scrn, KB_X, KB_Y + 2 * 8, { 0 }, dsda_input_arti_tome },
   { "USE QUARTZ FLASK", S_INPUT, m_scrn, KB_X, KB_Y + 3 * 8, { 0 }, dsda_input_arti_quartz },
   { "USE MYSTIC URN", S_INPUT, m_scrn, KB_X, KB_Y + 4 * 8, { 0 }, dsda_input_arti_urn },
-  { "USE TIMEBOMB OF THE ANCIENTS", S_INPUT, m_scrn, KB_X, KB_Y + 5 * 8, { 0 }, dsda_input_arti_bomb },
+  { "USE TIMEBOMB", S_INPUT, m_scrn, KB_X, KB_Y + 5 * 8, { 0 }, dsda_input_arti_bomb },
   { "USE RING OF INVINCIBILITY", S_INPUT, m_scrn, KB_X, KB_Y + 6 * 8, { 0 }, dsda_input_arti_ring },
   { "USE CHAOS DEVICE", S_INPUT, m_scrn, KB_X, KB_Y + 7 * 8, { 0 }, dsda_input_arti_chaosdevice },
   { "USE SHADOWSPHERE", S_INPUT, m_scrn, KB_X, KB_Y + 8 * 8, { 0 }, dsda_input_arti_shadowsphere },
@@ -2591,6 +2605,9 @@ setup_menu_t dsda_keys_settings[] = {
   { "Cycle Input Profile", S_INPUT, m_scrn, KB_X, KB_Y + 4 * 8, { 0 }, dsda_input_cycle_profile },
   { "Cycle Palette", S_INPUT, m_scrn, KB_X, KB_Y + 5 * 8, { 0 }, dsda_input_cycle_palette },
   { "Toggle Command Display", S_INPUT, m_scrn, KB_X, KB_Y + 6 * 8, { 0 }, dsda_input_command_display },
+  { "Toggle Strict Mode", S_INPUT, m_scrn, KB_X, KB_Y + 7 * 8, { 0 }, dsda_input_strict_mode },
+  { "Open Console", S_INPUT, m_scrn, KB_X, KB_Y + 8 * 8, { 0 }, dsda_input_console },
+  { "Toggle Coord. Display", S_INPUT, m_scrn, KB_X, KB_Y + 9 * 8, { 0 }, dsda_input_coordinate_display },
 
   { "<- PREV", S_SKIP | S_PREV, m_null, KB_PREV, KB_Y + 20 * 8, { heretic_keys_settings2 } },
   { 0, S_SKIP | S_END, m_null }
@@ -2671,9 +2688,6 @@ enum {           // killough 10/98: enum for y-offset info
   weap_pref7,
   weap_pref8,
   weap_pref9,
-  weap_stub2,
-  weap_toggle,
-  weap_toggle2,
 };
 
 setup_menu_t weap_settings1[];
@@ -2698,9 +2712,6 @@ setup_menu_t weap_settings1[] =  // Weapons Settings screen
   {"7th CHOICE WEAPON",S_WEAP,m_null,WP_X,WP_Y+weap_pref7*8, {"weapon_choice_7"}},
   {"8th CHOICE WEAPON",S_WEAP,m_null,WP_X,WP_Y+weap_pref8*8, {"weapon_choice_8"}},
   {"9th CHOICE WEAPON",S_WEAP,m_null,WP_X,WP_Y+weap_pref9*8, {"weapon_choice_9"}},
-
-  {"Enable Fist/Chainsaw\n& SG/SSG toggle", S_YESNO, m_null, WP_X,
-   WP_Y+ weap_toggle*8, {"doom_weapon_toggles"}},
 
   // Button for resetting to defaults
   {0,S_RESET,m_null,X_BUTTON,Y_BUTTON},
@@ -3096,7 +3107,7 @@ setup_menu_t* gen_settings[] =
 #define G_X2 284
 
 static const char *videomodes[] = {
-  "8bit","15bit","16bit", "32bit",
+  "8bit", "32bit",
 #ifdef GL_DOOM
   "OpenGL",
 #endif
@@ -3115,16 +3126,16 @@ setup_menu_t gen_settings1[] = { // General Settings screen1
   {"Software Exclusive Fullscreen",  S_YESNO,            m_null, G_X, G_Y+ 6*8, {"exclusive_fullscreen"}, 0, M_ChangeVideoMode},
   {"Status Bar and Menu Appearance", S_CHOICE,           m_null, G_X, G_Y+ 7*8, {"render_stretch_hud"}, 0, M_ChangeStretch, render_stretch_list},
   {"Vertical Sync",                  S_YESNO,            m_null, G_X, G_Y+ 8*8, {"render_vsync"}, 0, M_ChangeVideoMode},
+  {"Enable Translucency",            S_YESNO,            m_null, G_X, G_Y+ 9*8, {"translucency"}, 0, M_Trans},
+  {"Translucency filter percentage", S_NUM,              m_null, G_X, G_Y+10*8, {"tran_filter_pct"}, 0, M_Trans},
+  {"Uncapped Framerate",             S_YESNO,            m_null, G_X, G_Y+11*8, {"uncapped_framerate"}, 0, M_ChangeUncappedFrameRate},
 
-  {"Enable Translucency",            S_YESNO,            m_null, G_X, G_Y+10*8, {"translucency"}, 0, M_Trans},
-  {"Translucency filter percentage", S_NUM,              m_null, G_X, G_Y+11*8, {"tran_filter_pct"}, 0, M_Trans},
-  {"Uncapped Framerate",             S_YESNO,            m_null, G_X, G_Y+12*8, {"uncapped_framerate"}, 0, M_ChangeUncappedFrameRate},
-
-  {"Sound & Music",                  S_SKIP|S_TITLE,     m_null, G_X, G_Y+14*8},
-  {"Number of Sound Channels",       S_NUM|S_PRGWARN,    m_null, G_X, G_Y+15*8, {"snd_channels"}},
-  {"Enable v1.1 Pitch Effects",      S_YESNO,            m_null, G_X, G_Y+16*8, {"pitched_sounds"}},
-  {"PC Speaker emulation",           S_YESNO|S_PRGWARN,  m_null, G_X, G_Y+17*8, {"snd_pcspeaker"}},
-  {"Preferred MIDI player",          S_CHOICE|S_PRGWARN, m_null, G_X, G_Y+18*8, {"snd_midiplayer"}, 0, M_ChangeMIDIPlayer, midiplayers},
+  {"Sound & Music",                  S_SKIP|S_TITLE,     m_null, G_X, G_Y+13*8},
+  {"Number of Sound Channels",       S_NUM|S_PRGWARN,    m_null, G_X, G_Y+14*8, {"snd_channels"}},
+  {"Enable v1.1 Pitch Effects",      S_YESNO,            m_null, G_X, G_Y+15*8, {"pitched_sounds"}},
+  {"PC Speaker emulation",           S_YESNO|S_PRGWARN,  m_null, G_X, G_Y+16*8, {"snd_pcspeaker"}},
+  {"Preferred MIDI player",          S_CHOICE|S_PRGWARN, m_null, G_X, G_Y+17*8, {"snd_midiplayer"}, 0, M_ChangeMIDIPlayer, midiplayers},
+  {"Disable Sound Cutoffs",          S_YESNO,            m_null, G_X, G_Y+18*8, {"full_sounds"}},
 
   // Button for resetting to defaults
   {0,S_RESET,m_null,X_BUTTON,Y_BUTTON},
@@ -3193,15 +3204,14 @@ setup_menu_t gen_settings2[] = { // General Settings screen2
 
 setup_menu_t gen_settings3[] = { // General Settings screen2
   {"Demos",                       S_SKIP|S_TITLE, m_null, G_X, G_Y+ 1*8},
-  {"Use Extended Format",         S_YESNO|S_PRGWARN, m_null,G_X,G_Y+ 2*8, {"demo_extendedformat"}, 0, M_ChangeDemoExtendedFormat},
-  {"Overwrite Existing",          S_YESNO, m_null, G_X, G_Y+ 3*8, {"demo_overwriteexisting"}},
-  {"Smooth Demo Playback",        S_YESNO, m_null, G_X, G_Y+ 4*8, {"demo_smoothturns"}, 0, M_ChangeDemoSmoothTurns},
-  {"Smooth Demo Playback Factor", S_NUM,   m_null, G_X, G_Y+ 5*8, {"demo_smoothturnsfactor"}, 0, M_ChangeDemoSmoothTurns},
-  {"Quickstart Window (ms)",      S_NUM,   m_null, G_X, G_Y+6*8, {"quickstart_window_ms"}},
+  {"Overwrite Existing",          S_YESNO, m_null, G_X, G_Y+ 2*8, {"demo_overwriteexisting"}},
+  {"Smooth Demo Playback",        S_YESNO, m_null, G_X, G_Y+ 3*8, {"demo_smoothturns"}, 0, M_ChangeDemoSmoothTurns},
+  {"Smooth Demo Playback Factor", S_NUM,   m_null, G_X, G_Y+ 4*8, {"demo_smoothturnsfactor"}, 0, M_ChangeDemoSmoothTurns},
+  {"Quickstart Window (ms)",      S_NUM,   m_null, G_X, G_Y+ 5*8, {"quickstart_window_ms"}},
 
-  {"Movements",                   S_SKIP|S_TITLE,m_null,G_X, G_Y+8*8},
-  {"Permanent Strafe50 (TAS)",    S_YESNO, m_null, G_X, G_Y+ 9*8, {"movement_strafe50"}, 0, M_ChangeSpeed},
-  {"Strafe50 On Turns (TAS)",     S_YESNO, m_null, G_X, G_Y+ 10*8, {"movement_strafe50onturns"}, 0, M_ChangeSpeed},
+  {"Movements",                   S_SKIP|S_TITLE,m_null,G_X, G_Y+7*8},
+  {"Permanent Strafe50 (TAS)",    S_YESNO, m_null, G_X, G_Y+ 8*8, {"movement_strafe50"}, 0, M_ChangeSpeed},
+  {"Strafe50 On Turns (TAS)",     S_YESNO, m_null, G_X, G_Y+ 9*8, {"movement_strafe50onturns"}, 0, M_ChangeSpeed},
 
   {"Mouse",                       S_SKIP|S_TITLE,m_null, G_X, G_Y+11*8},
   {"Dbl-Click As Use",            S_YESNO, m_null, G_X, G_Y+12*8, {"mouse_doubleclick_as_use"}},
@@ -3354,13 +3364,17 @@ setup_menu_t dsda_gen_settings[] = {
   { "Automatic Key Frame Depth", S_NUM | S_PRGWARN, m_null, G_X, G_Y + 5 * 8, { "dsda_auto_key_frame_depth" } },
   { "Use Extended Hud", S_YESNO, m_null, G_X, G_Y + 6 * 8, { "dsda_exhud" } },
   { "Wipe At Full Speed", S_YESNO, m_null, G_X, G_Y + 7 * 8, { "dsda_wipe_at_full_speed" } },
-  { "Track Demo Attempts", S_YESNO, m_null, G_X, G_Y + 8 * 8, { "dsda_track_attempts" } },
+  { "Show Demo Attempts", S_YESNO, m_null, G_X, G_Y + 8 * 8, { "dsda_show_demo_attempts" } },
   { "Fine Sensitivity", S_NUM, m_null, G_X, G_Y + 9 * 8, { "dsda_fine_sensitivity" } },
   { "Hide Status Bar Horns", S_YESNO, m_null, G_X, G_Y + 10 * 8, { "dsda_hide_horns" } },
   { "Organize My Save Files", S_YESNO, m_null, G_X, G_Y + 11 * 8, { "dsda_organized_saves" } },
   { "Show Command Display (TAS)", S_YESNO, m_null, G_X, G_Y + 12 * 8, { "dsda_command_display" } },
   { "Command History", S_NUM, m_null, G_X, G_Y + 13 * 8, { "dsda_command_history_size" } },
   { "Hide Empty Commands", S_YESNO, m_null, G_X, G_Y + 14 * 8, { "dsda_hide_empty_commands" } },
+  { "Show Coordinate Display (TAS)", S_YESNO, m_null, G_X, G_Y + 15 * 8, { "dsda_coordinate_display" } },
+  { "Skip Quit Prompt", S_YESNO, m_null, G_X, G_Y + 16 * 8, { "dsda_skip_quit_prompt" } },
+  { "Show Split Data", S_YESNO, m_null, G_X, G_Y + 17 * 8, { "dsda_show_split_data" } },
+  { "Text File Author", S_NAME, m_null, G_X, G_Y + 18 * 8, { "dsda_player_name" } },
 
 #ifdef GL_DOOM
   { "<- PREV", S_SKIP | S_PREV, m_null, KB_PREV, KB_Y + 20 * 8, { gen_settings8 } },
@@ -3487,37 +3501,14 @@ setup_menu_t mess_settings1[] =  // Messages screen
   {"Message Color During Play", S_CRITEM, m_null, M_X,
    M_Y + mess_color_play*8, {"hudcolor_mesg"}},
 
-#if 0
-  {"Message Duration During Play (ms)", S_NUM, m_null, M_X,
-   M_Y  + mess_timer*8, {"message_timer"}},
-#endif
-
   {"Chat Message Color", S_CRITEM, m_null, M_X,
    M_Y + mess_color_chat*8, {"hudcolor_chat"}},
-
-#if 0
-  {"Chat Message Duration (ms)", S_NUM, m_null, M_X,
-   M_Y  + mess_chat_timer*8, {"chat_msg_timer"}},
-#endif
 
   {"Message Review Color", S_CRITEM, m_null, M_X,
    M_Y + mess_color_review*8, {"hudcolor_list"}},
 
-#if 0
-  {"Message Listing Review is Temporary",  S_YESNO,  m_null,  M_X,
-   M_Y + mess_timed*8, {"hud_msg_timed"}},
-
-  {"Message Review Duration (ms)", S_NUM, m_null, M_X,
-   M_Y  + mess_hud_timer*8, {"hud_msg_timer"}},
-#endif
-
   {"Number of Review Message Lines", S_NUM, m_null,  M_X,
    M_Y + mess_lines*8, {"hud_msg_lines"}},
-
-#if 0
-  {"Message Listing Scrolls Upwards",  S_YESNO,  m_null,  M_X,
-   M_Y + mess_scrollup*8, {"hud_msg_scrollup"}},
-#endif
 
   {"Message Background",  S_YESNO,  m_null,  M_X,
    M_Y + mess_background*8, {"hud_list_bgon"}},
@@ -4288,16 +4279,6 @@ static inline int GetButtons(const unsigned int max, int data)
 // action based on the state of the system.
 //
 
-#define MENU_NULL      -1
-#define MENU_LEFT      -2
-#define MENU_RIGHT     -3
-#define MENU_UP        -4
-#define MENU_DOWN      -5
-#define MENU_BACKSPACE -6
-#define MENU_ENTER     -7
-#define MENU_ESCAPE    -8
-#define MENU_CLEAR     -9
-
 dboolean M_Responder (event_t* ev) {
   int    ch, action;
   int    i;
@@ -4435,6 +4416,17 @@ dboolean M_Responder (event_t* ev) {
     action = MENU_CLEAR;
   }
 
+  if (
+    menuactive &&
+    currentMenu == &dsda_ConsoleDef &&
+    (ch != MENU_NULL || action != MENU_NULL) &&
+    action != MENU_ESCAPE
+  )
+  {
+    dsda_UpdateConsole(ch, action);
+    return true;
+  }
+
   // Save Game string input
 
   if (saveStringEnter && (ch != MENU_NULL || action != MENU_NULL)) {
@@ -4471,7 +4463,11 @@ dboolean M_Responder (event_t* ev) {
     return true;
   }
 
-  if ((currentMenu == &LoadDef || currentMenu == &SaveDef) && !saveStringEnter)
+  if (
+    menuactive &&
+    (currentMenu == &LoadDef || currentMenu == &SaveDef) &&
+    !saveStringEnter
+  )
   {
     int diff = 0;
 
@@ -4592,8 +4588,16 @@ dboolean M_Responder (event_t* ev) {
 
     if (dsda_InputActivated(dsda_input_quit))
     {
-      S_StartSound(NULL,g_sfx_swtchn);
+      if (!dsda_SkipQuitPrompt())
+        S_StartSound(NULL,g_sfx_swtchn);
       M_QuitDOOM(0);
+      return true;
+    }
+
+    if (dsda_InputActivated(dsda_input_console) && !dsda_StrictMode())
+    {
+      if (dsda_OpenConsole())
+        S_StartSound(NULL,g_sfx_swtchn);
       return true;
     }
 
@@ -4652,6 +4656,7 @@ dboolean M_Responder (event_t* ev) {
     if (dsda_InputActivated(dsda_input_speed_default) && (!netgame||demoplayback) && !dsda_StrictMode())
     {
       realtic_clock_rate = StepwiseSum(realtic_clock_rate, 0, speed_step, 3, 10000, 100);
+      doom_printf("Game Speed %d", realtic_clock_rate);
       I_Init2();
       // Don't eat the keypress in this case.
       // return true;
@@ -4659,6 +4664,7 @@ dboolean M_Responder (event_t* ev) {
     if (dsda_InputActivated(dsda_input_speed_up) && (!netgame||demoplayback) && !dsda_StrictMode())
     {
       realtic_clock_rate = StepwiseSum(realtic_clock_rate, 1, speed_step, 3, 10000, 100);
+      doom_printf("Game Speed %d", realtic_clock_rate);
       I_Init2();
       // Don't eat the keypress in this case.
       // return true;
@@ -4666,6 +4672,7 @@ dboolean M_Responder (event_t* ev) {
     if (dsda_InputActivated(dsda_input_speed_down) && (!netgame||demoplayback) && !dsda_StrictMode())
     {
       realtic_clock_rate = StepwiseSum(realtic_clock_rate, -1, speed_step, 3, 10000, 100);
+      doom_printf("Game Speed %d", realtic_clock_rate);
       I_Init2();
       // Don't eat the keypress in this case.
       // return true;
@@ -4787,10 +4794,23 @@ dboolean M_Responder (event_t* ev) {
       doom_printf("Command Display %s", dsda_command_display ? "on" : "off");
     }
 
+    if (dsda_InputActivated(dsda_input_coordinate_display) && !dsda_StrictMode())
+    {
+      dsda_coordinate_display = !dsda_coordinate_display;
+      doom_printf("Coordinate Display %s", dsda_coordinate_display ? "on" : "off");
+    }
+
+    if (dsda_InputActivated(dsda_input_strict_mode))
+    {
+      dsda_strict_mode = !dsda_strict_mode;
+      doom_printf("Strict Mode %s", dsda_strict_mode ? "on" : "off");
+    }
+
     if (dsda_InputActivated(dsda_input_mlook)) // mouse look
     {
       movement_mouselook = !movement_mouselook;
       M_ChangeMouseLook();
+      doom_printf("Mouselook %s", movement_mouselook ? "on" : "off");
       // Don't eat the keypress in this case.
       // return true;
     }
@@ -4798,6 +4818,7 @@ dboolean M_Responder (event_t* ev) {
     if (dsda_InputActivated(dsda_input_novert))
     {
       movement_mousenovert = !movement_mousenovert;
+      doom_printf("Vertical Mouse Movement %s", movement_mousenovert ? "off" : "on");
       // Don't eat the keypress in this case.
       // return true;
     }
@@ -5684,7 +5705,7 @@ void M_StartControlPanel (void)
     EpiDef.numitems = ep_end;
     if (gamemode != commercial
       && (compatibility_level < ultdoom_compatibility
-        || W_SafeGetNumForName(EpiDef.menuitems[ep4].name) == -1))
+        || W_CheckNumForName(EpiDef.menuitems[ep4].name) == -1))
     {
       EpiDef.numitems--;
     }
@@ -5778,10 +5799,10 @@ void M_Drawer (void)
       }
 
     // DRAW SKULL
-
-    // CPhipps - patch drawing updated
-    V_DrawNamePatch(x + SKULLXOFF, currentMenu->y - 5 + itemOn*LINEHEIGHT,0,
-        skullName[whichSkull], CR_DEFAULT, VPT_STRETCH);
+    if (max > 0)
+      // CPhipps - patch drawing updated
+      V_DrawNamePatch(x + SKULLXOFF, currentMenu->y - 5 + itemOn*LINEHEIGHT,0,
+          skullName[whichSkull], CR_DEFAULT, VPT_STRETCH);
   }
 }
 
@@ -6086,7 +6107,8 @@ void M_Init(void)
       MainMenu[readthis] = MainMenu[quitdoom];
       MainDef.numitems--;
       MainDef.y += 8;
-      NewDef.prevMenu = &MainDef;
+      if (!EpiCustom)
+        NewDef.prevMenu = &MainDef;
       ReadDef1.routine = M_DrawReadThis1;
       ReadDef1.x = 330;
       ReadDef1.y = 165;
@@ -6126,7 +6148,6 @@ void M_Init(void)
 #endif
 
   M_ChangeDemoSmoothTurns();
-  M_ChangeDemoExtendedFormat();
 
   M_ChangeMapMultisamling();
 

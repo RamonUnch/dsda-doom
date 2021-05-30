@@ -1138,7 +1138,7 @@ static void P_LoadZSegs (const byte *data)
 // https://zdoom.org/wiki/Node#ZDoom_extended_nodes
 static void P_LoadZNodes(int lump, int glnodes, int compressed)
 {
-  byte *data;
+  const byte *data;
   unsigned int i;
   int len;
 
@@ -1168,7 +1168,12 @@ static void P_LoadZNodes(int lump, int glnodes, int compressed)
 	// initialize stream state for decompression
 	zstream = malloc(sizeof(*zstream));
 	memset(zstream, 0, sizeof(*zstream));
+
+  // Evidently next_in is the wrong type for legacy reasons
+  #pragma GCC diagnostic push
+  #pragma GCC diagnostic ignored "-Wdiscarded-qualifiers"
 	zstream->next_in = data + 4;
+  #pragma GCC diagnostic pop
 	zstream->avail_in = len - 4;
 	zstream->next_out = output;
 	zstream->avail_out = outlen;
@@ -2618,6 +2623,7 @@ void P_SetupLevel(int episode, int map, int playermask, skill_t skill)
 
   dsda_WatchBeforeLevelSetup();
 
+  ClearThingsHealthTracers();
   R_StopAllInterpolations();
 
   totallive = totalkills = totalitems = totalsecret = wminfo.maxfrags = 0;
@@ -2632,10 +2638,10 @@ void P_SetupLevel(int episode, int map, int playermask, skill_t skill)
   // Initial height of PointOfView will be set by player think.
   players[consoleplayer].viewz = 1;
 
-  // Make sure all sounds are stopped before Z_FreeTags.
+  // Make sure all sounds are stopped before Z_FreeTag.
   S_Start();
 
-  Z_FreeTags(PU_LEVEL, PU_PURGELEVEL-1);
+  Z_FreeTag(PU_LEVEL);
   if (rejectlump != -1) { // cph - unlock the reject table
     W_UnlockLumpNum(rejectlump);
     rejectlump = -1;

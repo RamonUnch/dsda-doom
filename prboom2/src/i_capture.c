@@ -36,6 +36,7 @@
 #include "i_sound.h"
 #include "i_video.h"
 #include "lprintf.h"
+#include "i_system.h"
 #include "i_capture.h"
 
 
@@ -239,12 +240,11 @@ static int my_popen3 (pipeinfo_t *p)
   puser->thread = piProcInfo.hThread;
 
 
-                                // what the hell is this cast for
-  if (NULL == (fin = _fdopen (_open_osfhandle ((int) parent_hin, 0), "wb")))
+  if (NULL == (fin = _fdopen (_open_osfhandle ((intptr_t) parent_hin, 0), "wb")))
     goto fail;
-  if (NULL == (fout = _fdopen (_open_osfhandle ((int) parent_hout, 0), "r")))
+  if (NULL == (fout = _fdopen (_open_osfhandle ((intptr_t) parent_hout, 0), "r")))
     goto fail;
-  if (NULL == (ferr = _fdopen (_open_osfhandle ((int) parent_herr, 0), "r")))
+  if (NULL == (ferr = _fdopen (_open_osfhandle ((intptr_t) parent_herr, 0), "r")))
     goto fail;
   // after fdopen(osf()), we don't need to keep track of parent handles anymore
   // fclose on the FILE struct will automatically free them
@@ -547,7 +547,7 @@ void I_CapturePrep (const char *fn)
   videopipe.outthread = SDL_CreateThread (threadstdoutproc, "videopipe.outthread", &videopipe);
   videopipe.errthread = SDL_CreateThread (threadstderrproc, "videopipe.errthread", &videopipe);
 
-  atexit (I_CaptureFinish);
+  I_AtExit (I_CaptureFinish, true);
 }
 
 

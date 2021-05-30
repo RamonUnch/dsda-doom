@@ -2789,7 +2789,23 @@ void P_SpawnSpecials (void)
 
   // e6y
   if (demo_compatibility)
+  {
+    // allow MBF sky transfers in all complevels
+    if (!heretic)
+      for (i = 0; i < numlines; ++i)
+        switch (lines[i].special)
+        {
+          int s;
+
+          case 271:   // Regular sky
+          case 272:   // Same, only flipped
+            for (s = -1; (s = P_FindSectorFromLineTag(lines + i, s)) >= 0;)
+              sectors[s].sky = i | PL_SKYFLAT;
+          break;
+        }
+
     return;
+  }
 
   P_SpawnFriction();  // phares 3/12/98: New friction model using linedefs
 
@@ -2968,7 +2984,7 @@ void T_Scroll(scroll_t *s)
 static void Add_Scroller(int type, fixed_t dx, fixed_t dy,
                          int control, int affectee, int accel)
 {
-  scroll_t *s = Z_Malloc(sizeof *s, PU_LEVSPEC, 0);
+  scroll_t *s = Z_Malloc(sizeof *s, PU_LEVEL, 0);
   s->thinker.function = T_Scroll;
   s->type = type;
   s->dx = dx;
@@ -3143,7 +3159,7 @@ static void P_SpawnScrollers(void)
 
 static void Add_Friction(int friction, int movefactor, int affectee)
 {
-    friction_t *f = Z_Malloc(sizeof *f, PU_LEVSPEC, 0);
+    friction_t *f = Z_Malloc(sizeof *f, PU_LEVEL, 0);
 
     f->thinker.function/*.acp1*/ = /*(actionf_p1) */T_Friction;
     f->friction = friction;
@@ -3375,7 +3391,7 @@ static void P_SpawnFriction(void)
 
 static void Add_Pusher(int type, int x_mag, int y_mag, mobj_t* source, int affectee)
 {
-    pusher_t *p = Z_Malloc(sizeof *p, PU_LEVSPEC, 0);
+    pusher_t *p = Z_Malloc(sizeof *p, PU_LEVEL, 0);
 
     p->thinker.function = T_Pusher;
     p->source = source;

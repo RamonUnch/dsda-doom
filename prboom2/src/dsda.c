@@ -33,6 +33,7 @@
 #include "dsda/command_display.h"
 #include "dsda/key_frame.h"
 #include "dsda/settings.h"
+#include "dsda/split_tracker.h"
 #include "dsda.h"
 
 #define TELEFRAG_DAMAGE 10000
@@ -75,16 +76,17 @@ int dsda_analysis;
 int dsda_track_pacifist;
 int dsda_track_100k;
 
+int dsda_last_leveltime;
+int dsda_last_gamemap;
+
 // other
-char* dsda_demo_name_base;
+static char* dsda_demo_name_base;
 int dsda_max_kill_requirement;
 int dsda_session_attempts = 1;
-int dsda_total_attempts = 1;
 
 dboolean dsda_IsWeapon(mobj_t* thing);
 void dsda_DisplayNotification(const char* msg);
 void dsda_ResetMapVariables(void);
-const char* dsda_DetectCategory(void);
 
 void dsda_ReadCommandLine(void) {
   int p;
@@ -111,13 +113,14 @@ void dsda_ReadCommandLine(void) {
   if (M_CheckParm("-tas")) dsda_SetTas();
 
   dsda_InitKeyFrame();
+  dsda_InitCommandHistory();
 }
 
 static int dsda_shown_attempt = 0;
 
 void dsda_DisplayNotifications(void) {
-  if (dsda_TrackAttempts() && dsda_session_attempts > dsda_shown_attempt) {
-    doom_printf("Attempt %d / %d", dsda_session_attempts, dsda_total_attempts);
+  if (dsda_ShowDemoAttempts() && dsda_session_attempts > dsda_shown_attempt) {
+    doom_printf("Attempt %d / %d", dsda_session_attempts, dsda_DemoAttempts());
 
     dsda_shown_attempt = dsda_session_attempts;
   }
@@ -329,6 +332,11 @@ void dsda_WatchLevelCompletion(void) {
   if (secret_count < totalsecret) dsda_100s = false;
   if (totalkills > 0) dsda_any_counted_monsters = true;
   if (totalsecret > 0) dsda_any_secrets = true;
+
+  dsda_last_leveltime = leveltime;
+  dsda_last_gamemap = gamemap;
+
+  dsda_RecordSplit();
 }
 
 dboolean dsda_IsWeapon(mobj_t* thing) {
@@ -356,6 +364,10 @@ void dsda_WatchSecret(void) {
   if (dsda_time_secrets) dsda_AddSplit(DSDA_SPLIT_SECRET);
 }
 
+char* dsda_DemoNameBase(void) {
+  return dsda_demo_name_base;
+}
+
 // from crispy - incrementing demo file names
 char* dsda_NewDemoName(void) {
   char* demo_name;
@@ -371,8 +383,6 @@ char* dsda_NewDemoName(void) {
     snprintf(demo_name, demo_name_size, "%s-%05d.lmp", dsda_demo_name_base, j);
     fclose (fp);
   }
-
-  dsda_total_attempts = j - 1;
 
   return demo_name;
 }

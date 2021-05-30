@@ -83,6 +83,7 @@ int maketic;
 int ticdup = 1;
 static int xtratics = 0;
 int              wanted_player_number;
+int solo_net = 0;
 
 static void D_QuitNetGame (void);
 
@@ -104,7 +105,8 @@ void D_InitNetGame (void)
     // e6y
     // for play, recording or playback using "single-player coop" mode.
     // Equivalent to using prboom_server with -N 1
-    netgame = M_CheckParm("-solo-net");
+    solo_net = (M_CheckParm("-solo-net") != 0);
+    netgame = solo_net;
   } else {
     // Get game info from server
     packet_header_t *packet = Z_Malloc(1000, PU_STATIC, NULL);
@@ -128,7 +130,7 @@ void D_InitNetGame (void)
     } while (packet->type != PKT_SETUP);
 
     // Once we have been accepted by the server, we should tell it when we leave
-    atexit(D_QuitNetGame);
+    I_AtExit(D_QuitNetGame, true);
 
     // Get info from the setup packet
     consoleplayer = sinfo->yourplayer;
@@ -171,7 +173,8 @@ void D_InitNetGame (void)
   doomcom->consoleplayer = 0;
   doomcom->numnodes = 0; doomcom->numplayers = 1;
   localcmds = netcmds[consoleplayer];
-  netgame = (M_CheckParm("-solo-net") != 0);
+  solo_net = (M_CheckParm("-solo-net") != 0);
+  netgame = solo_net;
 
   for (i=0; i<doomcom->numplayers; i++)
     playeringame[i] = true;
@@ -203,65 +206,7 @@ void D_CheckNetGame(void)
 
 dboolean D_NetGetWad(const char* name)
 {
-#if defined(HAVE_WAIT_H)
-  size_t psize = sizeof(packet_header_t) + strlen(name) + 500;
-  packet_header_t *packet;
-  dboolean done = false;
-
-  if (!server || strchr(name, '/')) return false; // If it contains path info, reject
-
-  do {
-    // Send WAD request to remote
-    packet = Z_Malloc(psize, PU_STATIC, NULL);
-    packet_set(packet, PKT_WAD, 0);
-    *(byte*)(packet+1) = consoleplayer;
-    strcpy(1+(byte*)(packet+1), name);
-    I_SendPacket(packet, sizeof(packet_header_t) + strlen(name) + 2);
-
-    I_uSleep(10000);
-  } while (!I_GetPacket(packet, psize) || (packet->type != PKT_WAD));
-  Z_Free(packet);
-
-  if (!strcasecmp((void*)(packet+1), name)) {
-    pid_t pid;
-    int   rv;
-    byte *p = (byte*)(packet+1) + strlen(name) + 1;
-
-    /* Automatic wad file retrieval using wget (supports http and ftp, using URLs)
-     * Unix systems have all these commands handy, this kind of thing is easy
-     * Any windo$e port will have some awkward work replacing these.
-     */
-    /* cph - caution here. This is data from an untrusted source.
-     * Don't pass it via a shell. */
-    if ((pid = fork()) == -1)
-      perror("fork");
-    else if (!pid) {
-      /* Child chains to wget, does the download */
-      execlp("wget", "wget", p, NULL);
-    }
-    /* This is the parent, i.e. main LxDoom process */
-    wait(&rv);
-    if (!(done = !access(name, R_OK))) {
-      if (!strcmp(p+strlen(p)-4, ".zip")) {
-  p = strrchr(p, '/')+1;
-  if ((pid = fork()) == -1)
-    perror("fork");
-  else if (!pid) {
-    /* Child executes decompressor */
-    execlp("unzip", "unzip", p, name, NULL);
-  }
-  /* Parent waits for the file */
-  wait(&rv);
-  done = !!access(name, R_OK);
-      }
-      /* Add more decompression protocols here as desired */
-    }
-    Z_Free(buffer);
-  }
-  return done;
-#else /* HAVE_WAIT_H */
   return false;
-#endif
 }
 
 void NetUpdate(void)

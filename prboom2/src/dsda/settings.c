@@ -19,6 +19,8 @@
 #include "m_argv.h"
 #include "e6y.h"
 #include "r_things.h"
+#include "w_wad.h"
+#include "lprintf.h"
 
 #include "settings.h"
 
@@ -30,12 +32,56 @@ int dsda_exhud;
 int dsda_tas;
 int dsda_skip_next_wipe;
 int dsda_wipe_at_full_speed;
-int dsda_track_attempts;
+int dsda_show_demo_attempts;
 int dsda_fine_sensitivity;
 int dsda_hide_horns;
+int dsda_skip_quit_prompt;
+int dsda_show_split_data;
 
 void dsda_InitSettings(void) {
   dsda_ChangeStrictMode();
+}
+
+static int dsda_WadCompatibilityLevel(void) {
+  static int complvl = -1;
+  static int last_numwadfiles = -1;
+
+  // This might be called before all wads are loaded
+  if (numwadfiles != last_numwadfiles) {
+    int num;
+
+    last_numwadfiles = numwadfiles;
+    num = W_CheckNumForName("COMPLVL");
+
+    if (num >= 0) {
+      int length;
+      const char* data;
+
+      length = W_LumpLength(num);
+      data = W_CacheLumpNum(num);
+
+      if (length == 7 && !strncasecmp("vanilla", data, 7)) {
+        if (gamemode == commercial) {
+          if (gamemission == pack_plut || gamemission == pack_tnt)
+            complvl = 4;
+          else
+            complvl = 2;
+        }
+        else
+          complvl = 3;
+      }
+      else if (length == 4 && !strncasecmp("boom", data, 4))
+        complvl = 9;
+      else if (length == 3 && !strncasecmp("mbf", data, 3))
+        complvl = 11;
+      else if (length == 5 && !strncasecmp("mbf21", data, 5))
+        complvl = 21;
+
+      lprintf(LO_INFO, "Detected COMPLVL lump: %i\n", complvl);
+    }
+  }
+
+  return complvl;
 }
 
 int dsda_CompatibilityLevel(void) {
@@ -49,6 +95,13 @@ int dsda_CompatibilityLevel(void) {
     level = atoi(myargv[i + 1]);
 
     if (level >= -1) return level;
+  }
+
+  if (!demoplayback) {
+    level = dsda_WadCompatibilityLevel();
+
+    if (level >= 0)
+      return level;
   }
 
   return UNSPECIFIED_COMPLEVEL;
@@ -83,6 +136,18 @@ dboolean dsda_HideHorns(void) {
   return dsda_hide_horns;
 }
 
+dboolean dsda_SkipQuitPrompt(void) {
+  return dsda_skip_quit_prompt;
+}
+
+dboolean dsda_TrackSplits(void) {
+  return demorecording;
+}
+
+dboolean dsda_ShowSplitData(void) {
+  return dsda_show_split_data;
+}
+
 dboolean dsda_ExHud(void) {
   return dsda_exhud;
 }
@@ -91,8 +156,26 @@ dboolean dsda_CommandDisplay(void) {
   return dsda_command_display && !dsda_StrictMode();
 }
 
-dboolean dsda_TrackAttempts(void) {
-  return dsda_track_attempts && demorecording;
+dboolean dsda_CoordinateDisplay(void) {
+  return dsda_coordinate_display && !dsda_StrictMode();
+}
+
+dboolean dsda_ShowDemoAttempts(void) {
+  return dsda_show_demo_attempts && demorecording;
+}
+
+dboolean dsda_MapPointCoordinates(void) {
+  extern int map_point_coordinates;
+
+  return map_point_coordinates && !dsda_StrictMode();
+}
+
+dboolean dsda_CrosshairTarget(void) {
+  return hudadd_crosshair_target && !dsda_StrictMode();
+}
+
+dboolean dsda_CrosshairLockTarget(void) {
+  return hudadd_crosshair_lock_target && !dsda_StrictMode();
 }
 
 dboolean dsda_PainPalette(void) {

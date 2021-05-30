@@ -54,30 +54,32 @@
 #include "e6y.h"
 #include "e6y_launcher.h"
 
+#ifdef _MSC_VER
 #pragma comment( lib, "comctl32.lib" )
 #pragma comment( lib, "advapi32.lib" )
+#endif
 
 #define ETDT_ENABLE         0x00000002
 #define ETDT_USETABTEXTURE  0x00000004
 #define ETDT_ENABLETAB      (ETDT_ENABLE  | ETDT_USETABTEXTURE)
 typedef HRESULT (WINAPI *EnableThemeDialogTexturePROC)(HWND, DWORD);
 
-#define FA_DIREC	0x00000010
+#define FA_DIREC  0x00000010
 #define LAUNCHER_HISTORY_SIZE 10
 
 #define LAUNCHER_CAPTION PACKAGE_NAME" Launcher"
 
-#define I_FindName(a)	((a)->Name)
-#define I_FindAttr(a)	((a)->Attribs)
+#define I_FindName(a)  ((a)->Name)
+#define I_FindAttr(a)  ((a)->Attribs)
 
 typedef struct
 {
-	unsigned int Attribs;
-	unsigned int Times[3*2];
-	unsigned int Size[2];
-	unsigned int Reserved[2];
-	char Name[PATH_MAX];
-	char AltName[14];
+  unsigned int Attribs;
+  unsigned int Times[3*2];
+  unsigned int Size[2];
+  unsigned int Reserved[2];
+  char Name[PATH_MAX];
+  char AltName[14];
 } findstate_t;
 
 typedef struct
@@ -112,7 +114,7 @@ launcher_t launcher;
 
 launcher_enable_t launcher_enable;
 const char *launcher_enable_states[launcher_enable_count] = {"never", "smart", "always"};
-char *launcher_history[LAUNCHER_HISTORY_SIZE];
+const char *launcher_history[LAUNCHER_HISTORY_SIZE];
 
 static char launchercachefile[PATH_MAX];
 
@@ -171,17 +173,17 @@ char* e6y_I_FindFile(const char* ext);
 //common
 void *I_FindFirst (const char *filespec, findstate_t *fileinfo)
 {
-	return FindFirstFileA(filespec, (LPWIN32_FIND_DATAA)fileinfo);
+  return FindFirstFileA(filespec, (LPWIN32_FIND_DATAA)fileinfo);
 }
 
 int I_FindNext (void *handle, findstate_t *fileinfo)
 {
-	return !FindNextFileA((HANDLE)handle, (LPWIN32_FIND_DATAA)fileinfo);
+  return !FindNextFileA((HANDLE)handle, (LPWIN32_FIND_DATAA)fileinfo);
 }
 
 int I_FindClose (void *handle)
 {
-	return FindClose((HANDLE)handle);
+  return FindClose((HANDLE)handle);
 }
 
 #define prb_isspace(c) ((c) == 0x20)
@@ -198,6 +200,16 @@ char *strrtrm (char *str)
 }
 #undef prb_isspace
 
+// The config stores ppsz as const char*, but free discards the const.
+// The allocated strings are constant, but need to be freed.
+// Basically an accident of the standard.
+static void L_FreeLauncherHistoryEntry(default_t *history)
+{
+  #pragma GCC diagnostic push
+  #pragma GCC diagnostic ignored "-Wcast-qual"
+  free((char *)history->location.ppsz[0]);
+  #pragma GCC diagnostic pop
+}
 
 //events
 static void L_GameOnChange(void)
@@ -247,6 +259,7 @@ static void L_FilesOnChange(void)
       RECT rect;
       HFONT font, oldfont;
       HDC hdc;
+      LRESULT temp;
 
       strcpy(path, launcher.files[index].name);
       NormalizeSlashes2(path);
@@ -255,7 +268,8 @@ static void L_FilesOnChange(void)
       hdc = GetDC(launcher.staticFileName);
       GetWindowRect(launcher.staticFileName, &rect);
 
-      font = (HFONT)SendMessage(launcher.staticFileName, WM_GETFONT, 0, 0);
+      temp = SendMessage(launcher.staticFileName, WM_GETFONT, 0, 0);
+      font = (HFONT)temp;
       oldfont = SelectObject(hdc, font);
 
       for (count = strlen(path); count > 0 ; count--)
@@ -286,9 +300,9 @@ static void L_HistoryOnChange(void)
   index = (int)SendMessage(launcher.listHistory, CB_GETCURSEL, 0, 0);
   if (index >= 0)
   {
-    waddata_t *waddata;
-    waddata = (waddata_t*)SendMessage(launcher.listHistory, CB_GETITEMDATA, index, 0);
-    if ((int)waddata != CB_ERR)
+    LRESULT temp = SendMessage(launcher.listHistory, CB_GETITEMDATA, index, 0);
+    waddata_t *waddata = (waddata_t*)temp;
+    if (temp != CB_ERR)
     {
       if (!L_GUISelect(waddata))
       {
@@ -372,10 +386,11 @@ static void L_CommandOnChange(void)
         char str[32];
         default_t *history;
 
-        sprintf(str, "launcher_history%d", i);
+        sprintf(str, "launcher_history%lld", i);
         history = M_LookupDefault(str);
 
-        strcpy((char*)history->location.ppsz[0], "");
+        L_FreeLauncherHistoryEntry(history);
+        history->location.ppsz[0] = strdup("");
       }
       M_SaveDefaults();
       L_FillHistoryList();
@@ -655,10 +670,12 @@ static dboolean L_PrepareToLaunch(void)
     index = (int)SendMessage(launcher.listIWAD, CB_GETITEMDATA, index, 0);
     if (index != CB_ERR)
     {
-      char *iwadname = PathFindFileName(launcher.files[index].name);
+      extern void D_AutoloadIWadDir();
+      const char *iwadname = PathFindFileName(launcher.files[index].name);
       history = malloc(strlen(iwadname) + 8);
       strcpy(history, iwadname);
       AddIWAD(launcher.files[index].name);
+      D_AutoloadIWadDir();
     }
   }
 
@@ -720,7 +737,7 @@ static dboolean L_PrepareToLaunch(void)
 
     for (i = 0; i < historycount; i++)
     {
-      sprintf(str, "launcher_history%d", i);
+      sprintf(str, "launcher_history%lld", i);
       history1 = M_LookupDefault(str);
 
       if (!strcasecmp(history1->location.ppsz[0], history))
@@ -732,20 +749,22 @@ static dboolean L_PrepareToLaunch(void)
 
     for (i = shiftfrom; i > 0; i--)
     {
-      sprintf(str, "launcher_history%d", i);
+      sprintf(str, "launcher_history%lld", i);
       history1 = M_LookupDefault(str);
-      sprintf(str, "launcher_history%d", i-1);
+      sprintf(str, "launcher_history%lld", i-1);
       history2 = M_LookupDefault(str);
 
-      if (i == shiftfrom)
-        free((char*)history1->location.ppsz[0]);
-      history1->location.ppsz[0] = history2->location.ppsz[0];
+      L_FreeLauncherHistoryEntry(history1);
+      history1->location.ppsz[0] = strdup(history2->location.ppsz[0]);
     }
     if (shiftfrom > 0)
     {
       history1 = M_LookupDefault("launcher_history0");
-      history1->location.ppsz[0] = history;
+      L_FreeLauncherHistoryEntry(history1);
+      history1->location.ppsz[0] = strdup(history);
     }
+
+    free(history);
   }
   return true;
 }
@@ -776,7 +795,7 @@ static void L_ReadCacheData(void)
       if (p)
       {
         *p = 0;
-        if (3 == sscanf(p + 1, "%d, %d, %d", &item.source, &item.doom1, &item.doom2))
+        if (3 == sscanf(p + 1, "%d, %d, %d", (int *)&item.source, (int *)&item.doom1, (int *)&item.doom2))
         {
           launcher.cache = realloc(launcher.cache, sizeof(*launcher.cache) * (launcher.cachesize + 1));
           strcpy(launcher.cache[launcher.cachesize].name, M_Strlwr(strrtrm(name)));
@@ -861,7 +880,7 @@ static void L_FillGameList(void)
   // "freedoom2.wad", "freedoom1.wad", "freedm.wad"
   // "hacx.wad", "chex.wad"
   // "bfgdoom2.wad", "bfgdoom.wad"
-	// "heretic.wad"
+  // "heretic.wad"
   const char *IWADTypeNames[] =
   {
     "DOOM 2: French Version",
@@ -918,11 +937,18 @@ static void L_FillFilesList(fileitem_t *iwad)
   for (i = 0; i < launcher.filescount; i++)
   {
     item = &launcher.files[i];
-    if (iwad->doom1 && item->doom1 || iwad->doom2 && item->doom2 ||
+    if ((iwad->doom1 && item->doom1) || (iwad->doom2 && item->doom2) ||
       (!item->doom1 && !item->doom2) ||
       item->source == source_deh)
     {
-      index = (int)SendMessage(launcher.listPWAD, LB_ADDSTRING, 0, (LPARAM)M_Strlwr(PathFindFileName(item->name)));
+      // PathFindFileName operates on a const and returns one
+      // In this case the argument is not const, so it's fine
+      #pragma GCC diagnostic push
+      #pragma GCC diagnostic ignored "-Wdiscarded-qualifiers"
+      char *temp = M_Strlwr(PathFindFileName(item->name));
+      #pragma GCC diagnostic pop
+
+      index = (int)SendMessage(launcher.listPWAD, LB_ADDSTRING, 0, (LPARAM)temp);
       if (index >= 0)
       {
         SendMessage(launcher.listPWAD, LB_SETITEMDATA, index, i);
@@ -958,7 +984,7 @@ char* e6y_I_FindFile(const char* ext)
     }
 
     p = malloc(strlen(d) + (s ? strlen(s) : 0) + pl);
-    sprintf(p, "%s%s%s%s", d, (d && !HasTrailingSlash(d)) ? "\\" : "",
+    sprintf(p, "%s%s%s%s", d, !HasTrailingSlash(d) ? "\\" : "",
                              s ? s : "", (s && !HasTrailingSlash(s)) ? "\\" : "");
 
     {
@@ -1082,8 +1108,9 @@ static void L_HistoryFreeData(void)
   {
     for (i = 0; i < count; i++)
     {
-      waddata_t *waddata = (waddata_t*)SendMessage(launcher.listHistory, CB_GETITEMDATA, i, 0);
-      if ((int)waddata != CB_ERR)
+      LRESULT temp = SendMessage(launcher.listHistory, CB_GETITEMDATA, i, 0);
+      waddata_t *waddata = (waddata_t*)temp;
+      if (temp != CB_ERR)
       {
         WadDataFree(waddata);
       }
@@ -1127,10 +1154,10 @@ static void L_FillHistoryList(void)
   }
 }
 
-BOOL CALLBACK LauncherClientCallback (HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
+LRESULT CALLBACK LauncherClientCallback (HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
 {
-	switch (message)
-	{
+  switch (message)
+  {
   case WM_INITDIALOG:
     {
       int i;
@@ -1225,7 +1252,7 @@ BOOL CALLBACK LauncherClientCallback (HWND hDlg, UINT message, WPARAM wParam, LP
         }
       }
     }
-		break;
+    break;
 
   case WM_NOTIFY:
     OnWMNotify(lParam);
@@ -1259,8 +1286,8 @@ BOOL CALLBACK LauncherClientCallback (HWND hDlg, UINT message, WPARAM wParam, LP
         L_CommandOnChange();
     }
     break;
-	}
-	return FALSE;
+  }
+  return 0;
   }
 
 BOOL CALLBACK LauncherServerCallback (HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
@@ -1354,7 +1381,7 @@ BOOL CALLBACK EnumChildProc(HWND hwndCtrl, LPARAM lParam)
     ti.uFlags = TTF_IDISHWND;
 
     ti.hwnd = launcher.HWNDClient;
-    ti.uId = (UINT) hwndCtrl;
+    ti.uId = (UINT64) hwndCtrl;
     ti.hinst = 0;
     ti.lpszText = LPSTR_TEXTCALLBACK;
     SendMessage(g_hwndTT, TTM_ADDTOOL, 0, (LPARAM) (LPTOOLINFO) &ti);
@@ -1434,7 +1461,7 @@ VOID OnWMNotify(LPARAM lParam)
         for (i=0; i < selectioncount; i++)
         {
           int index = selection[i];
-          char *line = PathFindFileName(launcher.files[index].name);
+          const char *line = PathFindFileName(launcher.files[index].name);
           int needlen = (tooltip_str?strlen(tooltip_str):0) + strlen(line) + sizeof(char) * 8;
           if (needlen > tooltip_maxlen)
           {
@@ -1464,11 +1491,7 @@ static dboolean L_LauncherIsNeeded(void)
   dboolean pwad = false;
   char *iwad = NULL;
 
-//  SHIFT for invert
-//  if (GetAsyncKeyState(VK_SHIFT) ? launcher_enable : !launcher_enable)
-//    return false;
-
-  if ((GetKeyState(VK_SHIFT) & 0x8000))
+  if (M_CheckParm("-launcher"))
     return true;
 
   if (launcher_enable == launcher_enable_always)

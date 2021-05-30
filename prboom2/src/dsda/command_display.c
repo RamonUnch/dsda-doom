@@ -52,8 +52,8 @@ int dsda_command_display;
 int dsda_command_history_size;
 int dsda_hide_empty_commands;
 
-static dsda_command_display_t* command_history;
-static dsda_command_display_t* current_command;
+static dsda_command_display_t command_history[MAX_HISTORY];
+static dsda_command_display_t* current_command = command_history;
 
 static void dsda_TicCmdToCommand(dsda_command_t* command, ticcmd_t* cmd) {
   command->forwardmove = cmd->forwardmove;
@@ -92,15 +92,24 @@ static int dsda_IsCommandEqual(dsda_command_t* command, dsda_command_t* other) {
          command->change == other->change;
 }
 
+void dsda_InitCommandHistory(void) {
+  int i;
+
+  for (i = 1; i < MAX_HISTORY; ++i) {
+    command_history[i].prev = &command_history[i - 1];
+    command_history[i - 1].next = &command_history[i];
+  }
+
+  command_history[0].prev = &command_history[MAX_HISTORY - 1];
+  command_history[MAX_HISTORY - 1].next = &command_history[0];
+}
+
 void dsda_InitCommandDisplay(patchnum_t* font) {
   int i;
   static int firsttime = 1;
 
   if (firsttime) {
     firsttime = 0;
-
-    command_history = calloc(MAX_HISTORY, sizeof(*command_history));
-    current_command = command_history;
 
     for (i = 0; i < MAX_HISTORY; ++i) {
       HUlib_initTextLine(
@@ -114,15 +123,7 @@ void dsda_InitCommandDisplay(patchnum_t* font) {
       );
 
       command_history[i].hu_text.space_width = 5;
-
-      if (i > 0) {
-        command_history[i].prev = &command_history[i - 1];
-        command_history[i - 1].next = &command_history[i];
-      }
     }
-
-    command_history[0].prev = &command_history[MAX_HISTORY - 1];
-    command_history[MAX_HISTORY - 1].next = &command_history[0];
   }
 }
 

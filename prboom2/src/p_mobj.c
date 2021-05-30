@@ -987,8 +987,6 @@ void P_MobjThinker (mobj_t* mobj)
   mobj->PrevY = mobj->y;
   mobj->PrevZ = mobj->z;
 
-  CheckThingsHealthTracer(mobj);  //e6y
-
   // momentum movement
   if (mobj->momx | mobj->momy || mobj->flags & MF_SKULLFLY)
   {
@@ -1280,6 +1278,8 @@ void P_RemoveMobj (mobj_t* mobj)
     return;
   }
 
+  ClearThingsHealthTracer(mobj);
+
   if ((mobj->flags & MF_SPECIAL)
       && !(mobj->flags & MF_DROPPED)
       && (mobj->type != MT_INV)
@@ -1309,7 +1309,11 @@ void P_RemoveMobj (mobj_t* mobj)
 
   // stop any playing sound
 
-  S_StopSound (mobj);
+  // [FG] removed map objects may finish their sounds
+  if (full_sounds)
+    S_UnlinkSound(mobj);
+  else
+    S_StopSound(mobj);
 
   // killough 11/98:
   //
@@ -1785,6 +1789,8 @@ spawnit:
   mobj->index = index;//e6y
   mobj->iden_nums = iden_num;
 
+  InitThingsHealthTracer(mobj);
+
   if (mobj->flags2 & MF2_FLOATBOB)
   {                           // Seed random starting index for bobbing motion
     mobj->health = P_Random(pr_heretic);
@@ -2088,6 +2094,10 @@ void P_BlasterMobjThinker(mobj_t * mobj)
     fixed_t z;
     dboolean changexy;
 
+    mobj->PrevX = mobj->x;
+    mobj->PrevY = mobj->y;
+    mobj->PrevZ = mobj->z;
+
     // Handle movement
     if (mobj->momx || mobj->momy || (mobj->z != mobj->floorz) || mobj->momz)
     {
@@ -2222,7 +2232,7 @@ void P_ThrustMobj(mobj_t * mo, angle_t angle, fixed_t move)
     mo->momy += FixedMul(move, finesine[angle]);
 }
 
-dboolean P_SeekerMissile(mobj_t * actor, angle_t thresh, angle_t turnMax)
+dboolean P_SeekerMissile(mobj_t * actor, mobj_t ** seekTarget, angle_t thresh, angle_t turnMax, dboolean seekcenter)
 {
     int dir;
     int dist;
@@ -2230,14 +2240,14 @@ dboolean P_SeekerMissile(mobj_t * actor, angle_t thresh, angle_t turnMax)
     angle_t angle;
     mobj_t *target;
 
-    target = (mobj_t *) actor->special1.m;
+    target = *seekTarget;
     if (target == NULL)
     {
         return (false);
     }
     if (!(target->flags & MF_SHOOTABLE))
     {                           // Target died
-        actor->special1.m = NULL;
+        *seekTarget = NULL;
         return (false);
     }
     dir = P_FaceMobj(actor, target, &delta);
@@ -2261,7 +2271,7 @@ dboolean P_SeekerMissile(mobj_t * actor, angle_t thresh, angle_t turnMax)
     actor->momx = FixedMul(actor->info->speed, finecosine[angle]);
     actor->momy = FixedMul(actor->info->speed, finesine[angle]);
     if (actor->z + actor->height < target->z ||
-        target->z + target->height < actor->z)
+        target->z + target->height < actor->z || seekcenter)
     {                           // Need to seek vertically
         dist = P_AproxDistance(target->x - actor->x, target->y - actor->y);
         dist = dist / actor->info->speed;
@@ -2269,7 +2279,7 @@ dboolean P_SeekerMissile(mobj_t * actor, angle_t thresh, angle_t turnMax)
         {
             dist = 1;
         }
-        actor->momz = (target->z - actor->z) / dist;
+        actor->momz = (target->z + (seekcenter ? target->height/2 : 0) - actor->z) / dist;
     }
     return (true);
 }

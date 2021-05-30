@@ -783,12 +783,18 @@ void HU_Start(void)
 
   if (gamemapinfo != NULL)
   {
-	  s = gamemapinfo->mapname;
-	  while (*s)
-		  HUlib_addCharToTextLine(&w_title, *(s++));
+	  if (gamemapinfo->label)
+		  s = gamemapinfo->label;
+	  else
+		  s = gamemapinfo->mapname;
+	  if (s == gamemapinfo->mapname || strcmp(s, "-") != 0)
+	  {
+		  while (*s)
+			  HUlib_addCharToTextLine(&w_title, *(s++));
 
-	  HUlib_addCharToTextLine(&w_title, ':');
-	  HUlib_addCharToTextLine(&w_title, ' ');
+		  HUlib_addCharToTextLine(&w_title, ':');
+		  HUlib_addCharToTextLine(&w_title, ' ');
+	  }
 	  s = gamemapinfo->levelname;
 	  if (!s) s = "Unnamed";
   }
@@ -2241,7 +2247,7 @@ void SetCrosshairTarget(void)
   crosshair.target_screen_x = 0.0f;
   crosshair.target_screen_y = 0.0f;
 
-  if (hudadd_crosshair_lock_target && crosshair.target_sprite >= 0)
+  if (dsda_CrosshairLockTarget() && crosshair.target_sprite >= 0)
   {
     float x, y, z;
     float winx, winy, winz;
@@ -2302,7 +2308,7 @@ void HU_draw_crosshair(void)
   else
     cm = hudadd_crosshair_color;
 
-  if (hudadd_crosshair_target || hudadd_crosshair_lock_target)
+  if (dsda_CrosshairTarget() || dsda_CrosshairLockTarget())
   {
     fixed_t slope;
     angle_t an = plr->mo->angle;
@@ -2327,7 +2333,7 @@ void HU_draw_crosshair(void)
       crosshair.target_z += linetarget->height / 2 + linetarget->height / 8;
       crosshair.target_sprite = linetarget->sprite;
 
-      if (hudadd_crosshair_target)
+      if (dsda_CrosshairTarget())
         cm = hudadd_crosshair_target_color;
     }
   }
@@ -2394,7 +2400,7 @@ void HU_Drawer(void)
 
     //jff 2/16/98 output new coord display
     // x-coord
-    if (map_point_coordinates)
+    if (dsda_MapPointCoordinates())
     {
 
       //e6y: speedup
@@ -2517,9 +2523,15 @@ void HU_Drawer(void)
     }
 
     //e6y
-    if (traces_present)
+    if (traces_present && !dsda_StrictMode())
     {
       int k, num = 0;
+
+      if (realframe)
+      {
+        UpdateThingsHealthTracers();
+      }
+
       for(k = 0; k < NUMTRACES; k++)
       {
         if (traces[k].count)
@@ -2833,13 +2845,11 @@ dboolean HU_Responder(event_t *ev)
   {
     if (c == KEYD_ENTER) // phares
     {
-#ifndef INSTRUMENTED  // never turn on message review if INSTRUMENTED defined
       if (hud_msg_lines>1)  // it posts multi-line messages that will trash
       {
         if (message_list) HU_Erase(); //jff 4/28/98 erase behind messages
         message_list = !message_list; //jff 2/26/98 toggle list of messages
       }
-#endif
       if (!message_list)              // if not message list, refresh message
       {
         message_on = true;

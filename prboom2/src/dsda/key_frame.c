@@ -20,6 +20,7 @@
 #include "doomstat.h"
 #include "s_advsound.h"
 #include "s_sound.h"
+#include "st_stuff.h"
 #include "p_saveg.h"
 #include "p_map.h"
 #include "r_draw.h"
@@ -144,19 +145,13 @@ void dsda_StoreKeyFrame(byte** buffer, byte complete) {
   CheckSaveGame(1);
   *save_p++ = (gametic - basetic) & 255;
 
-  Z_CheckHeap();
   P_ArchivePlayers();
-  Z_CheckHeap();
   P_ThinkerToIndex();
   P_ArchiveWorld();
-  Z_CheckHeap();
   P_TrueArchiveThinkers();
   P_IndexToThinker();
-  Z_CheckHeap();
   P_ArchiveRNG();
-  Z_CheckHeap();
   P_ArchiveMap();
-  Z_CheckHeap();
 
   if (*buffer != NULL) free(*buffer);
 
@@ -253,6 +248,7 @@ void dsda_RestoreKeyFrame(byte* buffer, byte complete) {
   R_FillBackScreen();
 
   BorderNeedRefresh = true;
+  ST_Start();
 
   dsda_key_frame_restored = 1;
 

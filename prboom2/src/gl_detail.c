@@ -55,6 +55,7 @@
 #include "m_misc.h"
 #include "sc_man.h"
 #include "e6y.h"
+#include "i_system.h"
 
 int render_usedetail;
 int gl_allow_detail_textures;
@@ -145,7 +146,7 @@ void gld_InitDetail(void)
 {
   gl_detail_maxdist_sqrt = (float)sqrt((float)gl_detail_maxdist);
 
-  atexit(gld_ShutdownDetail);
+  I_AtExit(gld_ShutdownDetail, true);
   M_ChangeUseDetail();
 }
 
@@ -451,15 +452,9 @@ void gld_DrawFlatDetail_NoARB(GLFlat *flat)
       for (vertexnum=currentloop->vertexindex; vertexnum<(currentloop->vertexindex+currentloop->vertexcount); vertexnum++)
       {
         // set texture coordinate of this vertex
-        if (true)
-        {
-          GLEXT_glMultiTexCoord2fvARB(GL_TEXTURE0_ARB, (GLfloat*)&flats_vbo[vertexnum].u);
-          GLEXT_glMultiTexCoord2fvARB(GL_TEXTURE1_ARB, (GLfloat*)&flats_vbo[vertexnum].u);
-        }
-        else
-        {
-          glTexCoord2fv((GLfloat*)&flats_vbo[vertexnum].u);
-        }
+        GLEXT_glMultiTexCoord2fvARB(GL_TEXTURE0_ARB, (GLfloat*)&flats_vbo[vertexnum].u);
+        GLEXT_glMultiTexCoord2fvARB(GL_TEXTURE1_ARB, (GLfloat*)&flats_vbo[vertexnum].u);
+
         // set vertex coordinate
         glVertex3fv((GLfloat*)&flats_vbo[vertexnum].x);
       }

@@ -124,11 +124,7 @@ enum {
   // mbf21
   comp_ledgeblock,
   comp_friendlyspawn,
-  comp_placeholder_31,
-  comp_placeholder_32,
-  // and more!
 
-  COMP_NUM,      /* cph - should be last in sequence */
   MBF_COMP_TOTAL = 32  // limit in MBF format
 };
 
@@ -143,7 +139,7 @@ enum {
   COMPERR_NUM
 };
 
-extern int comp[COMP_NUM];
+extern int comp[MBF_COMP_TOTAL];
 extern int /*comperr[COMPERR_NUM], */default_comperr[COMPERR_NUM];
 
 // -------------------------------------------
@@ -355,8 +351,6 @@ extern int monster_friction;
 extern int help_friends;
 
 extern int flashing_hom; // killough 10/98
-
-extern int doom_weapon_toggles;   // killough 10/98
 
 /* killough 7/19/98: whether monsters should fight against each other */
 extern int monster_infighting;

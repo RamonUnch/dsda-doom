@@ -21,8 +21,16 @@ set(COMMON_SRC
     dsda.h
     dsda/command_display.c
     dsda/command_display.h
+    dsda/console.c
+    dsda/console.h
+    dsda/coordinate_display.c
+    dsda/coordinate_display.h
+    dsda/data_organizer.c
+    dsda/data_organizer.h
     dsda/demo.c
     dsda/demo.h
+    dsda/exhud.c
+    dsda/exhud.h
     dsda/ghost.c
     dsda/ghost.h
     dsda/global.c
@@ -31,8 +39,12 @@ set(COMMON_SRC
     dsda/hud.h
     dsda/input.c
     dsda/input.h
+    dsda/intermission_display.c
+    dsda/intermission_display.h
     dsda/key_frame.c
     dsda/key_frame.h
+    dsda/memory.c
+    dsda/memory.h
     dsda/msecnode.c
     dsda/msecnode.h
     dsda/options.c
@@ -43,6 +55,12 @@ set(COMMON_SRC
     dsda/save.h
     dsda/settings.c
     dsda/settings.h
+    dsda/split_tracker.c
+    dsda/split_tracker.h
+    dsda/tas.c
+    dsda/tas.h
+    dsda/text_file.c
+    dsda/text_file.h
     dsda/time.c
     dsda/time.h
     dstrings.c
@@ -97,6 +115,8 @@ set(COMMON_SRC
     info.h
     i_capture.c
     i_capture.h
+    i_glob.c
+    i_glob.h
     i_joy.h
     i_main.h
     i_network.h
@@ -221,7 +241,7 @@ set(NET_CLIENT_SRC
     d_client.c
 )
 
-if(HAVE_MMAP)
+if(HAVE_MMAP OR HAVE_CREATE_FILE_MAPPING)
     set(WAD_SRC w_mmap.c)
 else()
     set(WAD_SRC w_memcache.c)
@@ -343,6 +363,13 @@ function(AddGameExecutable TARGET SOURCES)
             e6y_launcher.h
             SDL/SDL_windows_main.c
         )
+        if(MSVC)
+            set(SOURCES
+                ${SOURCES}
+                win_opendir.c
+                win_opendir.h
+            )
+        endif()
     endif()
 
     add_definitions("-DUSE_EXPERIMENTAL_MUSIC")
@@ -435,46 +462,46 @@ endfunction()
 AddGameExecutable(dsda-doom "${PRBOOM_PLUS_SOURCES}")
 
 
-# PrBoom-Plus server executable
+# DSDA-Doom server executable
 
-option(BUILD_SERVER "Build PrBoom-Plus server executable" ON)
+option(BUILD_SERVER "Build DSDA-Doom server executable" OFF)
 
 if(BUILD_SERVER AND SDL2_NET_FOUND)
-    set(PRBOOM_PLUS_GAME_SERVER_SOURCES
+    set(DSDA_DOOM_GAME_SERVER_SOURCES
         d_server.c
         protocol.h
         SDL/i_network.c
     )
 
     if(MSVC)
-        set(PRBOOM_PLUS_GAME_SERVER_SOURCES
-            ${PRBOOM_PLUS_GAME_SERVER_SOURCES}
+        set(DSDA_DOOM_GAME_SERVER_SOURCES
+            ${DSDA_DOOM_GAME_SERVER_SOURCES}
             SDL/i_system.c
             dsda/time.c
             dsda/time.h
         )
     else()
-        set(PRBOOM_PLUS_GAME_SERVER_SOURCES
-            ${PRBOOM_PLUS_GAME_SERVER_SOURCES}
+        set(DSDA_DOOM_GAME_SERVER_SOURCES
+            ${DSDA_DOOM_GAME_SERVER_SOURCES}
             POSIX/i_system.c
         )
     endif()
 
-    add_executable(prboom-plus-game-server ${PRBOOM_PLUS_GAME_SERVER_SOURCES})
-    target_include_directories(prboom-plus-game-server PRIVATE
+    add_executable(dsda-doom-game-server ${DSDA_DOOM_GAME_SERVER_SOURCES})
+    target_include_directories(dsda-doom-game-server PRIVATE
         ${SDL2_INCLUDE_DIRS}
         ${CMAKE_BINARY_DIR}
         ${CMAKE_CURRENT_SOURCE_DIR}
     )
-    target_link_libraries(prboom-plus-game-server PRIVATE
+    target_link_libraries(dsda-doom-game-server PRIVATE
         ${SDL2_LIBRARIES}
     )
-    set_target_properties(prboom-plus-game-server PROPERTIES
+    set_target_properties(dsda-doom-game-server PROPERTIES
         COMPILE_DEFINITIONS PRBOOM_SERVER
         RUNTIME_OUTPUT_DIRECTORY ${PRBOOM_OUTPUT_PATH}
     )
-    ApplySDL2NetOptions(prboom-plus-game-server)
-    install(TARGETS prboom-plus-game-server COMPONENT "Game server executable" RUNTIME DESTINATION "${CMAKE_INSTALL_PREFIX}/bin")
+    ApplySDL2NetOptions(dsda-doom-game-server)
+    install(TARGETS dsda-doom-game-server COMPONENT "Game server executable" RUNTIME DESTINATION "${CMAKE_INSTALL_PREFIX}/bin")
 endif()
 
 
@@ -547,9 +574,9 @@ if(APPLE)
     )
 
     if(BUILD_SERVER AND SDL2_NET_FOUND)
-        add_dependencies(prboom-plus-launcher prboom-plus-game-server)
+        add_dependencies(prboom-plus-launcher dsda-doom-game-server)
         add_custom_command(TARGET prboom-plus-launcher POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:prboom-plus-game-server> $<TARGET_FILE_DIR:prboom-plus-launcher>
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:dsda-doom-game-server> $<TARGET_FILE_DIR:prboom-plus-launcher>
         )
     endif()
 endif()

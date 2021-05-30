@@ -723,7 +723,7 @@ void A_GunFlash(player_t *player, pspdef_t *psp)
 void A_Punch(player_t *player, pspdef_t *psp)
 {
   angle_t angle;
-  int t, slope, damage;
+  int t, slope, damage, range;
 
   CHECK_WEAPON_CODEPOINTER("A_Punch", player);
 
@@ -738,13 +738,15 @@ void A_Punch(player_t *player, pspdef_t *psp)
   t = P_Random(pr_punchangle);
   angle += (t - P_Random(pr_punchangle))<<18;
 
+  range = (mbf21 ? player->mo->info->meleerange : MELEERANGE);
+
   /* killough 8/2/98: make autoaiming prefer enemies */
   if (!mbf_features ||
-      (slope = P_AimLineAttack(player->mo, angle, MELEERANGE, MF_FRIEND),
+      (slope = P_AimLineAttack(player->mo, angle, range, MF_FRIEND),
        !linetarget))
-    slope = P_AimLineAttack(player->mo, angle, MELEERANGE, 0);
+    slope = P_AimLineAttack(player->mo, angle, range, 0);
 
-  P_LineAttack(player->mo, angle, MELEERANGE, slope, damage);
+  P_LineAttack(player->mo, angle, range, slope, damage);
 
   if (!linetarget)
     return;
@@ -764,7 +766,7 @@ void A_Punch(player_t *player, pspdef_t *psp)
 
 void A_Saw(player_t *player, pspdef_t *psp)
 {
-  int slope, damage;
+  int slope, damage, range;
   angle_t angle;
   int t;
 
@@ -776,14 +778,16 @@ void A_Saw(player_t *player, pspdef_t *psp)
   t = P_Random(pr_saw);
   angle += (t - P_Random(pr_saw))<<18;
 
-  /* Use meleerange + 1 so that the puff doesn't skip the flash
-   * killough 8/2/98: make autoaiming prefer enemies */
-  if (!mbf_features ||
-      (slope = P_AimLineAttack(player->mo, angle, MELEERANGE+1, MF_FRIEND),
-       !linetarget))
-    slope = P_AimLineAttack(player->mo, angle, MELEERANGE+1, 0);
+  // Use meleerange + 1 so that the puff doesn't skip the flash
+  range = (mbf21 ? player->mo->info->meleerange : MELEERANGE) + 1;
 
-  P_LineAttack(player->mo, angle, MELEERANGE+1, slope, damage);
+  /* killough 8/2/98: make autoaiming prefer enemies */
+  if (!mbf_features ||
+      (slope = P_AimLineAttack(player->mo, angle, range, MF_FRIEND),
+       !linetarget))
+    slope = P_AimLineAttack(player->mo, angle, range, 0);
+
+  P_LineAttack(player->mo, angle, range, slope, damage);
 
   if (!linetarget)
     {
@@ -1140,10 +1144,14 @@ void A_BFGsound(player_t *player, pspdef_t *psp)
 // A_WeaponProjectile
 // A parameterized player weapon projectile attack. Does not consume ammo.
 //   args[0]: Type of actor to spawn
-//   args[1]: Angle (degrees, in fixed point), relative to calling actor's angle
+//   args[1]: Angle (degrees, in fixed point), relative to calling player's angle
+//   args[2]: Pitch (degrees, in fixed point), relative to calling player's pitch; approximated
+//   args[3]: X/Y spawn offset, relative to calling player's angle
+//   args[4]: Z spawn offset, relative to player's default projectile fire height
 //
 void A_WeaponProjectile(player_t *player, pspdef_t *psp)
 {
+  int type, angle, pitch, spawnofs_xy, spawnofs_z;
   mobj_t *mo;
   int an;
 
@@ -1152,43 +1160,132 @@ void A_WeaponProjectile(player_t *player, pspdef_t *psp)
   if (!mbf21 || !psp->state || !psp->state->args[0])
     return;
 
-  mo = P_SpawnPlayerMissile(player->mo, psp->state->args[0] - 1);
-  if (!mo)
-	return;
+  type        = psp->state->args[0] - 1;
+  angle       = psp->state->args[1];
+  pitch       = psp->state->args[2];
+  spawnofs_xy = psp->state->args[3];
+  spawnofs_z  = psp->state->args[4];
 
-  // adjust the angle by args[1];
-  mo->angle += (unsigned int)(((int_64_t)psp->state->args[1] << 16) / 360);
+  mo = P_SpawnPlayerMissile(player->mo, type);
+  if (!mo)
+    return;
+
+  // adjust angle
+  mo->angle += (unsigned int)(((int_64_t)angle << 16) / 360);
   an = mo->angle >> ANGLETOFINESHIFT;
   mo->momx = FixedMul(mo->info->speed, finecosine[an]);
   mo->momy = FixedMul(mo->info->speed, finesine[an]);
+
+  // adjust pitch (approximated, using Doom's ye olde
+  // finetangent table; same method as autoaim)
+  mo->momz += FixedMul(mo->info->speed, DegToSlope(pitch));
+
+  // adjust position
+  an = (player->mo->angle - ANG90) >> ANGLETOFINESHIFT;
+  mo->x += FixedMul(spawnofs_xy, finecosine[an]);
+  mo->y += FixedMul(spawnofs_xy, finesine[an]);
+  mo->z += spawnofs_z;
+
+  // set tracer to the player's autoaim target,
+  // so player seeker missiles prioritizing the
+  // baddie the player is actually aiming at. ;)
+  mo->tracer = linetarget;
 }
 
 //
 // A_WeaponBulletAttack
 // A parameterized player weapon bullet attack. Does not consume ammo.
-//   args[0]: Damage of attack (times 1d3)
-//   args[1]: Horizontal spread (degrees, in fixed point);
-//            if negative, also use 2/3 of this value for vertical spread
+//   args[0]: Horizontal spread (degrees, in fixed point)
+//   args[1]: Vertical spread (degrees, in fixed point)
+//   args[2]: Number of bullets to fire; if not set, defaults to 1
+//   args[3]: Base damage of attack (e.g. for 5d3, customize the 5); if not set, defaults to 5
+//   args[4]: Attack damage modulus (e.g. for 5d3, customize the 3); if not set, defaults to 3
 //
 void A_WeaponBulletAttack(player_t *player, pspdef_t *psp)
 {
-  int damage, angle, slope;
+  int hspread, vspread, numbullets, damagebase, damagemod;
+  int i, damage, angle, slope;
 
   CHECK_WEAPON_CODEPOINTER("A_WeaponBulletAttack", player);
 
   if (!mbf21 || !psp->state)
     return;
 
+  hspread    = psp->state->args[0];
+  vspread    = psp->state->args[1];
+  numbullets = psp->state->args[2];
+  damagebase = psp->state->args[3];
+  damagemod  = psp->state->args[4];
+
   P_BulletSlope(player->mo);
 
-  damage = (P_Random(pr_mbf21) % 3 + 1) * psp->state->args[0];
-  angle = (int)player->mo->angle + P_RandomHitscanAngle(pr_mbf21, psp->state->args[1]);
-  slope = bulletslope;
+  for (i = 0; i < numbullets; i++)
+  {
+    damage = (P_Random(pr_mbf21) % damagemod + 1) * damagebase;
+    angle = (int)player->mo->angle + P_RandomHitscanAngle(pr_mbf21, hspread);
+    slope = bulletslope + P_RandomHitscanSlope(pr_mbf21, vspread);
 
-  if (psp->state->args[1] < 0)
-    slope += P_RandomHitscanSlope(pr_mbf21, psp->state->args[1] * 2 / 3);
+    P_LineAttack(player->mo, angle, MISSILERANGE, slope, damage);
+  }
+}
 
-  P_LineAttack(player->mo, angle, MISSILERANGE, slope, damage);
+//
+// A_WeaponMeleeAttack
+// A parameterized player weapon melee attack.
+//   args[0]: Base damage of attack (e.g. for 2d10, customize the 2); if not set, defaults to 2
+//   args[1]: Attack damage modulus (e.g. for 2d10, customize the 10); if not set, defaults to 10
+//   args[2]: Berserk damage multiplier (fixed point); if not set, defaults to 1.0 (no change).
+//   args[3]: Sound to play if attack hits
+//   args[4]: Range (fixed point); if not set, defaults to player mobj's melee range
+//
+void A_WeaponMeleeAttack(player_t *player, pspdef_t *psp)
+{
+  int damagebase, damagemod, zerkfactor, hitsound, range;
+  angle_t angle;
+  int t, slope, damage;
+
+  CHECK_WEAPON_CODEPOINTER("A_WeaponMeleeAttack", player);
+
+  if (!mbf21 || !psp->state)
+    return;
+
+  damagebase = psp->state->args[0];
+  damagemod  = psp->state->args[1];
+  zerkfactor = psp->state->args[2];
+  hitsound   = psp->state->args[3];
+  range      = psp->state->args[4];
+
+  if (range == 0)
+    range = player->mo->info->meleerange;
+
+  damage = (P_Random(pr_mbf21) % damagemod + 1) * damagebase;
+  if (player->powers[pw_strength])
+    damage = (damage * zerkfactor) >> FRACBITS;
+
+  // slight randomization; weird vanillaism here. :P
+  angle = player->mo->angle;
+
+  t = P_Random(pr_mbf21);
+  angle += (t - P_Random(pr_mbf21))<<18;
+
+  // make autoaim prefer enemies
+  slope = P_AimLineAttack(player->mo, angle, range, MF_FRIEND);
+  if (!linetarget)
+    slope = P_AimLineAttack(player->mo, angle, range, 0);
+
+  // attack, dammit!
+  P_LineAttack(player->mo, angle, range, slope, damage);
+
+  // missed? ah, welp.
+  if (!linetarget)
+    return;
+
+  // un-missed!
+  S_StartSound(player->mo, hitsound);
+
+  // turn to face target
+  player->mo->angle = R_PointToAngle2(player->mo->x, player->mo->y, linetarget->x, linetarget->y);
+  R_SmoothPlaying_Reset(player);
 }
 
 //
@@ -1205,6 +1302,20 @@ void A_WeaponSound(player_t *player, pspdef_t *psp)
     return;
 
   S_StartSound(psp->state->args[1] ? NULL : player->mo, psp->state->args[0]);
+}
+
+//
+// A_WeaponAlert
+// Alerts monsters to the player's presence. Handy when combined with WPF_SILENT.
+//
+void A_WeaponAlert(player_t *player, pspdef_t *psp)
+{
+  CHECK_WEAPON_CODEPOINTER("A_WeaponAlert", player);
+
+  if (!mbf21)
+    return;
+
+  P_NoiseAlert(player->mo, player->mo);
 }
 
 //
@@ -1925,7 +2036,7 @@ void A_FireSkullRodPL2(player_t * player, pspdef_t * psp)
 
 void A_SkullRodPL2Seek(mobj_t * actor)
 {
-    P_SeekerMissile(actor, ANG1_X * 10, ANG1_X * 30);
+    P_SeekerMissile(actor, &actor->special1.m, ANG1_X * 10, ANG1_X * 30, false);
 }
 
 void A_AddPlayerRain(mobj_t * actor)
@@ -2057,7 +2168,7 @@ void A_PhoenixPuff(mobj_t * actor)
     mobj_t *puff;
     angle_t angle;
 
-    P_SeekerMissile(actor, ANG1_X * 5, ANG1_X * 10);
+    P_SeekerMissile(actor, &actor->special1.m, ANG1_X * 5, ANG1_X * 10, false);
     puff = P_SpawnMobj(actor->x, actor->y, actor->z, HERETIC_MT_PHOENIXPUFF);
     angle = actor->angle + ANG90;
     angle >>= ANGLETOFINESHIFT;

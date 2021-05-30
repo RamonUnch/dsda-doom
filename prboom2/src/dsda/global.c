@@ -23,6 +23,7 @@
 #include "d_items.h"
 #include "p_inter.h"
 #include "p_spec.h"
+#include "p_map.h"
 #include "sounds.h"
 #include "d_main.h"
 #include "v_video.h"
@@ -250,7 +251,7 @@ static void dsda_InitDoom(void) {
     mobjinfo[i].activesound  = mobjinfo_p->activesound;
     mobjinfo[i].flags        = mobjinfo_p->flags;
     mobjinfo[i].raisestate   = mobjinfo_p->raisestate;
-    mobjinfo[i].droppeditem  = mobjinfo_p->droppeditem;
+    mobjinfo[i].droppeditem  = MT_NULL;
     mobjinfo[i].crashstate   = 0; // not in doom
     mobjinfo[i].flags2       = 0; // not in doom
 
@@ -259,9 +260,16 @@ static void dsda_InitDoom(void) {
     mobjinfo[i].projectile_group = PG_DEFAULT;
     mobjinfo[i].splash_group = SG_DEFAULT;
     mobjinfo[i].ripsound = sfx_None;
+    mobjinfo[i].altspeed = NO_ALTSPEED;
+    mobjinfo[i].meleerange = MELEERANGE;
   }
 
   // don't want to reorganize info.c structure for a few tweaks...
+  mobjinfo[MT_WOLFSS].droppeditem    = MT_CLIP;
+  mobjinfo[MT_POSSESSED].droppeditem = MT_CLIP;
+  mobjinfo[MT_SHOTGUY].droppeditem   = MT_SHOTGUN;
+  mobjinfo[MT_CHAINGUY].droppeditem  = MT_CHAINGUN;
+
   mobjinfo[MT_VILE].flags2    = MF2_SHORTMRANGE | MF2_DMGIGNORED | MF2_NOTHRESHOLD;
   mobjinfo[MT_CYBORG].flags2  = MF2_NORADIUSDMG | MF2_HIGHERMPROB | MF2_RANGEHALF |
                                 MF2_BOSS | MF2_E2M8BOSS | MF2_E4M6BOSS;
@@ -273,10 +281,15 @@ static void dsda_InitDoom(void) {
   mobjinfo[MT_BRUISER].flags2 = MF2_E1M8BOSS;
   mobjinfo[MT_UNDEAD].flags2  = MF2_LONGMELEE | MF2_RANGEHALF;
 
-  mobjinfo[MT_BARREL].flags2 = MF2_NEUTRAL_SPLASH;
-
   mobjinfo[MT_BRUISER].projectile_group = PG_BARON;
   mobjinfo[MT_KNIGHT].projectile_group = PG_BARON;
+
+  mobjinfo[MT_BRUISERSHOT].altspeed = 20 * FRACUNIT;
+  mobjinfo[MT_HEADSHOT].altspeed = 20 * FRACUNIT;
+  mobjinfo[MT_TROOPSHOT].altspeed = 20 * FRACUNIT;
+
+  for (i = S_SARG_RUN1; i <= S_SARG_PAIN2; ++i)
+    states[i].flags |= STATEF_SKILL5FAST;
 }
 
 static void dsda_InitHeretic(void) {
@@ -390,12 +403,10 @@ static void dsda_InitHeretic(void) {
     mobjinfo[j].infighting_group = IG_DEFAULT;
     mobjinfo[j].projectile_group = PG_DEFAULT;
     mobjinfo[j].splash_group = SG_DEFAULT;
-    mobjinfo[i].ripsound = heretic_sfx_None;
+    mobjinfo[j].ripsound = heretic_sfx_None;
+    mobjinfo[j].altspeed = NO_ALTSPEED;
+    mobjinfo[j].meleerange = MELEERANGE;
   }
-
-  // don't want to reorganize info.c structure for a few tweaks...
-  mobjinfo[HERETIC_MT_SORCERER2].infighting_group = IG_WIZARD;
-  mobjinfo[HERETIC_MT_WIZARD].infighting_group = IG_WIZARD;
 
   // heretic doesn't use "clip" concept
   for (i = 0; i < NUMAMMO; ++i) clipammo[i] = 1;

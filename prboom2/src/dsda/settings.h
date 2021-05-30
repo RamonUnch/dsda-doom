@@ -18,6 +18,8 @@
 #ifndef __DSDA_SETTINGS__
 #define __DSDA_SETTINGS__
 
+#include "doomtype.h"
+
 #define UNSPECIFIED_COMPLEVEL -2
 
 extern int dsda_auto_key_frame_interval;
@@ -26,13 +28,17 @@ extern int dsda_strict_mode;
 extern int dsda_cycle_ghost_colors;
 extern int dsda_exhud;
 extern int dsda_command_display;
+extern int dsda_coordinate_display;
 extern int dsda_command_history_size;
 extern int dsda_hide_empty_commands;
-extern int dsda_track_attempts;
+extern int dsda_show_demo_attempts;
 extern int dsda_wipe_at_full_speed;
 extern int dsda_fine_sensitivity;
 extern int dsda_hide_horns;
 extern int dsda_organized_saves;
+extern int dsda_skip_quit_prompt;
+extern int dsda_show_split_data;
+extern const char* dsda_player_name;
 
 void dsda_InitSettings(void);
 int dsda_CompatibilityLevel(void);
@@ -43,10 +49,17 @@ dboolean dsda_StrictMode(void);
 dboolean dsda_CycleGhostColors(void);
 dboolean dsda_AlwaysSR50(void);
 dboolean dsda_HideHorns(void);
+dboolean dsda_SkipQuitPrompt(void);
+dboolean dsda_TrackSplits(void);
+dboolean dsda_ShowSplitData(void);
 dboolean dsda_ExHud(void);
 dboolean dsda_CommandDisplay(void);
-dboolean dsda_TrackAttempts(void);
+dboolean dsda_CoordinateDisplay(void);
+dboolean dsda_ShowDemoAttempts(void);
 dboolean dsda_ShowHealthBars(void);
+dboolean dsda_MapPointCoordinates(void);
+dboolean dsda_CrosshairTarget(void);
+dboolean dsda_CrosshairLockTarget(void);
 dboolean dsda_PainPalette(void);
 dboolean dsda_BonusPalette(void);
 dboolean dsda_PowerPalette(void);

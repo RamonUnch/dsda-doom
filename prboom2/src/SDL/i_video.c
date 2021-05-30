@@ -79,6 +79,7 @@
 #include "am_map.h"
 #include "g_game.h"
 #include "lprintf.h"
+#include "i_system.h"
 
 #ifdef GL_DOOM
 #include "gl_struct.h"
@@ -115,7 +116,6 @@ int use_fullscreen;
 int desired_fullscreen;
 int exclusive_fullscreen;
 int render_vsync;
-int screen_multiply;
 int render_screen_multiply;
 int integer_scaling;
 SDL_Surface *screen;
@@ -613,7 +613,7 @@ void I_PreInitGraphics(void)
     I_Error("Could not initialize SDL [%s]", SDL_GetError());
   }
 
-  atexit(I_ShutdownSDL);
+  I_AtExit(I_ShutdownSDL, true);
 }
 
 // e6y: resolution limitation is removed
@@ -894,7 +894,6 @@ void I_CalculateRes(int width, int height)
     // It is extremally important for wiping in software.
     // I have ~20x improvement in speed with using 1056 instead of 1024 on Pentium4
     // and only ~10% for Core2Duo
-    if (1)
     {
       unsigned int mintime = 100;
       int w = (width+15) & ~15;
@@ -911,10 +910,6 @@ void I_CalculateRes(int width, int height)
       SCREENPITCH = (count2 > count1 ? pitch2 : pitch1);
 
       lprintf(LO_INFO, " optimized screen pitch is %d\n", SCREENPITCH);
-    }
-    else
-    {
-      SCREENPITCH = SCREENWIDTH * V_GetPixelDepth();
     }
   }
 }
@@ -1024,7 +1019,6 @@ void I_InitScreenResolution(void)
     screens[i].width = SCREENWIDTH;
     screens[i].height = SCREENHEIGHT;
     screens[i].byte_pitch = SCREENPITCH;
-    screens[i].short_pitch = SCREENPITCH / V_GetModePixelDepth(VID_MODE16);
     screens[i].int_pitch = SCREENPITCH / V_GetModePixelDepth(VID_MODE32);
   }
 
@@ -1032,7 +1026,6 @@ void I_InitScreenResolution(void)
   screens[4].width = SCREENWIDTH;
   screens[4].height = SCREENHEIGHT;
   screens[4].byte_pitch = SCREENPITCH;
-  screens[4].short_pitch = SCREENPITCH / V_GetModePixelDepth(VID_MODE16);
   screens[4].int_pitch = SCREENPITCH / V_GetModePixelDepth(VID_MODE32);
 
   I_InitBuffersRes();
@@ -1081,7 +1074,7 @@ void I_InitGraphics(void)
   {
     firsttime = 0;
 
-    atexit(I_ShutdownGraphics);
+    I_AtExit(I_ShutdownGraphics, true);
     lprintf(LO_INFO, "I_InitGraphics: %dx%d\n", SCREENWIDTH, SCREENHEIGHT);
 
     /* Set the video mode */
@@ -1106,15 +1099,7 @@ video_mode_t I_GetModeFromString(const char *modestr)
 {
   video_mode_t mode;
 
-  if (!stricmp(modestr,"15")) {
-    mode = VID_MODE15;
-  } else if (!stricmp(modestr,"15bit")) {
-    mode = VID_MODE15;
-  } else if (!stricmp(modestr,"16")) {
-    mode = VID_MODE16;
-  } else if (!stricmp(modestr,"16bit")) {
-    mode = VID_MODE16;
-  } else if (!stricmp(modestr,"32")) {
+  if (!stricmp(modestr,"32")) {
     mode = VID_MODE32;
   } else if (!stricmp(modestr,"32bit")) {
     mode = VID_MODE32;
@@ -1132,6 +1117,7 @@ video_mode_t I_GetModeFromString(const char *modestr)
 void I_UpdateVideoMode(void)
 {
   int init_flags = 0;
+  int screen_multiply;
   int actualheight;
   const dboolean novsync = M_CheckParm("-timedemo") || \
                            M_CheckParm("-fastdemo");
@@ -1237,8 +1223,7 @@ void I_UpdateVideoMode(void)
     sdl_renderer = SDL_CreateRenderer(sdl_window, -1, flags);
 
     // [FG] aspect ratio correction for the canonical video modes
-    if ((SCREENWIDTH == 320 && SCREENHEIGHT == 200) ||
-        (SCREENWIDTH == 640 && SCREENHEIGHT == 400))
+    if (SCREENWIDTH % 320 == 0 && SCREENHEIGHT % 200 == 0)
     {
       actualheight = 6*SCREENHEIGHT/5;
     }
@@ -1251,9 +1236,9 @@ void I_UpdateVideoMode(void)
     SDL_RenderSetLogicalSize(sdl_renderer, SCREENWIDTH, actualheight);
 
     // [FG] make sure initial window size is always >= 640x480
-    if (SCREENWIDTH <= 320 && SCREENHEIGHT <= 240 && screen_multiply == 1)
+    while (screen_multiply*SCREENWIDTH < 640 || screen_multiply*actualheight < 480)
     {
-      screen_multiply = 2;
+      screen_multiply++;
     }
 
     // [FG] apply screen_multiply to initial window size
@@ -1325,7 +1310,6 @@ void I_UpdateVideoMode(void)
       screens[0].not_on_heap = true;
       screens[0].data = (unsigned char *) (screen->pixels);
       screens[0].byte_pitch = screen->pitch;
-      screens[0].short_pitch = screen->pitch / V_GetModePixelDepth(VID_MODE16);
       screens[0].int_pitch = screen->pitch / V_GetModePixelDepth(VID_MODE32);
     }
     else

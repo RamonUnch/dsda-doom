@@ -44,7 +44,7 @@
 #include "lprintf.h"  // jff 08/03/98 - declaration of lprintf
 #include "r_draw.h"
 #include "hu_stuff.h"
-#include "dsda/hud.h"
+#include "dsda/intermission_display.h"
 #include "heretic/in_lude.h"
 
 // Ty 03/17/98: flag that new par times have been loaded in d_deh
@@ -942,7 +942,7 @@ static void WI_drawTimeStats(int cnt_time, int cnt_total_time, int cnt_par)
     }
   }
 
-  dsda_DrawIntermissionTime();
+  dsda_DrawIntermissionDisplay();
 }
 
 // ====================================================================
@@ -1077,6 +1077,13 @@ void WI_drawShowNextLoc(void)
     // draw flashing ptr
     if (snl_pointeron)
       WI_drawOnLnode(wbs->next, yah);
+  }
+
+  if (gamemapinfo != NULL &&
+      gamemapinfo->endpic[0] &&
+      strcmp(gamemapinfo->endpic, "-") != 0)
+  {
+    return;
   }
 
   if (gamemission == pack_nerve && singleplayer && wbs->last == 7)

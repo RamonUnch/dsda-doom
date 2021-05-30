@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.0)
 
-project("dsda-doom" VERSION 0.18.0)
+project("dsda-doom" VERSION 0.19.0)
 
 # Set a default build type if none was specified
 set(default_build_type "RelWithDebInfo")
@@ -51,6 +51,7 @@ endif()
 
 check_symbol_exists(getopt "unistd.h" HAVE_GETOPT)
 check_symbol_exists(mmap "sys/mman.h" HAVE_MMAP)
+check_symbol_exists(CreateFileMapping "windows.h" HAVE_CREATE_FILE_MAPPING)
 if(NOT WIN32)
     set(CMAKE_REQUIRED_DEFINITIONS_PREV ${CMAKE_REQUIRED_DEFINITIONS})
     set(CMAKE_REQUIRED_DEFINITIONS ${CMAKE_REQUIRED_DEFINITIONS} -D_GNU_SOURCE)
@@ -69,6 +70,7 @@ include(CheckIncludeFile)
 check_include_file("sys/wait.h" HAVE_SYS_WAIT_H)
 check_include_file("unistd.h" HAVE_UNISTD_H)
 check_include_file("asm/byteorder.h" HAVE_ASM_BYTEORDER_H)
+check_include_file("dirent.h" HAVE_DIRENT_H)
 
 option(BUILD_GL "Enable OpenGL rendering code" ON)
 if(BUILD_GL)
@@ -169,12 +171,9 @@ set(CMAKE_REQUIRED_LIBRARIES ${CMAKE_REQUIRED_LIBRARIES_PREV})
 set(DOOMWADDIR "${CMAKE_INSTALL_PREFIX}/share/games/doom" CACHE PATH "Path to look for WAD files")
 
 option(SIMPLECHECKS "Enable checks which only impose significant overhead if a posible error is detected" ON)
-option(ZONEIDCHECK "Enable id checks on zone blocks, to detect corrupted and illegally freed blocks" ON)
 
 # Debug options, disabled by default
 option(RANGECHECK "Enable internal range checking" OFF)
-option(INSTRUMENTED "Enable real-time memory allocation statistics, and extra debugging features" OFF)
-option(TIMEDIAG "Enable creation of time stamps each time a lump is locked, and reporting of lumps locked for long periods of time" OFF)
 option(HEAPCHECK "Turn on continuous heap checking (very slow)" OFF)
 option(HEAPDUMP "Turn on dumping the heap state for debugging" OFF)
 

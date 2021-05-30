@@ -50,6 +50,8 @@
 #include "sc_man.h"
 #include "e6y.h"
 
+#include "dsda/memory.h"
+
 // when to clip out sounds
 // Does not fit the large outdoor areas.
 #define S_CLIPPING_DIST (1200<<FRACBITS)
@@ -82,6 +84,7 @@ typedef struct
 
 // the set of channels available
 static channel_t *channels;
+static degenmobj_t *sobjs;
 
 // These are not used, but should be (menu).
 // Maximum volume of a sound effect.
@@ -95,7 +98,7 @@ int snd_MusicVolume = 15;
 static dboolean mus_paused;
 
 // music currently being played
-static musicinfo_t *mus_playing;
+musicinfo_t *mus_playing;
 
 // music currently should play
 static int musicnum_current;
@@ -160,10 +163,14 @@ void S_Init(int sfxVolume, int musicVolume)
     // CPhipps - calloc
     channels =
       (channel_t *) calloc(numChannels,sizeof(channel_t));
+    sobjs =
+      (degenmobj_t *) calloc(numChannels, sizeof(degenmobj_t));
 
     // Note that sounds have not been cached (yet).
     for (i=1 ; i<num_sfx ; i++)
-      S_sfx[i].lumpnum = S_sfx[i].usefulness = -1;
+      S_sfx[i].lumpnum = -1;
+
+    dsda_CacheSoundLumps();
   }
 
   // CPhipps - music init reformatted
@@ -225,6 +232,7 @@ void S_Start(void)
 	  int muslump = W_CheckNumForName(gamemapinfo->music);
 	  if (muslump >= 0)
 	  {
+		  musinfo.items[0] = muslump;
 		  S_ChangeMusInfoMusic(muslump, true);
 		  return;
 	  }
@@ -357,10 +365,6 @@ void S_StartSoundAtVolume(void *origin_p, int sfx_id, int volume)
   if (sfx->lumpnum < 0 && (sfx->lumpnum = I_GetSfxLumpNum(sfx)) < 0)
     return;
 
-  // increase the usefulness
-  if (sfx->usefulness++ < 0)
-    sfx->usefulness = 1;
-
   // Assigns the handle to one of the channels in the mix/output buffer.
   { // e6y: [Fix] Crash with zero-length sounds.
     int h = I_StartSound(sfx_id, cnum, volume, sep, pitch, priority);
@@ -397,6 +401,34 @@ void S_StopSound(void *origin)
       }
 }
 
+// [FG] disable sound cutoffs
+int full_sounds;
+
+void S_UnlinkSound(void *origin)
+{
+  int cnum;
+
+  //jff 1/22/98 return if sound is not enabled
+  if (!snd_card || nosfxparm)
+    return;
+
+  if (origin)
+  {
+    for (cnum = 0; cnum < numChannels; cnum++)
+    {
+      if (channels[cnum].sfxinfo && channels[cnum].origin == origin)
+      {
+        degenmobj_t *const sobj = &sobjs[cnum];
+        const mobj_t *const mobj = (mobj_t *) origin;
+        sobj->x = mobj->x;
+        sobj->y = mobj->y;
+        sobj->z = mobj->z;
+        channels[cnum].origin = (mobj_t *) sobj;
+        break;
+      }
+    }
+  }
+}
 
 //
 // Stop and resume music, during game PAUSE.
@@ -532,6 +564,7 @@ void S_ChangeMusic(int musicnum, int looping)
   // current music which should play
   musicnum_current = musicnum;
   musinfo.current_item = -1;
+  S_music[NUMMUSIC].lumpnum = -1;
 
   //jff 1/22/98 return if music is not enabled
   if (!mus_card || nomusicparm)
@@ -550,16 +583,7 @@ void S_ChangeMusic(int musicnum, int looping)
 
   // get lumpnum if neccessary
   if (!music->lumpnum)
-    {
-      char namebuf[9];
-      const char* format;
-
-      // HERETIC_TODO: put d_ where it belongs in the definition and remove this
-      format = heretic ? "%s" : "d_%s";
-
-      sprintf(namebuf, format, music->name);
-      music->lumpnum = W_GetNumForName(namebuf);
-    }
+    music->lumpnum = W_GetNumForName(music->name);
 
   // load & register it
   music->data = W_CacheLumpNum(music->lumpnum);
@@ -679,8 +703,6 @@ void S_StopChannel(int cnum)
         if (cnum != i && c->sfxinfo == channels[i].sfxinfo)
           break;
 
-      // degrade usefulness of sound data
-      c->sfxinfo->usefulness--;
       c->sfxinfo = 0;
 
       // heretic_note: do this for doom too?

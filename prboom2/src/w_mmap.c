@@ -59,9 +59,6 @@
 
 static struct {
   void *cache;
-#ifdef TIMEDIAG
-  int locktic;
-#endif
   int locks;
 } *cachelump;
 
@@ -75,25 +72,6 @@ void W_PrintLump(FILE* fp, void* p) {
       return;
     }
   fprintf(fp, " not found");
-}
-#endif
-
-#ifdef TIMEDIAG
-static void W_ReportLocks(void)
-{
-  int i;
-  lprintf(LO_DEBUG, "W_ReportLocks:\nLump     Size   Locks  Tics\n");
-  if (cachelump)
-  {
-    for (i=0; i<numlumps; i++)
-    {
-      if (cachelump[i].locks > 0)
-      {
-        lprintf(LO_DEBUG, "%8.8s %6u %2d   %6d\n", lumpinfo[i].name,
-        W_LumpLength(i), cachelump[i].locks, gametic - cachelump[i].locktic);
-      }
-    }
-  }
 }
 #endif
 
@@ -147,10 +125,6 @@ void W_InitCache(void)
   if (!cachelump)
     I_Error ("W_Init: Couldn't allocate lumpcache");
 
-#ifdef TIMEDIAG
-  atexit(W_ReportLocks);
-#endif
-
   mapped_wad = calloc(numwadfiles,sizeof(mmap_info_t));
   memset(mapped_wad,0,sizeof(mmap_info_t)*numwadfiles);
   {
@@ -173,7 +147,7 @@ void W_InitCache(void)
           GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
           NULL, OPEN_EXISTING, 0, NULL);
         if (mapped_wad[wad_index].hnd==INVALID_HANDLE_VALUE)
-          I_Error("W_InitCache: CreateFile for memory mapping failed (LastError %i)",GetLastError());
+          I_Error("W_InitCache: CreateFile for memory mapping failed (LastError %li)",GetLastError());
         mapped_wad[wad_index].hnd_map =
           CreateFileMapping(
             mapped_wad[wad_index].hnd,
@@ -184,7 +158,7 @@ void W_InitCache(void)
             NULL
           );
         if (mapped_wad[wad_index].hnd_map==NULL)
-          I_Error("W_InitCache: CreateFileMapping for memory mapping failed (LastError %i)",GetLastError());
+          I_Error("W_InitCache: CreateFileMapping for memory mapping failed (LastError %li)",GetLastError());
         mapped_wad[wad_index].data =
           MapViewOfFile(
             mapped_wad[wad_index].hnd_map,
@@ -194,7 +168,7 @@ void W_InitCache(void)
             0
           );
         if (mapped_wad[wad_index].data==NULL)
-          I_Error("W_InitCache: MapViewOfFile for memory mapping failed (LastError %i)",GetLastError());
+          I_Error("W_InitCache: MapViewOfFile for memory mapping failed (LastError %li)",GetLastError());
       }
     }
   }
@@ -225,10 +199,6 @@ void W_InitCache(void)
   cachelump = calloc(numlumps, sizeof *cachelump);
   if (!cachelump)
     I_Error ("W_Init: Couldn't allocate lumpcache");
-
-#ifdef TIMEDIAG
-  atexit(W_ReportLocks);
-#endif
 
   {
     int i;
@@ -306,22 +276,13 @@ const void* W_LockLumpNum(int lump)
 
   /* cph - if wasn't locked but now is, tell z_zone to hold it */
   if (cachelump[lump].locks <= 0) {
-    Z_ChangeTag(cachelump[lump].cache,PU_STATIC);
-#ifdef TIMEDIAG
-    cachelump[lump].locktic = gametic;
-#endif
+    Z_ChangeTag(cachelump[lump].cache, PU_LOCKED);
     // reset lock counter
     cachelump[lump].locks = 1;
   } else {
     // increment lock counter
     cachelump[lump].locks += 1;
   }
-
-#ifdef SIMPLECHECKS
-  if (!((cachelump[lump].locks+1) & 0xf))
-    lprintf(LO_DEBUG, "W_CacheLumpNum: High lock on %.8s (%d)\n",
-      lumpinfo[lump].name, cachelump[lump].locks);
-#endif
 
   return cachelump[lump].cache;
 }
@@ -330,11 +291,6 @@ void W_UnlockLumpNum(int lump) {
   if (cachelump[lump].locks == -1)
     return; // this lump is memory mapped
 
-#ifdef SIMPLECHECKS
-  if (cachelump[lump].locks == 0)
-    lprintf(LO_DEBUG, "W_UnlockLumpNum: Excess unlocks on %8s\n",
-      lumpinfo[lump].name);
-#endif
   cachelump[lump].locks -= 1;
   /* cph - Note: must only tell z_zone to make purgeable if currently locked,
    * else it might already have been purged

@@ -22,6 +22,7 @@ typedef enum {
   dsda_timer_displaytime,
   dsda_timer_tic,
   dsda_timer_realtime,
+  dsda_timer_memory,
   DSDA_TIMER_COUNT
 } dsda_timer_t;
 
