@@ -153,6 +153,25 @@ static int dehfgetc(DEHFILE *fp)
     fp->size--, *fp->inp++ : EOF;
 }
 
+static long dehftell(DEHFILE *fp)
+{
+  return !fp->lump ? ftell(fp->f) : (fp->inp - fp->lump);
+}
+
+static int dehfseek(DEHFILE *fp, long offset)
+{
+  if (!fp->lump)
+    return fseek(fp->f, offset, SEEK_SET);
+  else
+  {
+    long total = (fp->inp - fp->lump) + fp->size;
+    offset = BETWEEN(0, total, offset);
+    fp->inp = fp->lump + offset;
+    fp->size = total - offset;
+    return 0;
+  }
+}
+
 // haleyjd 9/22/99
 int HelperThing = -1;     // in P_SpawnMapThing to substitute helper thing
 
@@ -1763,15 +1782,13 @@ void ProcessDehFile(const char *filename, const char *outfilename, int lumpnum)
     else if (last_i >= 10 && last_i < DEH_BLOCKMAX - 1) // restrict to BEX style lumps
     { // process that same line again with the last valid block code handler
       i = last_i;
-      if (!filein->lump)
-        fseek(filein->f, filepos, SEEK_SET);
+      dehfseek(filein, filepos);
     }
 
     deh_log("Processing function [%d] for %s\n", i, deh_blocks[i].key);
     deh_blocks[i].fptr(filein, inbuffer);  // call function
 
-    if (!filein->lump) // back up line start
-      filepos = ftell(filein->f);
+    filepos = dehftell(filein);
   }
 
   if (infile.lump)
@@ -2783,7 +2800,7 @@ static void deh_procMisc(DEHFILE *fpin, char *line) // done
       idkfa_armor_class = (int)value;
     else if (!deh_strcasecmp(key, deh_misc[14]))  // BFG Cells/Shot
     {
-      weaponinfo[MT_BFG].ammopershot = bfgcells = (int)value;
+      weaponinfo[wp_bfg].ammopershot = bfgcells = (int)value;
       bfgcells_modified = true;
     }
     else if (!deh_strcasecmp(key, deh_misc[15]))  // Monsters Infight
