@@ -442,6 +442,10 @@ static void ST_refreshBackground(void)
     {
       flags = VPT_ALIGN_BOTTOM;
 
+      // Applies palette to backfill
+      if (V_GetMode() != VID_MODE8)
+        R_FillBackScreen();
+
       V_DrawNumPatch(ST_X, y, BG, stbarbg.lumpnum, CR_DEFAULT, flags);
       if (!deathmatch)
       {
@@ -838,7 +842,8 @@ static void ST_doPaletteStuff(void)
 
 void M_ChangeApplyPalette(void)
 {
-  ST_doPaletteStuff();
+  if (gamestate == GS_LEVEL)
+    ST_doPaletteStuff();
 }
 
 static void ST_drawWidgets(dboolean refresh)
@@ -1254,7 +1259,7 @@ static dboolean st_stopped = true;
 
 void ST_Start(void)
 {
-  if (heretic) return;
+  if (heretic) return SB_Start();
 
   if (!st_stopped)
     ST_Stop();

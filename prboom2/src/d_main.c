@@ -405,6 +405,9 @@ void D_Display (fixed_t frac)
     if (V_GetMode() != VID_MODEGL)
       R_DrawViewBorder();
     HU_Drawer();
+
+    if (V_GetMode() == VID_MODEGL)
+      gld_ProcessExtraAlpha();
   }
 
   isborderstate      = isborder;
@@ -722,6 +725,10 @@ void D_DoAdvanceDemo(void)
   if (netgame && !demoplayback)
     demosequence = 0;
   else if (!demostates[++demosequence][gamemode].func)
+    demosequence = 0;
+
+  // do not even attempt to play DEMO4 if it is not available
+  if (demosequence == 6 && gamemode == commercial && W_CheckNumForName("demo4") < 0)
     demosequence = 0;
 
   demostates[demosequence][gamemode].func(demostates[demosequence][gamemode].name);
