@@ -512,13 +512,6 @@ void SB_Drawer(dboolean statusbaron, dboolean refresh, dboolean fullmenu)
                     hitCenterFrame = true;
                 }
             }
-            BorderTopRefresh = true;
-            // UpdateState |= I_MESSAGES;
-        }
-        else
-        {
-            BorderTopRefresh = true;
-            // UpdateState |= I_MESSAGES;
         }
     }
 
@@ -529,13 +522,6 @@ void SB_Drawer(dboolean statusbaron, dboolean refresh, dboolean fullmenu)
         {
             frame = (leveltime / 3) & 15;
             V_DrawNumPatch(300, 17, 0, spinbooklump + frame, CR_DEFAULT, VPT_STRETCH);
-            BorderTopRefresh = true;
-            // UpdateState |= I_MESSAGES;
-        }
-        else
-        {
-            BorderTopRefresh = true;
-            // UpdateState |= I_MESSAGES;
         }
     }
 }
@@ -617,7 +603,6 @@ void DrawCommonBar(void)
         V_DrawNumPatch(0,  190, 0, LumpLTFACE, CR_DEFAULT, VPT_STRETCH);
         V_DrawNumPatch(276,  190, 0, LumpRTFACE, CR_DEFAULT, VPT_STRETCH);
         ShadeChain();
-        // UpdateState |= I_STATBAR;
     }
 }
 
@@ -642,7 +627,6 @@ void DrawMainBar(void)
         V_DrawNumPatch(182, 161, 0, temp, CR_DEFAULT, VPT_STRETCH);
         ArtifactFlash--;
         oldarti = -1;           // so that the correct artifact fills in after the flash
-        // UpdateState |= I_STATBAR;
     }
     else if (oldarti != CPlayer->readyArtifact
              || oldartiCount != CPlayer->inventory[inv_ptr].count)
@@ -658,7 +642,6 @@ void DrawMainBar(void)
         }
         oldarti = CPlayer->readyArtifact;
         oldartiCount = CPlayer->inventory[inv_ptr].count;
-        // UpdateState |= I_STATBAR;
     }
 
     // Frags
@@ -674,7 +657,6 @@ void DrawMainBar(void)
             V_DrawNumPatch(57,  171, 0, LumpARMCLEAR, CR_DEFAULT, VPT_STRETCH);
             DrINumber(temp, 61, 170);
             oldfrags = temp;
-            // UpdateState |= I_STATBAR;
         }
     }
     else
@@ -693,7 +675,6 @@ void DrawMainBar(void)
             oldlife = temp;
             V_DrawNumPatch(57,  171, 0, LumpARMCLEAR, CR_DEFAULT, VPT_STRETCH);
             DrINumber(temp, 61, 170);
-            // UpdateState |= I_STATBAR;
         }
     }
 
@@ -713,7 +694,6 @@ void DrawMainBar(void)
             V_DrawNamePatch(153, 180, 0, DEH_String("bkeyicon"), CR_DEFAULT, VPT_STRETCH);
         }
         oldkeys = playerkeys;
-        // UpdateState |= I_STATBAR;
     }
     // Ammo
     temp = CPlayer->ammo[wpnlev1info[CPlayer->readyweapon].ammo];
@@ -729,7 +709,6 @@ void DrawMainBar(void)
         }
         oldammo = temp;
         oldweapon = CPlayer->readyweapon;
-        // UpdateState |= I_STATBAR;
     }
 
     // Armor
@@ -738,7 +717,6 @@ void DrawMainBar(void)
         V_DrawNumPatch(224,  171, 0, LumpARMCLEAR, CR_DEFAULT, VPT_STRETCH);
         DrINumber(CPlayer->armorpoints, 228, 170);
         oldarmor = CPlayer->armorpoints;
-        // UpdateState |= I_STATBAR;
     }
 }
 
@@ -755,7 +733,6 @@ void DrawInventoryBar(void)
     int lump;
 
     x = inv_ptr - curpos;
-    // UpdateState |= I_STATBAR;
     V_DrawNumPatch(34,  160, 0, LumpINVBAR, CR_DEFAULT, VPT_STRETCH);
     for (i = 0; i < 7; i++)
     {
@@ -790,7 +767,6 @@ void DrawFullScreenStuff(void)
     int x;
     int temp;
 
-    // UpdateState |= I_FULLSCRN;
     if (CPlayer->mo->health > 0)
     {
         DrBNumber(CPlayer->mo->health, 5, 180);

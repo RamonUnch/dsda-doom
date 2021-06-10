@@ -225,13 +225,11 @@ void MN_Drawer(void)
   //       MN_DrTextA(DEH_String("?"), 160 +
   //                  MN_TextAWidth(SlotText[quickload - 1]) / 2, 90);
   //     }
-  //     UpdateState |= I_FULLSCRN;
   //   }
   //   return;
   // }
   // else
   // {
-  //   UpdateState |= I_FULLSCRN;
   //   if (InfoType)
   //   {
   //     MN_DrawInfo();
@@ -345,6 +343,9 @@ void MN_DrawLoad(void)
 
   MN_DrTextB(title, 160 - MN_TextBWidth(title) / 2, 10);
   MN_DrawFileSlots(LoadDef.x, LoadDef.y);
+
+  if (delete_verify)
+    M_DrawDelVerify();
 }
 
 extern int saveStringEnter;
@@ -366,6 +367,9 @@ void MN_DrawSave(void)
     i = MN_TextAWidth(savegamestrings[saveSlot]);
     MN_DrTextA("[", SaveDef.x + 5 + i, SaveDef.y + 5 + saveSlot * ITEM_HEIGHT); // [ is _ in font A
   }
+
+  if (delete_verify)
+    M_DrawDelVerify();
 }
 
 void MN_DrawPause(void)

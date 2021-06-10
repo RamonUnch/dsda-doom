@@ -67,6 +67,7 @@ static void IN_DrTextB(const char *text, int x, int y);
 static wbstartstruct_t* wbs;
 
 static int prevmap;
+static int nextmap;
 static dboolean intermission;
 static dboolean skipintermission;
 static dboolean finalintermission;
@@ -207,6 +208,7 @@ static void IN_InitVariables(wbstartstruct_t* wbstartstruct)
 {
   wbs = wbstartstruct;
   prevmap = wbs->last + 1;
+  nextmap = wbs->next + 1;
 
   finalintermission = (prevmap == 8);
 }
@@ -515,7 +517,6 @@ void IN_Drawer(void)
     {
         return;
     }
-    // UpdateState |= I_FULLSCRN;
     if (oldinterstate != 2 && interstate == 2)
     {
         S_StartSound(NULL, heretic_sfx_pstop);
@@ -596,7 +597,7 @@ void IN_DrawOldLevel(void)
 
     if (prevmap == 9)
     {
-        for (i = 0; i < gamemap - 1; i++)
+        for (i = 0; i < nextmap - 1; i++)
         {
             IN_DrawBeenThere(i);
         }
@@ -630,7 +631,7 @@ void IN_DrawOldLevel(void)
 
 void IN_DrawYAH(void)
 {
-    const char *level_name = NameForMap(gamemap);
+    const char *level_name = NameForMap(nextmap);
     int i;
     int x;
 
@@ -641,7 +642,7 @@ void IN_DrawYAH(void)
 
     if (prevmap == 9)
     {
-        prevmap = gamemap - 1;
+        prevmap = nextmap - 1;
     }
     for (i = 0; i < prevmap; i++)
     {
@@ -653,7 +654,7 @@ void IN_DrawYAH(void)
     }
     if (!(intertime & 16) || interstate == 3)
     {                           // draw the destination 'X'
-        IN_DrawGoingThere(gamemap - 1);
+        IN_DrawGoingThere(nextmap - 1);
     }
 }
 
@@ -666,7 +667,7 @@ void IN_DrawYAH(void)
 void IN_DrawSingleStats(void)
 {
     const char *prev_level_name = NameForMap(prevmap);
-    const char *next_level_name = NameForMap(gamemap);
+    const char *next_level_name = NameForMap(nextmap);
     int x;
     static int sounds;
 
