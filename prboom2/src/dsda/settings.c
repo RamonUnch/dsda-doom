@@ -22,6 +22,8 @@
 #include "w_wad.h"
 #include "lprintf.h"
 
+#include "dsda/key_frame.h"
+
 #include "settings.h"
 
 int dsda_auto_key_frame_interval;
@@ -87,7 +89,7 @@ static int dsda_WadCompatibilityLevel(void) {
 int dsda_CompatibilityLevel(void) {
   int i, level;
 
-  if (heretic) return doom_12_compatibility;
+  if (raven) return doom_12_compatibility;
 
   i = M_CheckParm("-complevel");
 
@@ -110,6 +112,7 @@ int dsda_CompatibilityLevel(void) {
 void dsda_ChangeStrictMode(void) {
   I_Init2(); // side effect of realtic clock rate
   M_ChangeSpeed(); // side effect of always sr50
+  dsda_InitKeyFrame();
 }
 
 void dsda_SetTas(void) {
@@ -230,5 +233,5 @@ dboolean dsda_SkipWipe(void) {
     return true;
   }
 
-  return !render_wipescreen;
+  return !render_wipescreen || hexen;
 }

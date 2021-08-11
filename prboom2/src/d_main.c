@@ -100,6 +100,9 @@
 #include "dsda/settings.h"
 
 #include "heretic/mn_menu.h"
+#include "heretic/sb_bar.h"
+
+#include "hexen/sn_sonix.h"
 
 // NSM
 #include "i_capture.h"
@@ -122,6 +125,8 @@ dboolean clfastparm;     // checkparm of -fast
 dboolean nomonsters;     // working -nomonsters
 dboolean respawnparm;    // working -respawn
 dboolean fastparm;       // working -fast
+
+dboolean randomclass;
 
 dboolean singletics = false; // debug flag to cancel adaptiveness
 
@@ -165,7 +170,8 @@ const char *const standard_iwads[]=
   "bfgdoom2.wad",
   "bfgdoom.wad",
 
-  "heretic.wad"
+  "heretic.wad",
+  "hexen.wad"
 };
 //e6y static
 const int nstandard_iwads = sizeof standard_iwads/sizeof*standard_iwads;
@@ -223,7 +229,13 @@ static void D_Wipe(void)
   int wipestart;
   int old_realtic_clock_rate = 0;
 
-  if (!render_wipescreen || dsda_SkipWipe()) return;//e6y
+  //e6y
+  if (!render_wipescreen || dsda_SkipWipe())
+  {
+    // If there's no screen wipe, we still need to refresh the status bar
+    SB_Start();
+    return;
+  }
 
   if (realtic_clock_rate != 100 && dsda_WipeAtFullSpeed())
   {
@@ -288,7 +300,7 @@ void D_Display (fixed_t frac)
       return;
 
 #ifdef GL_DOOM
-    if (V_GetMode() == VID_MODEGL)
+    if (V_IsOpenGLMode())
     {
       gld_PreprocessLevel();
     }
@@ -363,7 +375,7 @@ void D_Display (fixed_t frac)
       borderwillneedredraw = (borderwillneedredraw) ||
         (((automapmode & am_active) && !(automapmode & am_overlay)));
     }
-    if (redrawborderstuff || (V_GetMode() == VID_MODEGL))
+    if (redrawborderstuff || (V_IsOpenGLMode()))
       R_DrawViewBorder();
 
     // e6y
@@ -402,11 +414,11 @@ void D_Display (fixed_t frac)
         (menuactive == mnact_full));
 
     BorderNeedRefresh = false;
-    if (V_GetMode() != VID_MODEGL)
+    if (V_IsSoftwareMode())
       R_DrawViewBorder();
     HU_Drawer();
 
-    if (V_GetMode() == VID_MODEGL)
+    if (V_IsOpenGLMode())
       gld_ProcessExtraAlpha();
   }
 
@@ -415,7 +427,18 @@ void D_Display (fixed_t frac)
 
   // draw pause pic
   if (paused && (menuactive != mnact_full)) {
-    if (heretic)
+    if (hexen)
+    {
+      if (!netgame)
+      {
+        V_DrawNamePatch(160, viewwindowy + 5, 0, "PAUSED", CR_DEFAULT, VPT_STRETCH);
+      }
+      else
+      {
+        V_DrawNamePatch(160, 70, 0, "PAUSED", CR_DEFAULT, VPT_STRETCH);
+      }
+    }
+    else if (heretic)
       MN_DrawPause();
     else
       // Simplified the "logic" here and no need for x-coord caching - POPE
@@ -573,9 +596,13 @@ void D_PageTicker(void)
 //
 static void D_PageDrawer(void)
 {
-  if (heretic)
+  if (raven)
   {
     V_DrawRawScreen(pagename);
+    if (hexen && demosequence == 1)
+    {
+      V_DrawNamePatch(4, 160, 0, "ADVISOR", CR_DEFAULT, VPT_STRETCH);
+    }
     return;
   }
 
@@ -925,7 +952,7 @@ void AddIWAD(const char *iwad)
     return;
 
   //jff 9/3/98 use logical output routine
-  lprintf(LO_CONFIRM,"IWAD found: %s\n",iwad); //jff 4/20/98 print only if found
+  lprintf(LO_INFO,"IWAD found: %s\n",iwad); //jff 4/20/98 print only if found
   CheckIWAD(iwad,&gamemode,&haswolflevels);
 
   /* jff 8/23/98 set gamemission global appropriately in all cases
@@ -939,29 +966,38 @@ void AddIWAD(const char *iwad)
       M_AddParam("-heretic");
   }
 
+  if (i >= 9 && !strnicmp(iwad + i - 9, "hexen.wad", 9))
+  {
+    if (!M_CheckParm("-hexen"))
+      M_AddParam("-hexen");
+
+    gamemode = commercial;
+    haswolflevels = false;
+  }
+
   switch(gamemode)
   {
-  case retail:
-  case registered:
-  case shareware:
-    gamemission = doom;
-    if (i>=8 && !strnicmp(iwad+i-8,"chex.wad",8))
-      gamemission = chex;
-    break;
-  case commercial:
-    gamemission = doom2;
-    if (i>=10 && !strnicmp(iwad+i-10,"doom2f.wad",10))
-      language=french;
-    else if (i>=7 && !strnicmp(iwad+i-7,"tnt.wad",7))
-      gamemission = pack_tnt;
-    else if (i>=12 && !strnicmp(iwad+i-12,"plutonia.wad",12))
-      gamemission = pack_plut;
-    else if (i>=8 && !strnicmp(iwad+i-8,"hacx.wad",8))
-      gamemission = hacx;
-    break;
-  default:
-    gamemission = none;
-    break;
+    case retail:
+    case registered:
+    case shareware:
+      gamemission = doom;
+      if (i>=8 && !strnicmp(iwad+i-8,"chex.wad",8))
+        gamemission = chex;
+      break;
+    case commercial:
+      gamemission = doom2;
+      if (i>=10 && !strnicmp(iwad+i-10,"doom2f.wad",10))
+        language=french;
+      else if (i>=7 && !strnicmp(iwad+i-7,"tnt.wad",7))
+        gamemission = pack_tnt;
+      else if (i>=12 && !strnicmp(iwad+i-12,"plutonia.wad",12))
+        gamemission = pack_plut;
+      else if (i>=8 && !strnicmp(iwad+i-8,"hacx.wad",8))
+        gamemission = hacx;
+      break;
+    default:
+      gamemission = none;
+      break;
   }
   if (gamemode == indetermined)
     //jff 9/3/98 use logical output routine
@@ -980,6 +1016,16 @@ static char *FindIWADFile(void)
 {
   int   i;
   char  * iwad  = NULL;
+  char *dash;
+
+  if ((dash = strrchr(myargv[0], '-')))
+  {
+    dash++;
+    if (!strnicmp(dash, "heretic", 7))
+      return I_FindFile("heretic.wad", ".wad");
+    else if (!strnicmp(dash, "hexen", 5))
+      return I_FindFile("hexen.wad", ".wad");
+  }
 
   i = M_CheckParm("-iwad");
   if (i && (++i < myargc)) {
@@ -1118,7 +1164,7 @@ static void FindResponseFile (void)
             I_Error("No such response file: %s",fname);
         }
         //jff 9/3/98 use logical output routine
-        lprintf(LO_CONFIRM,"Found response file %s\n",fname);
+        lprintf(LO_INFO,"Found response file %s\n",fname);
         free(fname);
         // proff 04/05/2000: Added check for empty rsp file
         if (size<=0)
@@ -1188,10 +1234,10 @@ static void FindResponseFile (void)
 
         // DISPLAY ARGS
         //jff 9/3/98 use logical output routine
-        lprintf(LO_CONFIRM,"%d command-line args:\n",myargc);
+        lprintf(LO_INFO,"%d command-line args:\n",myargc);
         for (index=1;index<myargc;index++)
           //jff 9/3/98 use logical output routine
-          lprintf(LO_CONFIRM,"%s\n",myargv[index]);
+          lprintf(LO_INFO,"%s\n",myargv[index]);
         break;
       }
 }
@@ -1380,36 +1426,6 @@ const char *wad_files[MAXLOADFILES], *deh_files[MAXLOADFILES];
 // CPhipps - misc screen stuff
 int desired_screenwidth, desired_screenheight;
 
-static void L_SetupConsoleMasks(void) {
-  int p;
-  int i;
-  const char *cena="ICWEFDA",*pos;  //jff 9/3/98 use this for parsing console masks // CPhipps - const char*'s
-
-  //jff 9/3/98 get mask for console output filter
-  if ((p = M_CheckParm ("-cout"))) {
-    lprintf(LO_DEBUG, "mask for stdout console output: ");
-    if (++p != myargc && *myargv[p] != '-')
-      for (i=0,cons_output_mask=0;(size_t)i<strlen(myargv[p]);i++)
-        if ((pos = strchr(cena,toupper(myargv[p][i])))) {
-          cons_output_mask |= (1<<(pos-cena));
-          lprintf(LO_DEBUG, "%c", toupper(myargv[p][i]));
-        }
-    lprintf(LO_DEBUG, "\n");
-  }
-
-  //jff 9/3/98 get mask for redirected console error filter
-  if ((p = M_CheckParm ("-cerr"))) {
-    lprintf(LO_DEBUG, "mask for stderr console output: ");
-    if (++p != myargc && *myargv[p] != '-')
-      for (i=0,cons_error_mask=0;(size_t)i<strlen(myargv[p]);i++)
-        if ((pos = strchr(cena,toupper(myargv[p][i])))) {
-          cons_error_mask |= (1<<(pos-cena));
-          lprintf(LO_DEBUG, "%c", toupper(myargv[p][i]));
-        }
-    lprintf(LO_DEBUG, "\n");
-  }
-}
-
 // Calculate the path to the directory for autoloaded WADs/DEHs.
 // Creates the directory as necessary.
 
@@ -1504,7 +1520,9 @@ static void AutoLoadWADs(const char *path)
 
 static const char *D_AutoLoadGameBase()
 {
-  return heretic ? "heretic-all" : "doom-all";
+  return hexen ? "hexen-all" :
+         heretic ? "heretic-all" :
+         "doom-all";
 }
 
 #define ALL_AUTOLOAD "all-all"
@@ -1601,6 +1619,80 @@ static void D_AutoloadDehPWadDir()
     }
 }
 
+static void HandleWarp(void)
+{
+  int p;
+
+  if ((p = M_CheckParm ("-warp")) ||      // killough 5/2/98
+       (p = M_CheckParm ("-wart")))
+       // Ty 08/29/98 - moved this check later so we can have -warp alone: && p < myargc-1)
+  {
+    startmap = 0; // Ty 08/29/98 - allow "-warp x" to go to first map in wad(s)
+    autostart = true; // Ty 08/29/98 - move outside the decision tree
+
+    if (hexen)
+    {
+      if (p < myargc - 1)
+        startmap = P_TranslateMap(atoi(myargv[p + 1]));
+      else
+        startmap = P_TranslateMap(1);
+      if (startmap == -1)
+      {                       // Couldn't find real map number
+        I_Error("-warp: Invalid map number.\n");
+      }
+    }
+    else if (gamemode == commercial)
+    {
+      if (p < myargc-1)
+        startmap = atoi(myargv[p+1]);   // Ty 08/29/98 - add test if last parm
+    }
+    else    // 1/25/98 killough: fix -warp xxx from crashing Doom 1 / UD
+    {
+      if (p < myargc-1)
+      {
+        int episode, map;
+        if (sscanf(myargv[p+1], "%d", &episode) == 1)
+        {
+          startepisode = episode;
+          startmap = 1;
+          if (p < myargc-2 && sscanf(myargv[p+2], "%d", &map) == 1)
+          {
+            startmap = map;
+          }
+        }
+      }
+    }
+  }
+  // Ty 08/29/98 - later we'll check for startmap=0 and autostart=true
+  // as a special case that -warp * was used.  Actually -warp with any
+  // non-numeric will do that but we'll only document "*"
+}
+
+static void HandleClass(void)
+{
+  int p;
+  int player_class = PCLASS_FIGHTER;
+
+  if (!hexen) return;
+
+  p = M_CheckParm("-class");
+  if (p && p < myargc - 1)
+    player_class = atoi(myargv[p + 1]) + PCLASS_FIGHTER;
+
+  if (
+    player_class != PCLASS_FIGHTER &&
+    player_class != PCLASS_CLERIC &&
+    player_class != PCLASS_MAGE
+  )
+    player_class = PCLASS_FIGHTER;
+
+  PlayerClass[0] = player_class;
+  for (p = 1; p < MAX_MAXPLAYERS; p++)
+    PlayerClass[p] = PCLASS_FIGHTER;
+
+  randomclass = (M_CheckParm("-randclass") != 0);
+}
+
 //
 // D_DoomMainSetup
 //
@@ -1612,7 +1704,11 @@ static void D_DoomMainSetup(void)
 {
   int p,slot;
 
-  L_SetupConsoleMasks();
+  if (M_CheckParm("-verbose"))
+    I_EnableVerboseLogging();
+
+  if (M_CheckParm("-quiet"))
+    I_DisableAllLogging();
 
   setbuf(stdout,NULL);
 
@@ -1661,44 +1757,45 @@ static void D_DoomMainSetup(void)
       deathmatch = 1;
 
   {
-    switch ( gamemode ) {
-    case retail:
-      switch (gamemission)
-      {
-        case chex:
-          doomverstr = "Chex(R) Quest";
-          break;
-        default:
-          doomverstr = "The Ultimate DOOM";
-          break;
-      }
-      break;
-    case shareware:
-      doomverstr = "DOOM Shareware";
-      break;
-    case registered:
-      doomverstr = "DOOM Registered";
-      break;
-    case commercial:  // Ty 08/27/98 - fixed gamemode vs gamemission
-      switch (gamemission)
-      {
-        case pack_plut:
-          doomverstr = "Final DOOM - The Plutonia Experiment";
-          break;
-        case pack_tnt:
-          doomverstr = "Final DOOM - TNT: Evilution";
-          break;
-        case hacx:
-          doomverstr = "HACX - Twitch 'n Kill";
-          break;
-        default:
-          doomverstr = "DOOM 2: Hell on Earth";
-          break;
-      }
-      break;
-    default:
-      doomverstr = "Public DOOM";
-      break;
+    switch ( gamemode )
+    {
+      case retail:
+        switch (gamemission)
+        {
+          case chex:
+            doomverstr = "Chex(R) Quest";
+            break;
+          default:
+            doomverstr = "The Ultimate DOOM";
+            break;
+        }
+        break;
+      case shareware:
+        doomverstr = "DOOM Shareware";
+        break;
+      case registered:
+        doomverstr = "DOOM Registered";
+        break;
+      case commercial:  // Ty 08/27/98 - fixed gamemode vs gamemission
+        switch (gamemission)
+        {
+          case pack_plut:
+            doomverstr = "Final DOOM - The Plutonia Experiment";
+            break;
+          case pack_tnt:
+            doomverstr = "Final DOOM - TNT: Evilution";
+            break;
+          case hacx:
+            doomverstr = "HACX - Twitch 'n Kill";
+            break;
+          default:
+            doomverstr = "DOOM 2: Hell on Earth";
+            break;
+        }
+        break;
+      default:
+        doomverstr = "Public DOOM";
+        break;
     }
 
     if (bfgedition)
@@ -1713,7 +1810,7 @@ static void D_DoomMainSetup(void)
     }
 
     /* cphipps - the main display. This shows the build date, copyright, and game type */
-    lprintf(LO_ALWAYS,PACKAGE_NAME" (built %s), playing: %s\n"
+    lprintf(LO_INFO,PACKAGE_NAME" (built %s), playing: %s\n"
       PACKAGE_NAME" is released under the GNU General Public license v2.0.\n"
       "You are welcome to redistribute it under certain conditions.\n"
       "It comes with ABSOLUTELY NO WARRANTY. See the file COPYING for details.\n",
@@ -1722,28 +1819,7 @@ static void D_DoomMainSetup(void)
 
   if (devparm)
     //jff 9/3/98 use logical output routine
-    lprintf(LO_CONFIRM,"%s",D_DEVSTR);
-
-  // turbo option
-  if ((p=M_CheckParm ("-turbo")))
-  {
-    int scale = 200;
-    extern int forwardmove[2];
-    extern int sidemove[2];
-
-    if (p<myargc-1)
-      scale = atoi(myargv[p+1]);
-    if (scale < 10)
-      scale = 10;
-    if (scale > 400)
-      scale = 400;
-    //jff 9/3/98 use logical output routine
-    lprintf (LO_CONFIRM,"turbo scale: %i%%\n",scale);
-    forwardmove[0] = forwardmove[0]*scale/100;
-    forwardmove[1] = forwardmove[1]*scale/100;
-    sidemove[0] = sidemove[0]*scale/100;
-    sidemove[1] = sidemove[1]*scale/100;
-  }
+    lprintf(LO_INFO,"%s",D_DEVSTR);
 
   modifiedgame = false;
 
@@ -1767,48 +1843,18 @@ static void D_DoomMainSetup(void)
     autostart = true;
   }
 
+  HandleClass();
+
   if ((p = M_CheckParm ("-timer")) && p < myargc-1 && deathmatch)
   {
     int time = atoi(myargv[p+1]);
     //jff 9/3/98 use logical output routine
-    lprintf(LO_CONFIRM,"Levels will end after %d minute%s.\n", time, time>1 ? "s" : "");
+    lprintf(LO_INFO,"Levels will end after %d minute%s.\n", time, time>1 ? "s" : "");
   }
 
   if ((p = M_CheckParm ("-avg")) && p < myargc-1 && deathmatch)
     //jff 9/3/98 use logical output routine
-    lprintf(LO_CONFIRM,"Austin Virtual Gaming: Levels will end after 20 minutes\n");
-
-  if ((p = M_CheckParm ("-warp")) ||      // killough 5/2/98
-       (p = M_CheckParm ("-wart")))
-       // Ty 08/29/98 - moved this check later so we can have -warp alone: && p < myargc-1)
-  {
-    startmap = 0; // Ty 08/29/98 - allow "-warp x" to go to first map in wad(s)
-    autostart = true; // Ty 08/29/98 - move outside the decision tree
-    if (gamemode == commercial)
-    {
-      if (p < myargc-1)
-        startmap = atoi(myargv[p+1]);   // Ty 08/29/98 - add test if last parm
-    }
-    else    // 1/25/98 killough: fix -warp xxx from crashing Doom 1 / UD
-    {
-      if (p < myargc-1)
-      {
-        int episode, map;
-        if (sscanf(myargv[p+1], "%d", &episode) == 1)
-        {
-          startepisode = episode;
-          startmap = 1;
-          if (p < myargc-2 && sscanf(myargv[p+2], "%d", &map) == 1)
-          {
-            startmap = map;
-          }
-        }
-      }
-    }
-  }
-  // Ty 08/29/98 - later we'll check for startmap=0 and autostart=true
-  // as a special case that -warp * was used.  Actually -warp with any
-  // non-numeric will do that but we'll only document "*"
+    lprintf(LO_INFO,"Austin Virtual Gaming: Levels will end after 20 minutes\n");
 
   //jff 1/22/98 add command line parms to disable sound and music
   {
@@ -1855,11 +1901,15 @@ static void D_DoomMainSetup(void)
   // Designed to be general, instead of specific to boomlump.wad
   // Some people might find this useful
   // cph - support MBF -noload parameter
-  if (!M_CheckParm("-noload")) {
+  {
     // only autoloaded wads here - autoloaded patches moved down below W_Init
-    int i;
+    int i, imax = MAXLOADFILES;
 
-    for (i=0; i<MAXLOADFILES; i++) {
+    // make sure to always autoload prboom-plus.wad
+    if (M_CheckParm("-noload"))
+      imax = 1;
+
+    for (i=0; i<imax; i++) {
       const char *fname = wad_files[i];
       char *fpath;
 
@@ -1931,15 +1981,12 @@ static void D_DoomMainSetup(void)
     AddDefaultExtension(file,".lmp");     // killough
     D_AddFile (file,source_lmp);
     //jff 9/3/98 use logical output routine
-    lprintf(LO_CONFIRM,"Playing demo %s\n",file);
+    lprintf(LO_INFO,"Playing demo %s\n",file);
     if ((p = M_CheckParm ("-ffmap")) && p < myargc-1) {
       ffmap = atoi(myargv[p+1]);
     }
     free(file);
   }
-
-  // internal translucency set to config file value               // phares
-  general_translucency = default_translucency;                    // phares
 
   //e6y
   {
@@ -1963,6 +2010,21 @@ static void D_DoomMainSetup(void)
   //jff 9/3/98 use logical output routine
   lprintf(LO_INFO,"W_Init: Init WADfiles.\n");
   W_Init(); // CPhipps - handling of wadfiles init changed
+
+  if (hexen)
+  {
+    if (W_CheckNumForName("MAP05") < 0)
+    {
+      I_Error("The Hexen IWAD shareware is not supported.");
+      gamemode = shareware;
+      g_maxplayers = 4;
+    }
+    else if (W_CheckNumForName("CLUS1MSG") < 0)
+    {
+      I_Error("The Hexen v1.0 IWAD is not supported.");
+    }
+  }
+
 
   lprintf(LO_INFO, "G_ReloadDefaults: Checking OPTIONS.\n");
   G_ReloadDefaults();
@@ -2110,6 +2172,13 @@ static void D_DoomMainSetup(void)
   lprintf(LO_INFO,"M_Init: Init miscellaneous info.\n");
   M_Init();
 
+  if (hexen)
+  {
+    InitMapMusicInfo();
+    S_InitScript();
+    SN_InitSequenceScript();
+  }
+
 #ifdef HAVE_NET
   // CPhipps - now wait for netgame start
   D_CheckNetGame();
@@ -2122,6 +2191,9 @@ static void D_DoomMainSetup(void)
   //jff 9/3/98 use logical output routine
   lprintf(LO_INFO,"\nP_Init: Init Playloop state.\n");
   P_Init();
+
+  // Must be after P_Init
+  HandleWarp();
 
   //jff 9/3/98 use logical output routine
   lprintf(LO_INFO,"I_Init: Setting up machine state.\n");
@@ -2211,22 +2283,26 @@ static void D_DoomMainSetup(void)
     slot = atoi(myargv[slot]);        // killough 3/16/98: add slot info
     G_LoadGame(slot, true);           // killough 5/15/98: add command flag // cph - no filename
   }
-  else
-    if (!singledemo) {                  /* killough 12/98 */
-      if (autostart || netgame)
+  else if (!singledemo)               // killough 12/98
+  {
+    if (autostart || netgame)
+    {
+      // sets first map and first episode if unknown
+      if (autostart)
       {
-        // sets first map and first episode if unknown
-        if (autostart)
-        {
-          GetFirstMap(&startepisode, &startmap);
-        }
-        G_InitNew(startskill, startepisode, startmap);
-        if (demorecording)
-          G_BeginRecording();
+        GetFirstMap(&startepisode, &startmap);
       }
-      else
-        D_StartTitle();                 // start up intro loop
+      if (hexen)
+      {
+        G_StartNewInit();
+      }
+      G_InitNew(startskill, startepisode, startmap);
+      if (demorecording)
+        G_BeginRecording();
     }
+    else
+      D_StartTitle();                 // start up intro loop
+  }
 
   // do not try to interpolate during timedemo
   M_ChangeUncappedFrameRate();
@@ -2263,7 +2339,15 @@ void GetFirstMap(int *ep, int *map)
   {
     *ep = 1;
     *map = 1; // default E1M1 or MAP01
-    if (gamemode == commercial)
+    if (hexen)
+    {
+      *map = P_TranslateMap(1);
+      if (*map == -1)
+      {                       // Couldn't find real map number
+        I_Error("Unable to autostart.\n");
+      }
+    }
+    else if (gamemode == commercial)
     {
       for (i=1;!done && i<33;i++)  // Ty 09/13/98 - add use of !done
       {
@@ -2315,7 +2399,7 @@ void GetFirstMap(int *ep, int *map)
       }
     }
     //jff 9/3/98 use logical output routine
-    lprintf(LO_CONFIRM,"Auto-warping to first %slevel: %s\n",
+    lprintf(LO_INFO,"Auto-warping to first %slevel: %s\n",
       newlevel ? "new " : "", name);  // Ty 10/04/98 - new level test
   }
 }

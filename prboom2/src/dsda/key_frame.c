@@ -33,8 +33,11 @@
 #include "lprintf.h"
 #include "e6y.h"
 
+#include "heretic/sb_bar.h"
+
 #include "dsda/demo.h"
 #include "dsda/options.h"
+#include "dsda/save.h"
 #include "dsda/settings.h"
 #include "key_frame.h"
 
@@ -97,16 +100,16 @@ void dsda_StoreKeyFrame(byte** buffer, byte complete) {
 
   save_p = savebuffer = malloc(savegamesize);
 
-  CheckSaveGame(5 + MIN_MAXPLAYERS);
+  CheckSaveGame(5 + FUTURE_MAXPLAYERS);
   *save_p++ = compatibility_level;
   *save_p++ = gameskill;
   *save_p++ = gameepisode;
   *save_p++ = gamemap;
 
-  for (i = 0; i < MAXPLAYERS; i++)
+  for (i = 0; i < g_maxplayers; i++)
     *save_p++ = playeringame[i];
 
-  for (; i < MIN_MAXPLAYERS; i++)
+  for (; i < FUTURE_MAXPLAYERS; i++)
     *save_p++ = 0;
 
   *save_p++ = idmusnum;
@@ -145,13 +148,7 @@ void dsda_StoreKeyFrame(byte** buffer, byte complete) {
   CheckSaveGame(1);
   *save_p++ = (gametic - basetic) & 255;
 
-  P_ArchivePlayers();
-  P_ThinkerToIndex();
-  P_ArchiveWorld();
-  P_TrueArchiveThinkers();
-  P_IndexToThinker();
-  P_ArchiveRNG();
-  P_ArchiveMap();
+  dsda_ArchiveAll();
 
   if (*buffer != NULL) free(*buffer);
 
@@ -186,9 +183,9 @@ void dsda_RestoreKeyFrame(byte* buffer, byte complete) {
   gamemap = *save_p++;
   gamemapinfo = G_LookupMapinfo(gameepisode, gamemap);
 
-  for (i = 0; i < MAXPLAYERS; i++)
+  for (i = 0; i < g_maxplayers; i++)
     playeringame[i] = *save_p++;
-  save_p += MIN_MAXPLAYERS - MAXPLAYERS;
+  save_p += FUTURE_MAXPLAYERS - g_maxplayers;
 
   idmusnum = *save_p++;
   if (idmusnum == 255) idmusnum = -1;
@@ -228,13 +225,8 @@ void dsda_RestoreKeyFrame(byte* buffer, byte complete) {
 
   basetic = gametic - *save_p++;
 
-  P_MapStart();
-  P_UnArchivePlayers();
-  P_UnArchiveWorld();
-  P_TrueUnArchiveThinkers();
-  P_UnArchiveRNG();
-  P_UnArchiveMap();
-  P_MapEnd();
+  dsda_UnArchiveAll();
+
   R_ActivateSectorInterpolations();
   R_SmoothPlaying_Reset(NULL);
 
@@ -242,6 +234,11 @@ void dsda_RestoreKeyFrame(byte* buffer, byte complete) {
     S_ChangeMusInfoMusic(musinfo.current_item, true);
 
   RecalculateDrawnSubsectors();
+
+  if (hexen)
+  {
+    SB_SetClassData();
+  }
 
   if (setsizeneeded) R_ExecuteSetViewSize();
 

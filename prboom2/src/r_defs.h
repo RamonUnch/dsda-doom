@@ -125,8 +125,7 @@ typedef struct
 
   // thinker_t for reversable actions
   void *floordata;    // jff 2/22/98 make thinkers on
-  void *ceilingdata;  // floors, ceilings, lighting,
-  void *lightingdata; // independent of one another
+  void *ceilingdata;  // floors and ceilings independent
 
   // jff 2/26/98 lockout machinery for stairbuilding
   int stairlock;   // -2 on first locked -1 after thinker done 0 normally
@@ -180,6 +179,9 @@ typedef struct
 #ifdef GL_DOOM
   int fakegroup[2];
 #endif
+
+  // hexen
+  seqtype_t seqType;          // stone, metal, heavy, etc...
 } sector_t;
 
 //
@@ -235,6 +237,7 @@ typedef struct line_s
   sector_t *frontsector; // Front and back sector.
   sector_t *backsector;
   int validcount;        // if == validcount, already checked
+  int validcount2;
   void *specialdata;     // thinker_t for reversable actions
   int tranlump;          // killough 4/11/98: translucency filter, -1 == none
   int firsttag,nexttag;  // killough 4/17/98: improves searches for tags.
@@ -248,6 +251,13 @@ typedef struct line_s
     RF_ISOLATED =32,     // Isolated line
   } r_flags;
   degenmobj_t soundorg;  // sound origin for switches/buttons
+
+  // hexen
+  byte arg1;
+  byte arg2;
+  byte arg3;
+  byte arg4;
+  byte arg5;
 } line_t;
 
 // phares 3/14/98
@@ -319,12 +329,17 @@ typedef struct ssline_s
 //  (all or some) sides of a convex BSP leaf.
 //
 
+struct polyobj_s;
+
 typedef struct subsector_s
 {
   sector_t *sector;
   // e6y: support for extended nodes
   // 'int' instead of 'short'
   int numlines, firstline;
+
+  // hexen
+  struct polyobj_s *poly;
 } subsector_t;
 
 
@@ -403,6 +418,13 @@ typedef struct vissprite_s
 
   // killough 3/27/98: height sector for underwater/fake ceiling support
   int heightsec;
+
+  // hexen
+  int pclass;                  // player class (used in translation)
+  fixed_t floorclip;
+
+  // misc
+  int color;
 } vissprite_t;
 
 //
@@ -467,5 +489,51 @@ typedef struct visplane
   unsigned short pad1;          // leave pads for [minx-1]/[maxx+1]
   unsigned short top[3];
 } visplane_t;
+
+// hexen
+
+typedef struct polyobj_s
+{
+  int numsegs;
+  seg_t **segs;
+  degenmobj_t startSpot;
+  vertex_t *originalPts;      // used as the base for the rotations
+  vertex_t *prevPts;          // use to restore the old point values
+  angle_t angle;
+  int tag;                    // reference tag assigned in HereticEd
+  int bbox[4];
+  int validcount;
+  int validcount2;
+  dboolean crush;              // should the polyobj attempt to crush mobjs?
+  int seqType;
+  fixed_t size;               // polyobj size (area of POLY_AREAUNIT == size of FRACUNIT)
+  void *specialdata;          // pointer a thinker, if the poly is moving
+} polyobj_t;
+
+typedef struct polyblock_s
+{
+  polyobj_t *polyobj;
+  struct polyblock_s *prev;
+  struct polyblock_s *next;
+} polyblock_t;
+
+enum
+{
+  PO_ANCHOR_TYPE = 3000,
+  PO_SPAWN_TYPE,
+  PO_SPAWNCRUSH_TYPE
+};
+
+#define PO_LINE_START 1         // polyobj line start special
+#define PO_LINE_EXPLICIT 5
+
+extern polyobj_t *polyobjs;     // list of all poly-objects on the level
+extern int po_NumPolyobjs;
+
+extern int Sky1Texture;
+extern int Sky2Texture;
+extern fixed_t Sky1ColumnOffset;
+extern fixed_t Sky2ColumnOffset;
+extern dboolean DoubleSky;
 
 #endif

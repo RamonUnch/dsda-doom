@@ -70,7 +70,7 @@ fixed_t P_AimLineAttack(mobj_t *t1,angle_t angle,fixed_t distance, uint_64_t mas
 
 void    P_LineAttack(mobj_t *t1, angle_t angle, fixed_t distance,
                      fixed_t slope, int damage );
-void    P_RadiusAttack(mobj_t *spot, mobj_t *source, int damage, int distance);
+void P_RadiusAttack(mobj_t *spot, mobj_t *source, int damage, int distance, dboolean damageSource);
 dboolean P_CheckPosition(mobj_t *thing, fixed_t x, fixed_t y);
 
 //jff 3/19/98 P_CheckSector(): new routine to replace P_ChangeSector()
@@ -110,5 +110,14 @@ void P_FakeZMovement(mobj_t * mo);
 void CheckMissileImpact(mobj_t * mobj);
 
 void P_AppendSpecHit(line_t * ld);
+
+// hexen
+
+extern int tmfloorpic;
+extern mobj_t *BlockingMobj;
+
+void P_BounceWall(mobj_t * mo);
+dboolean P_UsePuzzleItem(player_t * player, int itemType);
+void PIT_ThrustSpike(mobj_t * actor);
 
 #endif // __P_MAP__

@@ -20,10 +20,16 @@
 
 #include "doomtype.h"
 
+extern int g_maxplayers;
+extern int g_viewheight;
+
 extern int g_mt_player;
 extern int g_mt_tfog;
 extern int g_mt_blood;
 extern int g_skullpop_mt;
+extern int g_s_bloodyskullx1;
+extern int g_s_bloodyskullx2;
+extern int g_s_play_fdth20;
 
 extern int g_wp_fist;
 extern int g_wp_chainsaw;
@@ -34,11 +40,36 @@ extern int g_thrust_factor;
 extern int g_fuzzy_aim_shift;
 extern int g_special_friction_low;
 
-extern int g_s_play_atk1;
-extern int g_s_play_atk2;
-extern int g_s_play_run1;
-extern int g_s_play;
 extern int g_s_null;
+
+extern int g_mt_bloodsplatter;
+extern int g_bloodsplatter_shift;
+extern int g_bloodsplatter_weight;
+extern int g_mons_look_range;
+extern int g_hide_state;
+extern int g_lava_type;
+
+extern int g_mntr_charge_speed;
+extern int g_mntr_atk1_sfx;
+extern int g_mntr_decide_range;
+extern int g_mntr_charge_rng;
+extern int g_mntr_fire_rng;
+extern int g_mntr_charge_state;
+extern int g_mntr_fire_state;
+extern int g_mntr_charge_puff;
+extern int g_mntr_atk2_sfx;
+extern int g_mntr_atk2_dice;
+extern int g_mntr_atk2_missile;
+extern int g_mntr_atk3_sfx;
+extern int g_mntr_atk3_dice;
+extern int g_mntr_atk3_missile;
+extern int g_mntr_atk3_state;
+extern int g_mntr_fire;
+
+extern int g_arti_health;
+extern int g_arti_superhealth;
+extern int g_arti_fly;
+extern int g_arti_limit;
 
 extern int g_sfx_telept;
 extern int g_sfx_sawup;
@@ -54,6 +85,7 @@ extern int g_sfx_itemup;
 extern int g_sfx_pistol;
 extern int g_sfx_oof;
 extern int g_sfx_menu;
+extern int g_sfx_respawn;
 
 extern int g_door_normal;
 extern int g_door_raise_in_5_mins;
@@ -69,6 +101,8 @@ extern int g_cr_green; // 3
 extern int g_cr_gold; // 5
 extern int g_cr_red; // 6
 extern int g_cr_blue; // 7
+
+extern const char* g_skyflatname;
 
 extern dboolean heretic;
 

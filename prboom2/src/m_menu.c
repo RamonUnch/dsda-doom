@@ -75,6 +75,7 @@
 #include "dsda/save.h"
 #include "dsda/console.h"
 #include "heretic/mn_menu.h"
+#include "heretic/sb_bar.h"
 #ifdef _WIN32
 #include "e6y_launcher.h"
 #endif
@@ -357,7 +358,7 @@ menu_t MainDef =
 
 void M_DrawMainMenu(void)
 {
-  if (heretic) return MN_DrawMainMenu();
+  if (raven) return MN_DrawMainMenu();
 
   // CPhipps - patch drawing updated
   V_DrawNamePatch(94, 2, 0, "M_DOOM", CR_DEFAULT, VPT_STRETCH);
@@ -471,7 +472,11 @@ void M_FinishHelp(int choice)        // killough 10/98
 void M_DrawReadThis1(void)
 {
   inhelpscreens = true;
-  if (gamemode == shareware)
+  if (hexen)
+  {
+    V_DrawRawScreen("HELP2");
+  }
+  else if (gamemode == shareware)
   {
     // e6y: wide-res
     V_FillBorder(-1, 0);
@@ -585,7 +590,7 @@ void M_AddEpisode(const char *map, const char *gfx, const char *txt, const char 
 
 void M_DrawEpisode(void)
 {
-  if (heretic) return;
+  if (raven) return MN_DrawEpisode();
 
   // CPhipps - patch drawing updated
   V_DrawNamePatch(54, EpiDef.y - 25, 0, "M_EPISOD", CR_DEFAULT, VPT_STRETCH);
@@ -610,6 +615,8 @@ void M_Episode(int choice)
     }
   }
   epiChoice = choice;
+  if (hexen) // hack hexen class as "episode menu"
+    MN_UpdateClass(epiChoice);
   M_SetupNextMenu(&NewDef);
 }
 
@@ -657,7 +664,7 @@ menu_t NewDef =
 
 void M_DrawNewGame(void)
 {
-  if (heretic) return;
+  if (raven) return MN_DrawSkillMenu();
 
   // CPhipps - patch drawing updated
   V_DrawNamePatch(96, 14, 0, "M_NEWG", CR_DEFAULT, VPT_STRETCH);
@@ -696,7 +703,7 @@ void M_NewGame(int choice)
   }
 
   // Chex Quest disabled the episode select screen, as did Doom II.
-  if (((gamemode == commercial || gamemission == chex) && !EpiCustom) || EpiDef.numitems == 1)
+  if ((((gamemode == commercial && !hexen) || gamemission == chex) && !EpiCustom) || EpiDef.numitems == 1)
     M_SetupNextMenu(&NewDef);
   else
   {
@@ -712,6 +719,8 @@ static void M_VerifyNightmare(int ch)
     return;
 
   G_DeferedInitNew(nightmare,EpiMenuEpi[epiChoice], EpiMenuMap[epiChoice]);
+  if (hexen)
+    SB_SetClassData();
   M_ClearMenus ();
 }
 
@@ -725,6 +734,8 @@ void M_ChooseSkill(int choice)
   if (EpiMenuEpi[epiChoice] == -1 || EpiMenuMap[epiChoice] == -1) return;  // There is no map to start here.
 
   G_DeferedInitNew(choice, EpiMenuEpi[epiChoice], EpiMenuMap[epiChoice]);
+  if (hexen)
+    SB_SetClassData();
   M_ClearMenus ();
 }
 
@@ -803,7 +814,7 @@ void M_DrawLoad(void)
 {
   int i;
 
-  if (heretic) return MN_DrawLoad();
+  if (raven) return MN_DrawLoad();
 
   //jff 3/15/98 use symbolic load position
   // CPhipps - patch drawing updated
@@ -959,7 +970,7 @@ void M_DrawSave(void)
 {
   int i;
 
-  if (heretic) return MN_DrawSave();
+  if (raven) return MN_DrawSave();
 
   //jff 3/15/98 use symbolic load position
   // CPhipps - patch drawing updated
@@ -1093,7 +1104,7 @@ char msgNames[2][9]  = {"M_MSGOFF","M_MSGON"};
 
 void M_DrawOptions(void)
 {
-  if (heretic) return MN_DrawOptions();
+  if (raven) return MN_DrawOptions();
 
   // CPhipps - patch drawing updated
   // proff/nicolas 09/20/98 -- changed for hi-res
@@ -1154,7 +1165,7 @@ static void M_QuitResponse(int ch)
     return;
 
   //e6y: Optional removal of a quit sound
-  if (!heretic && !netgame && showendoom && !nosfxparm && snd_card)
+  if (!raven && !netgame && showendoom && !nosfxparm && snd_card)
   {
     int i;
 
@@ -1237,7 +1248,7 @@ menu_t SoundDef =
 
 void M_DrawSound(void)
 {
-  if (heretic) return MN_DrawSound();
+  if (raven) return MN_DrawSound();
 
   // CPhipps - patch drawing updated
   V_DrawNamePatch(60, 38, 0, "M_SVOL", CR_DEFAULT, VPT_STRETCH);
@@ -1343,7 +1354,7 @@ menu_t MouseDef =
 
 void M_DrawMouse(void)
 {
-  if (heretic) return MN_DrawMouse();
+  if (raven) return MN_DrawMouse();
 
   // CPhipps - patch drawing updated
   V_DrawNamePatch(60, 15, 0, "M_MSENS", CR_DEFAULT, VPT_STRETCH);//e6y
@@ -1812,7 +1823,7 @@ menu_t GeneralDef =                                           // killough 10/98
 
 void M_DrawSetup(void)
 {
-  if (heretic) return MN_DrawSetup();
+  if (raven) return MN_DrawSetup();
 
   // CPhipps - patch drawing updated
   M_DrawTitle(124, 15, "M_SETUP", CR_DEFAULT, "SETUP", g_cr_gold);
@@ -1882,7 +1893,7 @@ static void M_DrawItem(const setup_menu_t* s)
 
     // proff/nicolas 09/20/98 -- changed for hi-res
     // CPhipps - Patch drawing updated, reformatted
-    if (!heretic)
+    if (!raven)
       V_DrawNamePatch(
         x, y, 0,
         ResetButtonName[(flags & (S_HILITE|S_SELECT)) ? whichSkull : 0],
@@ -2337,8 +2348,9 @@ setup_menu_t keys_settings5[];
 setup_menu_t keys_settings6[];
 setup_menu_t keys_settings7[];
 setup_menu_t keys_settings8[];
-setup_menu_t heretic_keys_settings1[];
-setup_menu_t heretic_keys_settings2[];
+setup_menu_t raven_keys_settings[];
+setup_menu_t heretic_keys_settings[];
+setup_menu_t hexen_keys_settings[];
 setup_menu_t dsda_keys_settings[];
 
 // The table which gets you from one screen table to the next.
@@ -2353,8 +2365,9 @@ setup_menu_t* keys_settings[] =
   keys_settings6,
   keys_settings7,
   keys_settings8,
-  heretic_keys_settings1,
-  heretic_keys_settings2,
+  raven_keys_settings,
+  heretic_keys_settings,
+  hexen_keys_settings,
   dsda_keys_settings,
   NULL
 };
@@ -2392,7 +2405,7 @@ setup_menu_t keys_settings1[] =  // Key Binding screen strings
   {"AUTORUN"     ,S_INPUT     ,m_scrn,KB_X,KB_Y+11*8,{0},dsda_input_autorun},
   {"180 TURN"    ,S_INPUT     ,m_scrn,KB_X,KB_Y+12*8,{0},dsda_input_reverse},
   {"USE"         ,S_INPUT     ,m_scrn,KB_X,KB_Y+13*8,{0},dsda_input_use},
-  {"JUMP/FLY UP" ,S_INPUT     ,m_scrn,KB_X,KB_Y+14*8,{0},dsda_input_flyup},
+  {"FLY UP"      ,S_INPUT     ,m_scrn,KB_X,KB_Y+14*8,{0},dsda_input_flyup},
   {"FLY DOWN"    ,S_INPUT     ,m_scrn,KB_X,KB_Y+15*8,{0},dsda_input_flydown},
   {"MOUSE LOOK"  ,S_INPUT     ,m_scrn,KB_X,KB_Y+16*8,{0},dsda_input_mlook},
   {"NO VERTICAL MOUSE",S_INPUT,m_scrn,KB_X,KB_Y+17*8,{0},dsda_input_novert},
@@ -2590,29 +2603,30 @@ setup_menu_t keys_settings8[] =
   { "Chicken", S_INPUT, m_scrn, KB_X, KB_Y + 18 * 8, { 0 }, dsda_input_chicken },
 
   { "<- PREV", S_SKIP | S_PREV, m_null, KB_PREV, KB_Y + 20 * 8, { keys_settings7 } },
-  { "NEXT ->", S_SKIP | S_NEXT, m_null, KB_NEXT, KB_Y + 20 * 8, { heretic_keys_settings1 } },
+  { "NEXT ->", S_SKIP | S_NEXT, m_null, KB_NEXT, KB_Y + 20 * 8, { raven_keys_settings } },
 
   // Final entry
   { 0, S_SKIP | S_END, m_null }
 };
 
-setup_menu_t heretic_keys_settings1[] = {
-  { "HERETIC MOVEMENT", S_SKIP | S_TITLE, m_null, KB_X, KB_Y },
+setup_menu_t raven_keys_settings[] = {
+  { "RAVEN MOVEMENT", S_SKIP | S_TITLE, m_null, KB_X, KB_Y },
   { "LOOK UP", S_INPUT, m_scrn, KB_X, KB_Y + 1 * 8, { 0 }, dsda_input_lookup },
   { "LOOK DOWN", S_INPUT, m_scrn, KB_X, KB_Y + 2 * 8, { 0 }, dsda_input_lookdown },
   { "LOOK CENTER", S_INPUT, m_scrn, KB_X, KB_Y + 3 * 8, { 0 }, dsda_input_lookcenter },
   { "FLY UP", S_INPUT, m_scrn, KB_X, KB_Y + 4 * 8, { 0 }, dsda_input_flyup },
   { "FLY DOWN", S_INPUT, m_scrn, KB_X, KB_Y + 5 * 8, { 0 }, dsda_input_flydown },
   { "FLY CENTER", S_INPUT, m_scrn, KB_X, KB_Y + 6 * 8, { 0 }, dsda_input_flycenter },
+  { "JUMP", S_INPUT, m_scrn, KB_X, KB_Y + 7 * 8, { 0 }, dsda_input_jump },
 
   { "<- PREV", S_SKIP | S_PREV, m_null, KB_PREV, KB_Y + 20 * 8, { keys_settings8 } },
-  { "NEXT ->", S_SKIP | S_NEXT, m_null, KB_NEXT, KB_Y + 20 * 8, { heretic_keys_settings2 } },
+  { "NEXT ->", S_SKIP | S_NEXT, m_null, KB_NEXT, KB_Y + 20 * 8, { heretic_keys_settings } },
 
   // Final entry
   { 0, S_SKIP | S_END, m_null }
 };
 
-setup_menu_t heretic_keys_settings2[] = {
+setup_menu_t heretic_keys_settings[] = {
   { "HERETIC INVENTORY", S_SKIP | S_TITLE, m_null, KB_X, KB_Y },
   { "USE ARTIFACT", S_INPUT, m_scrn, KB_X, KB_Y + 1 * 8, { 0 }, dsda_input_use_artifact },
   { "USE TOME OF POWER", S_INPUT, m_scrn, KB_X, KB_Y + 2 * 8, { 0 }, dsda_input_arti_tome },
@@ -2624,11 +2638,39 @@ setup_menu_t heretic_keys_settings2[] = {
   { "USE SHADOWSPHERE", S_INPUT, m_scrn, KB_X, KB_Y + 8 * 8, { 0 }, dsda_input_arti_shadowsphere },
   { "USE WINGS OF WRATH", S_INPUT, m_scrn, KB_X, KB_Y + 9 * 8, { 0 }, dsda_input_arti_wings },
   { "USE TORCH", S_INPUT, m_scrn, KB_X, KB_Y + 10 * 8, { 0 }, dsda_input_arti_torch },
-  { "USER MORPH OVUM", S_INPUT, m_scrn, KB_X, KB_Y + 11 * 8, { 0 }, dsda_input_arti_morph },
+  { "USE MORPH OVUM", S_INPUT, m_scrn, KB_X, KB_Y + 11 * 8, { 0 }, dsda_input_arti_morph },
   { "INVENTORY LEFT", S_INPUT, m_scrn, KB_X, KB_Y + 12 * 8, { 0 }, dsda_input_invleft },
   { "INVENTORY RIGHT", S_INPUT, m_scrn, KB_X, KB_Y + 13 * 8, { 0 }, dsda_input_invright },
 
-  { "<- PREV", S_SKIP | S_PREV, m_null, KB_PREV, KB_Y + 20 * 8, { heretic_keys_settings1 } },
+  { "<- PREV", S_SKIP | S_PREV, m_null, KB_PREV, KB_Y + 20 * 8, { raven_keys_settings } },
+  { "NEXT ->", S_SKIP | S_NEXT, m_null, KB_NEXT, KB_Y + 20 * 8, { hexen_keys_settings } },
+
+  // Final entry
+  { 0, S_SKIP | S_END, m_null }
+};
+
+setup_menu_t hexen_keys_settings[] = {
+  { "HEXEN INVENTORY", S_SKIP | S_TITLE, m_null, KB_X, KB_Y },
+  { "USE ARTIFACT", S_INPUT, m_scrn, KB_X, KB_Y + 1 * 8, { 0 }, dsda_input_use_artifact },
+  { "USE ICON OF THE DEFENDER", S_INPUT, m_scrn, KB_X, KB_Y + 2 * 8, { 0 }, dsda_input_arti_ring },
+  { "USE QUARTZ FLASK", S_INPUT, m_scrn, KB_X, KB_Y + 3 * 8, { 0 }, dsda_input_arti_quartz },
+  { "USE MYSTIC URN", S_INPUT, m_scrn, KB_X, KB_Y + 4 * 8, { 0 }, dsda_input_arti_urn },
+  { "USE MYSTIC AMBIT INCANT", S_INPUT, m_scrn, KB_X, KB_Y + 5 * 8, { 0 }, dsda_input_hexen_arti_incant },
+  { "USE DARK SERVANT", S_INPUT, m_scrn, KB_X, KB_Y + 6 * 8, { 0 }, dsda_input_hexen_arti_summon },
+  { "USE TORCH", S_INPUT, m_scrn, KB_X, KB_Y + 7 * 8, { 0 }, dsda_input_arti_torch },
+  { "USE PORKALATOR", S_INPUT, m_scrn, KB_X, KB_Y + 8 * 8, { 0 }, dsda_input_arti_morph },
+  { "USE WINGS OF WRATH", S_INPUT, m_scrn, KB_X, KB_Y + 9 * 8, { 0 }, dsda_input_arti_wings },
+  { "USE DISC OF REPULSION", S_INPUT, m_scrn, KB_X, KB_Y + 10 * 8, { 0 }, dsda_input_hexen_arti_disk },
+  { "USE FLECHETTE", S_INPUT, m_scrn, KB_X, KB_Y + 11 * 8, { 0 }, dsda_input_hexen_arti_flechette },
+  { "USE BANISHMENT DEVICE", S_INPUT, m_scrn, KB_X, KB_Y + 12 * 8, { 0 }, dsda_input_hexen_arti_banishment },
+  { "USE BOOTS OF SPEED", S_INPUT, m_scrn, KB_X, KB_Y + 13 * 8, { 0 }, dsda_input_hexen_arti_boots },
+  { "USE KRATER OF MIGHT", S_INPUT, m_scrn, KB_X, KB_Y + 14 * 8, { 0 }, dsda_input_hexen_arti_krater },
+  { "USE DRAGONSKIN BRACERS", S_INPUT, m_scrn, KB_X, KB_Y + 15 * 8, { 0 }, dsda_input_hexen_arti_bracers },
+  { "USE CHAOS DEVICE", S_INPUT, m_scrn, KB_X, KB_Y + 16 * 8, { 0 }, dsda_input_arti_chaosdevice },
+  { "INVENTORY LEFT", S_INPUT, m_scrn, KB_X, KB_Y + 17 * 8, { 0 }, dsda_input_invleft },
+  { "INVENTORY RIGHT", S_INPUT, m_scrn, KB_X, KB_Y + 18 * 8, { 0 }, dsda_input_invright },
+
+  { "<- PREV", S_SKIP | S_PREV, m_null, KB_PREV, KB_Y + 20 * 8, { heretic_keys_settings } },
   { "NEXT ->", S_SKIP | S_NEXT, m_null, KB_NEXT, KB_Y + 20 * 8, { dsda_keys_settings } },
 
   // Final entry
@@ -2647,7 +2689,7 @@ setup_menu_t dsda_keys_settings[] = {
   { "Open Console", S_INPUT, m_scrn, KB_X, KB_Y + 8 * 8, { 0 }, dsda_input_console },
   { "Toggle Coord. Display", S_INPUT, m_scrn, KB_X, KB_Y + 9 * 8, { 0 }, dsda_input_coordinate_display },
 
-  { "<- PREV", S_SKIP | S_PREV, m_null, KB_PREV, KB_Y + 20 * 8, { heretic_keys_settings2 } },
+  { "<- PREV", S_SKIP | S_PREV, m_null, KB_PREV, KB_Y + 20 * 8, { hexen_keys_settings } },
   { 0, S_SKIP | S_END, m_null }
 };
 
@@ -3145,7 +3187,7 @@ setup_menu_t* gen_settings[] =
 #define G_X2 284
 
 static const char *videomodes[] = {
-  "8bit", "32bit",
+  "Software",
 #ifdef GL_DOOM
   "OpenGL",
 #endif
@@ -3164,16 +3206,15 @@ setup_menu_t gen_settings1[] = { // General Settings screen1
   {"Software Exclusive Fullscreen",  S_YESNO,            m_null, G_X, G_Y+ 6*8, {"exclusive_fullscreen"}, 0, M_ChangeVideoMode},
   {"Status Bar and Menu Appearance", S_CHOICE,           m_null, G_X, G_Y+ 7*8, {"render_stretch_hud"}, 0, M_ChangeStretch, render_stretch_list},
   {"Vertical Sync",                  S_YESNO,            m_null, G_X, G_Y+ 8*8, {"render_vsync"}, 0, M_ChangeVideoMode},
-  {"Enable Translucency",            S_YESNO,            m_null, G_X, G_Y+ 9*8, {"translucency"}, 0, M_Trans},
-  {"Translucency filter percentage", S_NUM,              m_null, G_X, G_Y+10*8, {"tran_filter_pct"}, 0, M_Trans},
-  {"Uncapped Framerate",             S_YESNO,            m_null, G_X, G_Y+11*8, {"uncapped_framerate"}, 0, M_ChangeUncappedFrameRate},
+  {"Translucency filter percentage", S_NUM,              m_null, G_X, G_Y+ 9*8, {"tran_filter_pct"}, 0, M_Trans},
+  {"Uncapped Framerate",             S_YESNO,            m_null, G_X, G_Y+10*8, {"uncapped_framerate"}, 0, M_ChangeUncappedFrameRate},
 
-  {"Sound & Music",                  S_SKIP|S_TITLE,     m_null, G_X, G_Y+13*8},
-  {"Number of Sound Channels",       S_NUM|S_PRGWARN,    m_null, G_X, G_Y+14*8, {"snd_channels"}},
-  {"Enable v1.1 Pitch Effects",      S_YESNO,            m_null, G_X, G_Y+15*8, {"pitched_sounds"}},
-  {"PC Speaker emulation",           S_YESNO|S_PRGWARN,  m_null, G_X, G_Y+16*8, {"snd_pcspeaker"}},
-  {"Preferred MIDI player",          S_CHOICE|S_PRGWARN, m_null, G_X, G_Y+17*8, {"snd_midiplayer"}, 0, M_ChangeMIDIPlayer, midiplayers},
-  {"Disable Sound Cutoffs",          S_YESNO,            m_null, G_X, G_Y+18*8, {"full_sounds"}},
+  {"Sound & Music",                  S_SKIP|S_TITLE,     m_null, G_X, G_Y+12*8},
+  {"Number of Sound Channels",       S_NUM|S_PRGWARN,    m_null, G_X, G_Y+13*8, {"snd_channels"}},
+  {"Enable v1.1 Pitch Effects",      S_YESNO,            m_null, G_X, G_Y+14*8, {"pitched_sounds"}},
+  {"PC Speaker emulation",           S_YESNO|S_PRGWARN,  m_null, G_X, G_Y+15*8, {"snd_pcspeaker"}},
+  {"Preferred MIDI player",          S_CHOICE|S_PRGWARN, m_null, G_X, G_Y+16*8, {"snd_midiplayer"}, 0, M_ChangeMIDIPlayer, midiplayers},
+  {"Disable Sound Cutoffs",          S_YESNO,            m_null, G_X, G_Y+17*8, {"full_sounds"}},
 
   // Button for resetting to defaults
   {0,S_RESET,m_null,X_BUTTON,Y_BUTTON},
@@ -3342,9 +3383,6 @@ setup_menu_t gen_settings6[] =
   {0,S_SKIP|S_END,m_null}
 };
 
-static const char *jumpheights[] = {
-  "No", "Low", "High", NULL};
-
 setup_menu_t gen_settings7[] =
 {
   {"COMPATIBILITY WITH COMMON MAPPING ERRORS" ,S_SKIP|S_TITLE,m_null,G_X2,G_Y+1*8},
@@ -3352,7 +3390,6 @@ setup_menu_t gen_settings7[] =
   {"USE PASSES THRU ALL SPECIAL LINES" ,S_YESNO     ,m_null,G_X2,G_Y+3*8, {"comperr_passuse"}},
   {"WALK UNDER SOLID HANGING BODIES"   ,S_YESNO     ,m_null,G_X2,G_Y+4*8, {"comperr_hangsolid"}},
   {"FIX CLIPPING PROBLEMS IN LARGE LEVELS" ,S_YESNO ,m_null,G_X2,G_Y+5*8, {"comperr_blockmap"}},
-  {"ALLOW JUMP"                        ,S_CHOICE    ,m_null,G_X2,G_Y+6*8, {"comperr_allowjump"}, 0, NULL, jumpheights},
   {"ALLOW VERTICAL AIMING"             ,S_YESNO     ,m_null,G_X2,G_Y+7*8, {"comperr_freeaim"}},
 
   {"<- PREV",S_SKIP|S_PREV,m_null,KB_PREV,KB_Y+20*8, {gen_settings6}},
@@ -3418,10 +3455,7 @@ setup_menu_t dsda_gen_settings[] = {
 
 void M_Trans(void) // To reset translucency after setting it in menu
 {
-  general_translucency = default_translucency; //e6y: Fix for "translucency won't change until you restart the engine"
-
-  if (general_translucency)
-    R_InitTranMap(0);
+  R_InitTranMap(0);
 }
 
 // To (un)set fullscreen video after menu changes
@@ -3448,7 +3482,7 @@ void M_ChangeDemoSmoothTurns(void)
 void M_ChangeTextureParams(void)
 {
 #ifdef GL_DOOM
-  if (V_GetMode() == VID_MODEGL)
+  if (V_IsOpenGLMode())
   {
     gld_InitTextureParams();
     gld_FlushTextures();
@@ -4248,7 +4282,7 @@ void M_DrawCredits(void)     // killough 10/98: credit screen
 {
   const int creditlump = W_CheckNumForName("CREDIT");
 
-  if (heretic)
+  if (raven)
   {
     V_DrawRawScreen("CREDIT");
     return;
@@ -4636,7 +4670,7 @@ dboolean M_Responder (event_t* ev) {
     {
 //e6y
 #ifdef GL_DOOM
-      if (V_GetMode() == VID_MODEGL && gl_hardware_gamma)
+      if (V_IsOpenGLMode() && gl_hardware_gamma)
       {
         static char str[200];
         useglgamma++;
@@ -4807,7 +4841,7 @@ dboolean M_Responder (event_t* ev) {
     }
 
 #ifdef GL_DOOM
-    if (V_GetMode() == VID_MODEGL)
+    if (V_IsOpenGLMode())
     {
       if (dsda_InputActivated(dsda_input_showalive) && !dsda_StrictMode())
       {
@@ -4833,6 +4867,7 @@ dboolean M_Responder (event_t* ev) {
     if (dsda_InputActivated(dsda_input_strict_mode))
     {
       dsda_strict_mode = !dsda_strict_mode;
+      dsda_ChangeStrictMode();
       doom_printf("Strict Mode %s", dsda_strict_mode ? "on" : "off");
     }
 
@@ -5771,7 +5806,7 @@ void M_StartControlPanel (void)
   // e6y
   // We need to remove the fourth episode for pre-ultimate complevels.
   // It is located here instead of M_Init() because of TNTCOMP cheat.
-  if (!heretic && !EpiCustom)
+  if (!raven && !EpiCustom)
   {
     EpiDef.numitems = ep_end;
     if (gamemode != commercial
@@ -5809,7 +5844,7 @@ void M_Drawer (void)
     char* p;
     int y;
 
-    if (heretic) return MN_DrawMessage(messageString);
+    if (raven) return MN_DrawMessage(messageString);
 
     /* cph - strdup string to writable memory */
     ms = strdup(messageString);
@@ -5839,7 +5874,7 @@ void M_Drawer (void)
     if (currentMenu->routine)
       currentMenu->routine();     // call Draw routine
 
-    if (heretic) return MN_Drawer();
+    if (raven) return MN_Drawer();
 
     // DRAW MENU
 
@@ -5918,7 +5953,7 @@ void M_Ticker (void)
     skullAnimCounter = 8;
   }
 
-  if (heretic) return MN_Ticker();
+  if (raven) return MN_Ticker();
 }
 
 /////////////////////////////
@@ -5962,7 +5997,7 @@ void M_DrawThermo(int x,int y,int thermWidth,int thermDot )
   char num[4];
   int horizScaler; //Used to allow more thermo range for mouse sensitivity.
 
-  if (heretic) return MN_DrawSlider(x, y, thermWidth, thermDot);
+  if (raven) return MN_DrawSlider(x, y, thermWidth, thermDot);
 
   /*
    * Modification By Barry Mead to allow the Thermometer to have vastly
@@ -6152,7 +6187,7 @@ void M_InitHelpScreen(void)
 //
 void M_Init(void)
 {
-  if (heretic) MN_Init();
+  if (raven) MN_Init();
 
   M_InitDefaults();                // killough 11/98
   currentMenu = &MainDef;

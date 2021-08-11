@@ -48,7 +48,10 @@
 #include "w_wad.h"
 #include "lprintf.h"
 #include "sc_man.h"
+#include "p_setup.h"
 #include "e6y.h"
+
+#include "hexen/sn_sonix.h"
 
 #include "dsda/memory.h"
 
@@ -80,6 +83,9 @@ typedef struct
 
   // heretic
   int priority;
+
+  // hexen
+  int volume;
 } channel_t;
 
 // the set of channels available
@@ -125,15 +131,16 @@ static int S_getChannel(void *origin, sfxinfo_t *sfxinfo, int is_pickup);
 
 
 // heretic
-#define MAX_SND_DIST 	1600
+int max_snd_dist = 1600;
+int dist_adjust = 160;
 
 static byte* soundCurve;
 static int AmbChan = -1;
 
 static void Heretic_S_StopSound(void *_origin);
 static void Heretic_S_UpdateSounds(mobj_t *listener);
-static void Heretic_S_StartSound(void *_origin, int sound_id);
 static void Heretic_S_StartSoundAtVolume(void *_origin, int sound_id, int volume);
+static void Hexen_S_StartSoundAtVolume(void *_origin, int sound_id, int volume);
 
 // Initializes sound stuff, including volume
 // Sets channels, SFX and music volume,
@@ -150,7 +157,7 @@ void S_Init(int sfxVolume, int musicVolume)
   {
     int i;
 
-    lprintf(LO_CONFIRM, "S_Init: default sfx volume %d\n", sfxVolume);
+    lprintf(LO_INFO, "S_Init: default sfx volume %d\n", sfxVolume);
 
     // Whatever these did with DMX, these are rather dummies now.
     I_SetChannels();
@@ -181,10 +188,21 @@ void S_Init(int sfxVolume, int musicVolume)
     mus_paused = 0;
   }
 
-  if (!heretic) return;
+  if (raven)
+  {
+    int lump;
+    int length;
 
-  soundCurve = Z_Malloc(MAX_SND_DIST, PU_STATIC, NULL);
-  S_SetSoundCurve(true);
+    lump = W_GetNumForName("SNDCURVE");
+    length = W_LumpLength(lump);
+
+    max_snd_dist = length;
+    dist_adjust = max_snd_dist / 10;
+
+    soundCurve = Z_Malloc(max_snd_dist, PU_STATIC, NULL);
+    memcpy(soundCurve, (const byte *) W_CacheLumpNum(lump), max_snd_dist);
+    W_UnlockLumpNum(lump);
+  }
 }
 
 void S_Stop(void)
@@ -227,24 +245,31 @@ void S_Start(void)
   // start new music for the level
   mus_paused = 0;
 
-  if (gamemapinfo && gamemapinfo->music[0])
+  if (hexen)
   {
-	  int muslump = W_CheckNumForName(gamemapinfo->music);
-	  if (muslump >= 0)
-	  {
-		  musinfo.items[0] = muslump;
-		  S_ChangeMusInfoMusic(muslump, true);
-		  return;
-	  }
-	  // If the mapinfo defined music cannot be found, try the default for the given map.
+    mnum = gamemap;
   }
-
-  if (idmusnum!=-1)
-    mnum = idmusnum; //jff 3/17/98 reload IDMUS music if not -1
   else
-    if (gamemode == commercial)
-      mnum = mus_runnin + WRAP(gamemap - 1, NUMMUSIC - mus_runnin);
+  {
+    if (gamemapinfo && gamemapinfo->music[0])
+    {
+  	  int muslump = W_CheckNumForName(gamemapinfo->music);
+  	  if (muslump >= 0)
+  	  {
+  		  musinfo.items[0] = muslump;
+  		  S_ChangeMusInfoMusic(muslump, true);
+  		  return;
+  	  }
+  	  // If the mapinfo defined music cannot be found, try the default for the given map.
+    }
+
+    if (idmusnum!=-1)
+      mnum = idmusnum; //jff 3/17/98 reload IDMUS music if not -1
     else
+    {
+      if (gamemode == commercial)
+        mnum = mus_runnin + WRAP(gamemap - 1, DOOM_NUMMUSIC - mus_runnin);
+      else
       {
         static const int spmus[] =     // Song - Who? - Where?
         {
@@ -267,6 +292,8 @@ void S_Start(void)
         else
           mnum = spmus[WRAP(gamemap - 1, 9)];
       }
+    }
+  }
 
   memset(&musinfo, 0, sizeof(musinfo));
   musinfo.items[0] = -1;
@@ -278,9 +305,12 @@ void S_StartSoundAtVolume(void *origin_p, int sfx_id, int volume)
 {
   int sep, pitch, priority, cnum, is_pickup;
   sfxinfo_t *sfx;
-  mobj_t *origin = (mobj_t *) origin_p;
+  mobj_t *origin;
 
   if (heretic) return Heretic_S_StartSoundAtVolume(origin_p, sfx_id, volume);
+  if (hexen) return Hexen_S_StartSoundAtVolume(origin_p, sfx_id, volume);
+
+  origin = (mobj_t *) origin_p;
 
   //jff 1/22/98 return if sound is not enabled
   if (!snd_card || nosfxparm)
@@ -378,7 +408,7 @@ void S_StartSoundAtVolume(void *origin_p, int sfx_id, int volume)
 
 void S_StartSound(void *origin, int sfx_id)
 {
-  if (heretic) return Heretic_S_StartSound(origin, sfx_id);
+  if (raven) return Hexen_S_StartSoundAtVolume(origin, sfx_id, 127);
 
   S_StartSoundAtVolume(origin, sfx_id, snd_SfxVolume);
 }
@@ -387,7 +417,7 @@ void S_StopSound(void *origin)
 {
   int cnum;
 
-  if (heretic) return Heretic_S_StopSound(origin);
+  if (raven) return Heretic_S_StopSound(origin);
 
   //jff 1/22/98 return if sound is not enabled
   if (!snd_card || nosfxparm)
@@ -465,10 +495,12 @@ void S_ResumeSound(void)
 //
 void S_UpdateSounds(void* listener_p)
 {
-  mobj_t *listener = (mobj_t*) listener_p;
+  mobj_t *listener;
   int cnum;
 
-  if (heretic) return Heretic_S_UpdateSounds(listener_p);
+  if (raven) return Heretic_S_UpdateSounds(listener_p);
+
+  listener = (mobj_t*) listener_p;
 
   //jff 1/22/98 return if sound is not enabled
   if (!snd_card || nosfxparm)
@@ -564,7 +596,7 @@ void S_ChangeMusic(int musicnum, int looping)
   // current music which should play
   musicnum_current = musicnum;
   musinfo.current_item = -1;
-  S_music[NUMMUSIC].lumpnum = -1;
+  S_music[num_music].lumpnum = -1;
 
   //jff 1/22/98 return if music is not enabled
   if (!mus_card || nomusicparm)
@@ -583,15 +615,30 @@ void S_ChangeMusic(int musicnum, int looping)
 
   // get lumpnum if neccessary
   if (!music->lumpnum)
+  {
+    if (hexen && musicnum < hexen_mus_hub)
+    {
+      const char* songLump;
+
+      songLump = P_GetMapSongLump(musicnum);
+      if (!songLump)
+      {
+        return;
+      }
+
+      music->lumpnum = W_GetNumForName(songLump);
+    }
+    else
     {
       char namebuf[9];
       const char* format;
 
-      format = heretic ? "%s" : "d_%s";
+      format = raven ? "%s" : "d_%s";
 
       sprintf(namebuf, format, music->name);
       music->lumpnum = W_GetNumForName(namebuf);
     }
+  }
 
   // load & register it
   music->data = W_CacheLumpNum(music->lumpnum);
@@ -714,7 +761,7 @@ void S_StopChannel(int cnum)
       c->sfxinfo = 0;
 
       // heretic_note: do this for doom too?
-      if (heretic) c->handle = 0;
+      if (raven) c->handle = 0;
     }
 }
 
@@ -845,19 +892,6 @@ static int S_getChannel(void *origin, sfxinfo_t *sfxinfo, int is_pickup)
 
 // heretic
 
-void S_SetSoundCurve(dboolean fullprocess)
-{
-  int i;
-  int limit;
-  const byte* lump;
-
-  limit = fullprocess ? MAX_SND_DIST : 1;
-  lump = (const byte *) W_CacheLumpName("SNDCURVE");
-
-  for (i = 0; i < limit; i++)
-    soundCurve[i] = (*(lump + i) * (snd_SfxVolume * 8)) >> 7;
-}
-
 static mobj_t* GetSoundListener(void)
 {
   static degenmobj_t dummy_listener;
@@ -925,7 +959,8 @@ static dboolean S_StopSoundInfo(sfxinfo_t* sfx, int priority)
   return false; // don't replace any sounds
 }
 
-static void Heretic_S_StartSound(void *_origin, int sound_id)
+// This is essentially Heretic's S_StartSound AND Hexen's S_StartSoundAtVolume
+static void Hexen_S_StartSoundAtVolume(void *_origin, int sound_id, int volume)
 {
   sfxinfo_t *sfx;
   mobj_t *origin;
@@ -963,13 +998,13 @@ static void Heretic_S_StartSound(void *_origin, int sound_id)
   dist = absx + absy - (absx > absy ? absy >> 1 : absx >> 1);
   dist >>= FRACBITS;
 
-  if (dist >= MAX_SND_DIST)
+  if (dist >= max_snd_dist)
     return; //sound is beyond the hearing range...
   if (dist < 0)
     dist = 0;
 
   priority = sfx->priority;
-  priority *= (10 - (dist / 160));
+  priority *= (10 - (dist / dist_adjust));
 
   if (!S_StopSoundInfo(sfx, priority))
     return; // other sounds have greater priority
@@ -1036,7 +1071,7 @@ static void Heretic_S_StartSound(void *_origin, int sound_id)
   if (sfx->lumpnum <= 0)
     sfx->lumpnum = I_GetSfxLumpNum(sfx);
 
-  vol = soundCurve[dist];
+  vol = (soundCurve[dist] * volume * snd_SfxVolume * 8) >> 14;
 
   if (origin == listener)
     sep = 128;
@@ -1052,12 +1087,20 @@ static void Heretic_S_StartSound(void *_origin, int sound_id)
     sep = 128 - (FixedMul(S_STEREO_SWING,finesine[angle])>>FRACBITS);
   }
 
-  channels[i].pitch = (byte) (NORM_PITCH + (M_Random() & 7) - (M_Random() & 7));
+  if (!hexen || sfx->pitch)
+  {
+    channels[i].pitch = (byte) (NORM_PITCH + (M_Random() & 7) - (M_Random() & 7));
+  }
+  else
+  {
+    channels[i].pitch = NORM_PITCH;
+  }
   channels[i].handle = I_StartSound(sound_id, i, vol, sep, channels[i].pitch, priority);
   channels[i].origin = origin;
   channels[i].sfxinfo = sfx;
   channels[i].priority = priority;
-  if (sound_id >= heretic_sfx_wind)
+  channels[i].volume = volume;
+  if (heretic && sound_id >= heretic_sfx_wind)
     AmbChan = i;
 }
 
@@ -1149,6 +1192,12 @@ void Heretic_S_UpdateSounds(mobj_t *listener)
   if (snd_SfxVolume == 0)
     return;
 
+  if (hexen)
+  {
+    // Update any Sequences
+    SN_UpdateActiveSequences();
+  }
+
   for (i = 0; i < numChannels; i++)
   {
     mobj_t* origin;
@@ -1180,7 +1229,7 @@ void Heretic_S_UpdateSounds(mobj_t *listener)
     dist = absx + absy - (absx > absy ? absy >> 1 : absx >> 1);
     dist >>= FRACBITS;
 
-    if (dist >= MAX_SND_DIST)
+    if (dist >= max_snd_dist)
     {
       S_StopSound(origin);
       continue;
@@ -1189,7 +1238,7 @@ void Heretic_S_UpdateSounds(mobj_t *listener)
       dist = 0;
 
     // calculate the volume based upon the distance from the sound origin.
-    vol = soundCurve[dist];
+    vol = (soundCurve[dist] * snd_SfxVolume * 8 * channels[i].volume) >> 14;
 
     angle = R_PointToAngle2(listener->x, listener->y, origin->x, origin->y);
     if (angle <= listener->angle)
@@ -1203,7 +1252,138 @@ void Heretic_S_UpdateSounds(mobj_t *listener)
     // TODO: Pitch shifting.
     I_UpdateSoundParams(channels[i].handle, vol, sep, channels[i].pitch);
     priority = channels[i].sfxinfo->priority;
-    priority *= (10 - (dist >> 8));
+    // heretic_note: divides by 256 instead of the dist_adjust
+    priority *= (10 - (dist / dist_adjust));
     channels[i].priority = priority;
   }
+}
+
+// hexen
+
+dboolean S_GetSoundPlayingInfo(void * origin, int sound_id)
+{
+    int i;
+    sfxinfo_t *sfx;
+
+    //jff 1/22/98 return if sound is not enabled
+    if (!snd_card || nosfxparm)
+        return false;
+
+    sfx = &S_sfx[sound_id];
+
+    for (i = 0; i < numChannels; i++)
+    {
+        if (channels[i].sfxinfo == sfx && channels[i].origin == origin)
+        {
+            if (I_SoundIsPlaying(channels[i].handle))
+            {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+int S_GetSoundID(const char *name)
+{
+    int i;
+
+    for (i = 0; i < HEXEN_NUMSFX; i++)
+    {
+        if (!strcmp(S_sfx[i].tagname, name))
+        {
+            return i;
+        }
+    }
+    return 0;
+}
+
+void S_StartSongName(const char *songLump, dboolean loop)
+{
+    int musicnum;
+
+    // lazy shortcut hack - this is a unique character
+    switch (songLump[1])
+    {
+      case 'e':
+        musicnum = hexen_mus_hexen;
+        break;
+      case 'u':
+        musicnum = hexen_mus_hub;
+        break;
+      case 'a':
+        musicnum = hexen_mus_hall;
+        break;
+      case 'r':
+        musicnum = hexen_mus_orb;
+        break;
+      case 'h':
+        musicnum = hexen_mus_chess;
+        break;
+      default:
+        musicnum = hexen_mus_hub;
+        break;
+    }
+
+    S_ChangeMusic(musicnum, loop);
+}
+
+void S_InitScript(void)
+{
+    int i;
+
+    SC_OpenLump("sndinfo");
+
+    while (SC_GetString())
+    {
+        if (*sc_String == '$')
+        {
+            if (!strcasecmp(sc_String, "$ARCHIVEPATH"))
+            {
+                SC_MustGetString();
+            }
+            else if (!strcasecmp(sc_String, "$MAP"))
+            {
+                SC_MustGetNumber();
+                SC_MustGetString();
+                if (sc_Number)
+                {
+                    P_PutMapSongLump(sc_Number, sc_String);
+                }
+            }
+            continue;
+        }
+        else
+        {
+            for (i = 0; i < HEXEN_NUMSFX; i++)
+            {
+                if (!strcmp(S_sfx[i].tagname, sc_String))
+                {
+                    SC_MustGetString();
+                    if (*sc_String != '?')
+                    {
+                        S_sfx[i].name = strdup(sc_String);
+                    }
+                    else
+                    {
+                        S_sfx[i].name = strdup("default");
+                    }
+                    break;
+                }
+            }
+            if (i == HEXEN_NUMSFX)
+            {
+                SC_MustGetString();
+            }
+        }
+    }
+    SC_Close();
+
+    for (i = 0; i < HEXEN_NUMSFX; i++)
+    {
+        if (!strcmp(S_sfx[i].name, ""))
+        {
+            S_sfx[i].name = strdup("default");
+        }
+    }
 }

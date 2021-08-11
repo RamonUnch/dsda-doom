@@ -50,6 +50,7 @@
 #include "w_wad.h"
 #include "m_argv.h"
 #include "m_misc.h"
+#include "v_video.h"
 #include "e6y.h"//e6y
 
 // CPhipps - modify to use logical output routine
@@ -1084,7 +1085,6 @@ typedef struct
 // killough 8/9/98: make DEH_BLOCKMAX self-adjusting
 #define DEH_BLOCKMAX (sizeof(deh_blocks) / sizeof(*deh_blocks))  // size of array
 #define DEH_MAXKEYLEN 32 // as much of any key as we'll look at
-#define DEH_MOBJINFOMAX 32 // number of mobjinfo configuration keys
 
 // Put all the block header values, and the function to be called when that
 // one is encountered, in this array:
@@ -1123,7 +1123,7 @@ static dboolean includenotext = false;
 // * things are base zero but dehacked considers them to start at #1. ***
 // CPhipps - static const
 
-static const char *deh_mobjinfo[DEH_MOBJINFOMAX] =
+static const char *deh_mobjinfo[] =
 {
   "ID #",                // .doomednum
   "Initial frame",       // .spawnstate
@@ -1159,6 +1159,11 @@ static const char *deh_mobjinfo[DEH_MOBJINFOMAX] =
   "Rip sound",           // .ripsound
   "Fast speed",          // .altspeed
   "Melee range",         // .meleerange
+
+  // misc
+  "Blood color",         // .bloodcolor
+
+  NULL
 };
 
 // Strings that are used to indicate flags ("Bits" in mobjinfo)
@@ -1236,6 +1241,42 @@ static const struct deh_flag_s deh_mobjflags[] = {
   { NULL }
 };
 
+static const struct deh_flag_s deh_mobjflags_standard[] = {
+  {"SPECIAL",      MF_SPECIAL}, // call  P_Specialthing when touched
+  {"SOLID",        MF_SOLID}, // block movement
+  {"SHOOTABLE",    MF_SHOOTABLE}, // can be hit
+  {"NOSECTOR",     MF_NOSECTOR}, // invisible but touchable
+  {"NOBLOCKMAP",   MF_NOBLOCKMAP}, // inert but displayable
+  {"AMBUSH",       MF_AMBUSH}, // deaf monster
+  {"JUSTHIT",      MF_JUSTHIT}, // will try to attack right back
+  {"JUSTATTACKED", MF_JUSTATTACKED}, // take at least 1 step before attacking
+  {"SPAWNCEILING", MF_SPAWNCEILING}, // initially hang from ceiling
+  {"NOGRAVITY",    MF_NOGRAVITY}, // don't apply gravity during play
+  {"DROPOFF",      MF_DROPOFF}, // can jump from high places
+  {"PICKUP",       MF_PICKUP}, // will pick up items
+  {"NOCLIP",       MF_NOCLIP}, // goes through walls
+  {"SLIDE",        MF_SLIDE}, // keep info about sliding along walls
+  {"FLOAT",        MF_FLOAT}, // allow movement to any height
+  {"TELEPORT",     MF_TELEPORT}, // don't cross lines or look at heights
+  {"MISSILE",      MF_MISSILE}, // don't hit same species, explode on block
+  {"DROPPED",      MF_DROPPED}, // dropped, not spawned (like ammo clip)
+  {"SHADOW",       MF_SHADOW}, // use fuzzy draw like spectres
+  {"NOBLOOD",      MF_NOBLOOD}, // puffs instead of blood when shot
+  {"CORPSE",       MF_CORPSE}, // so it will slide down steps when dead
+  {"INFLOAT",      MF_INFLOAT}, // float but not to target height
+  {"COUNTKILL",    MF_COUNTKILL}, // count toward the kills total
+  {"COUNTITEM",    MF_COUNTITEM}, // count toward the items total
+  {"SKULLFLY",     MF_SKULLFLY}, // special handling for flying skulls
+  {"NOTDMATCH",    MF_NOTDMATCH}, // do not spawn in deathmatch
+  {"TRANSLATION1", MF_TRANSLATION1}, // use translation table for color (players)
+  {"TRANSLATION2", MF_TRANSLATION2}, // use translation table for color (players)
+  {"TOUCHY",       MF_TOUCHY}, // dies on contact with solid objects (MBF)
+  {"BOUNCES",      MF_BOUNCES}, // bounces off floors, ceilings and maybe walls (MBF)
+  {"FRIEND",       MF_FRIEND}, // a friend of the player(s) (MBF)
+  {"TRANSLUCENT",  MF_TRANSLUCENT}, // apply translucency to sprite (BOOM)
+  { NULL }
+};
+
 static const struct deh_flag_s deh_mobjflags_mbf21[] = {
   {"LOGRAV",         MF2_LOGRAV}, // low gravity
   {"SHORTMRANGE",    MF2_SHORTMRANGE}, // short missile range
@@ -1289,14 +1330,14 @@ static const char *deh_state[] = // CPhipps - static const*
   "Codep Frame",      // pointer to first use of action (actionf_t)
   "Unknown 1",        // .misc1 (long)
   "Unknown 2",        // .misc2 (long)
-  "Args1",            // .args[0] (long)
-  "Args2",            // .args[1] (long)
-  "Args3",            // .args[2] (long)
-  "Args4",            // .args[3] (long)
-  "Args5",            // .args[4] (long)
-  "Args6",            // .args[5] (long)
-  "Args7",            // .args[6] (long)
-  "Args8",            // .args[7] (long)
+  "Args1",            // .args[0] (statearg_t)
+  "Args2",            // .args[1] (statearg_t)
+  "Args3",            // .args[2] (statearg_t)
+  "Args4",            // .args[3] (statearg_t)
+  "Args5",            // .args[4] (statearg_t)
+  "Args6",            // .args[5] (statearg_t)
+  "Args7",            // .args[6] (statearg_t)
+  "Args8",            // .args[7] (statearg_t)
   "MBF21 Bits",       // .flags
 };
 
@@ -1548,14 +1589,14 @@ static actionf_t deh_codeptr[NUMSTATES];
 
 // haleyjd: support for BEX SPRITES, SOUNDS, and MUSIC
 char *deh_spritenames[NUMSPRITES + 1];
-char *deh_musicnames[NUMMUSIC + 1];
+char *deh_musicnames[DOOM_NUMMUSIC + 1];
 char *deh_soundnames[NUMSFX + 1];
 
 void D_BuildBEXTables(void)
 {
   int i;
 
-  if (heretic) return;
+  if (raven) return;
 
   // moved from ProcessDehFile, then we don't need the static int i
   for (i = 0; i < EXTRASTATES; i++)  // remember what they start as for deh xref
@@ -1666,6 +1707,8 @@ void ProcessDehFile(const char *filename, const char *outfilename, int lumpnum)
   DEHFILE infile, *filein = &infile;    // killough 10/98
   char inbuffer[DEH_BUFFERMAX];  // Place to put the primary infostring
   const char *file_or_lump;
+  static unsigned last_block;
+  static long filepos;
 
   if (!defined_codeptr_args)
     defined_codeptr_args = calloc(NUMSTATES, sizeof(*defined_codeptr_args));
@@ -1717,12 +1760,12 @@ void ProcessDehFile(const char *filename, const char *outfilename, int lumpnum)
 
   // loop until end of file
 
+  last_block = DEH_BLOCKMAX - 1;
+  filepos = 0;
   while (dehfgets(inbuffer,sizeof(inbuffer),filein))
   {
     dboolean match;
     unsigned i;
-    static unsigned last_i = DEH_BLOCKMAX-1;
-    static long filepos = 0;
 
     lfstrip(inbuffer);
     deh_log("Line='%s'\n", inbuffer);
@@ -1779,10 +1822,10 @@ void ProcessDehFile(const char *filename, const char *outfilename, int lumpnum)
       }
 
     if (match) // inbuffer matches a valid block code name
-      last_i = i;
-    else if (last_i >= 10 && last_i < DEH_BLOCKMAX - 1) // restrict to BEX style lumps
+      last_block = i;
+    else if (last_block >= 10 && last_block < DEH_BLOCKMAX - 1) // restrict to BEX style lumps
     { // process that same line again with the last valid block code handler
-      i = last_i;
+      i = last_block;
       dehfseek(filein, filepos);
     }
 
@@ -2002,6 +2045,9 @@ static void setMobjInfoValue(int mobjInfoIndex, int keyIndex, uint_64_t value) {
     case 30: mi->altspeed = (int)value; return;
     case 31: mi->meleerange = (int)value; return;
 
+    // misc
+    case 32: mi->bloodcolor = V_BloodColor((int)value); return;
+
     default: return;
   }
 }
@@ -2064,7 +2110,7 @@ static void deh_procThing(DEHFILE *fpin, char *line)
       continue;
     }
 
-    for (ix = 0; ix < DEH_MOBJINFOMAX; ix++) {
+    for (ix = 0; deh_mobjinfo[ix]; ix++) {
       if (deh_strcasecmp(key, deh_mobjinfo[ix])) continue;
 
       if (!deh_strcasecmp(key, "MBF21 Bits")) {
@@ -2227,50 +2273,50 @@ static void deh_procFrame(DEHFILE *fpin, char *line)
     }
     else if (!deh_strcasecmp(key, deh_state[7]))  // Args1
     {
-      deh_log(" - args[0] = %ld\n", (long)value);
-      states[indexnum].args[0] = (long)value; // long
+      deh_log(" - args[0] = %lld\n", (statearg_t)value);
+      states[indexnum].args[0] = (statearg_t)value;
       defined_codeptr_args[indexnum] |= (1 << 0);
     }
     else if (!deh_strcasecmp(key, deh_state[8]))  // Args2
     {
-      deh_log(" - args[1] = %ld\n", (long)value);
-      states[indexnum].args[1] = (long)value; // long
+      deh_log(" - args[1] = %lld\n", (statearg_t)value);
+      states[indexnum].args[1] = (statearg_t)value;
       defined_codeptr_args[indexnum] |= (1 << 1);
     }
     else if (!deh_strcasecmp(key, deh_state[9]))  // Args3
     {
-      deh_log(" - args[2] = %ld\n", (long)value);
-      states[indexnum].args[2] = (long)value; // long
+      deh_log(" - args[2] = %lld\n", (statearg_t)value);
+      states[indexnum].args[2] = (statearg_t)value;
       defined_codeptr_args[indexnum] |= (1 << 2);
     }
     else if (!deh_strcasecmp(key, deh_state[10]))  // Args4
     {
-      deh_log(" - args[3] = %ld\n", (long)value);
-      states[indexnum].args[3] = (long)value; // long
+      deh_log(" - args[3] = %lld\n", (statearg_t)value);
+      states[indexnum].args[3] = (statearg_t)value;
       defined_codeptr_args[indexnum] |= (1 << 3);
     }
     else if (!deh_strcasecmp(key, deh_state[11]))  // Args5
     {
-      deh_log(" - args[4] = %ld\n", (long)value);
-      states[indexnum].args[4] = (long)value; // long
+      deh_log(" - args[4] = %lld\n", (statearg_t)value);
+      states[indexnum].args[4] = (statearg_t)value;
       defined_codeptr_args[indexnum] |= (1 << 4);
     }
     else if (!deh_strcasecmp(key, deh_state[12]))  // Args6
     {
-      deh_log(" - args[5] = %ld\n", (long)value);
-      states[indexnum].args[5] = (long)value; // long
+      deh_log(" - args[5] = %lld\n", (statearg_t)value);
+      states[indexnum].args[5] = (statearg_t)value;
       defined_codeptr_args[indexnum] |= (1 << 5);
     }
     else if (!deh_strcasecmp(key, deh_state[13]))  // Args7
     {
-      deh_log(" - args[6] = %ld\n", (long)value);
-      states[indexnum].args[6] = (long)value; // long
+      deh_log(" - args[6] = %lld\n", (statearg_t)value);
+      states[indexnum].args[6] = (statearg_t)value;
       defined_codeptr_args[indexnum] |= (1 << 6);
     }
     else if (!deh_strcasecmp(key, deh_state[14]))  // Args8
     {
-      deh_log(" - args[7] = %ld\n", (long)value);
-      states[indexnum].args[7] = (long)value; // long
+      deh_log(" - args[7] = %lld\n", (statearg_t)value);
+      states[indexnum].args[7] = (statearg_t)value;
       defined_codeptr_args[indexnum] |= (1 << 7);
     }
     else if (!deh_strcasecmp(key, deh_state[15]))  // MBF21 Bits
@@ -2510,7 +2556,7 @@ static void deh_procWeapon(DEHFILE *fpin, char *line)
     }
     if (!deh_strcasecmp(key, deh_weapon[0]))  // Ammo type
     {
-      if (!heretic && value == 5) value = am_noammo;
+      if (!raven && value == 5) value = am_noammo;
       weaponinfo[indexnum].ammo = (ammotype_t)value;
     }
     else if (!deh_strcasecmp(key, deh_weapon[1]))  // Deselect frame
@@ -2846,7 +2892,7 @@ static void deh_procText(DEHFILE *fpin, char *line)
   // http://www.doomworld.com/idgames/index.php?id=6480
   static dboolean sprnames_state[NUMSPRITES+1];
   static dboolean S_sfx_state[NUMSFX];
-  static dboolean S_music_state[NUMMUSIC];
+  static dboolean S_music_state[DOOM_NUMMUSIC];
 
   // Ty 04/11/98 - Included file may have NOTEXT skip flag set
   if (includenotext) // flag to skip included deh-style text
@@ -3500,12 +3546,12 @@ void PostProcessDeh(void)
       // Flags specifications aren't cross-port consistent -> must translate / mask bits
       if (bexptr_match->cptr == A_AddFlags || bexptr_match->cptr == A_RemoveFlags)
       {
-        states[i].args[0] = deh_translate_bits(states[i].args[0], deh_mobjflags);
+        states[i].args[0] = deh_translate_bits(states[i].args[0], deh_mobjflags_standard);
         states[i].args[1] = deh_translate_bits(states[i].args[1], deh_mobjflags_mbf21);
       }
       else if (bexptr_match->cptr == A_JumpIfFlagsSet)
       {
-        states[i].args[1] = deh_translate_bits(states[i].args[1], deh_mobjflags);
+        states[i].args[1] = deh_translate_bits(states[i].args[1], deh_mobjflags_standard);
         states[i].args[2] = deh_translate_bits(states[i].args[2], deh_mobjflags_mbf21);
       }
     }

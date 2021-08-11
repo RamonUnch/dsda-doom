@@ -62,9 +62,6 @@ int /*comperr[COMPERR_NUM], */default_comperr[COMPERR_NUM];
 // v1.1-like pitched sounds
 int pitched_sounds;        // killough
 
-int     default_translucency; // config file says           // phares
-dboolean general_translucency; // true if translucency is ok // phares
-
 int demo_insurance;        // killough 1/16/98
 
 int  allow_pushers = 1;      // MT_PUSH Things              // phares 3/10/98
@@ -105,7 +102,7 @@ char *MAPNAME(int e, int m)
 {
   static char name[9];
 
-  if (gamemode == commercial)
+  if (gamemode == commercial || hexen)
     snprintf(name, sizeof(name), "MAP%02d", m);
   else
     snprintf(name, sizeof(name), "E%dM%d", e, m);

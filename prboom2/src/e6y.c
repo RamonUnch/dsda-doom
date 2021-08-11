@@ -71,6 +71,7 @@
 #include "i_system.h"
 #include "p_maputl.h"
 #include "p_map.h"
+#include "p_setup.h"
 #include "i_video.h"
 #include "info.h"
 #include "r_main.h"
@@ -345,7 +346,7 @@ void G_SkipDemoStop(void)
   S_RestartMusic();
 
 #ifdef GL_DOOM
-  if (V_GetMode() == VID_MODEGL) {
+  if (V_IsOpenGLMode()) {
     gld_PreprocessLevel();
   }
 #endif
@@ -406,8 +407,11 @@ int G_GotoNextLevel(void)
   };
   int epsd;
   int map = -1;
-
   int changed = false;
+
+  if (hexen)
+    map = P_GetMapNextMap(gamemap);
+
   if (gamemapinfo != NULL)
   {
     const char *n;
@@ -484,7 +488,7 @@ int G_GotoNextLevel(void)
 
 void M_ChangeSpeed(void)
 {
-  G_SetSpeed();
+  G_SetSpeed(true);
 }
 
 void M_ChangeMouseLook(void)
@@ -509,7 +513,7 @@ void M_ChangeMaxViewPitch(void)
 {
   int max_up, max_dn, angle_up, angle_dn;
 
-  if (V_GetMode() == VID_MODEGL)
+  if (V_IsOpenGLMode())
   {
     max_up = movement_maxviewpitch;
     max_dn = movement_maxviewpitch;
@@ -786,7 +790,7 @@ void e6y_G_DoCompleted(void)
 
   memset(&stats[numlevels], 0, sizeof(timetable_t));
 
-  if (gamemode==commercial)
+  if (gamemode==commercial || hexen)
     sprintf(stats[numlevels].map,"MAP%02i",gamemap);
   else
     sprintf(stats[numlevels].map,"E%iM%i",gameepisode,gamemap);
@@ -804,7 +808,7 @@ void e6y_G_DoCompleted(void)
   stats[numlevels].stat[TT_TOTALITEM]   = totalitems;
   stats[numlevels].stat[TT_TOTALSECRET] = totalsecret;
 
-  for (i=0 ; i<MAXPLAYERS ; i++)
+  for (i = 0; i < g_maxplayers; i++)
   {
     if (playeringame[i])
     {
@@ -846,14 +850,14 @@ void e6y_WriteStats(void)
   memset(&max, 0, sizeof(timetable_t));
 
   playerscount = 0;
-  for (i=0; i<MAXPLAYERS; i++)
+  for (i = 0; i < g_maxplayers; i++)
     if (playeringame[i])
       playerscount++;
 
   for (level=0;level<numlevels;level++)
   {
     memset(&tmp, 0, sizeof(tmpdata_t));
-    for (i=0 ; i<MAXPLAYERS ; i++)
+    for (i = 0; i < g_maxplayers; i++)
     {
       if (playeringame[i])
       {

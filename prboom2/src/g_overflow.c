@@ -116,6 +116,7 @@ static void InterceptsMemoryOverrun(int location, int value)
   int i, offset;
   int index;
   void *addr;
+  void *addr2;
 
   i = 0;
   offset = 0;
@@ -127,17 +128,18 @@ static void InterceptsMemoryOverrun(int location, int value)
     if (offset + intercepts_overrun[i].len > location)
     {
       addr = intercepts_overrun[i].addr;
+      addr2 = intercepts_overrun[i].addr2;
 
       // Write the value to the memory location.
       // 16-bit and 32-bit values are written differently.
 
       if (addr != NULL)
       {
-        if (intercepts_overrun[i].int16_array)
+        // 2 shorts
+        if (intercepts_overrun[i].addr2)
         {
-          index = (location - offset) / 2;
-          ((short *) addr)[index] = value & 0xffff;
-          ((short *) addr)[index + 1] = (value >> 16) & 0xffff;
+          *((short *) addr) = value & 0xffff;
+          *((short *) addr2) = (value >> 16) & 0xffff;
         }
         else
         {
@@ -156,7 +158,7 @@ static void InterceptsMemoryOverrun(int location, int value)
 
 void InterceptsOverrun(int num_intercepts, intercept_t *intercept)
 {
-  if (num_intercepts > MAXINTERCEPTS_ORIGINAL && demo_compatibility && PROCESS(OVERFLOW_INTERCEPT))
+  if (!hexen && num_intercepts > MAXINTERCEPTS_ORIGINAL && demo_compatibility && PROCESS(OVERFLOW_INTERCEPT))
   {
     ShowOverflowWarning(OVERFLOW_INTERCEPT, false, "");
 
@@ -215,7 +217,7 @@ void SpechitOverrun(spechit_overrun_param_t *params)
 {
   int numspechit = *(params->numspechit);
 
-  if (demo_compatibility && numspechit > 8)
+  if (!hexen && demo_compatibility && numspechit > 8)
   {
     line_t **spechit = *(params->spechit);
 
@@ -355,7 +357,7 @@ void RejectOverrun(int rejectlump, const byte **rejectmatrix, int totallines)
     W_UnlockLumpNum(rejectlump);
     rejectlump = -1;
 
-    if (demo_compatibility && PROCESS(OVERFLOW_REJECT))
+    if (!hexen && demo_compatibility && PROCESS(OVERFLOW_REJECT))
     {
       ShowOverflowWarning(OVERFLOW_REJECT, (required - length > 16) || (length%4 != 0), "");
 
@@ -384,7 +386,8 @@ void RejectOverrun(int rejectlump, const byte **rejectmatrix, int totallines)
       }
     }
 
-    lprintf(LO_WARN, "P_LoadReject: REJECT too short (%u<%u) - padded\n", length, required);
+    if (length)
+      lprintf(LO_WARN, "P_LoadReject: REJECT too short (%u<%u) - padded\n", length, required);
   }
 }
 

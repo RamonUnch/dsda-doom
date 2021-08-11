@@ -96,9 +96,6 @@
 #include "dsda/split_tracker.h"
 #include "statdump.h"
 
-// ano - used for version 255+ demos, like EE or MBF
-static char     prdemosig[] = "PR+UM";
-
 #define SAVEGAMESIZE  0x20000
 #define SAVESTRINGSIZE  24
 
@@ -140,7 +137,7 @@ static int demolength; // check for overrun (missing DEMOMARKER)
 //e6y static
 const byte *demo_p;
 const byte *demo_continue_p = NULL;
-static short    consistancy[MAXPLAYERS][BACKUPTICS];
+static short    consistancy[MAX_MAXPLAYERS][BACKUPTICS];
 
 gameaction_t    gameaction;
 gamestate_t     gamestate;
@@ -162,8 +159,9 @@ dboolean         noblit;        // for comparative timing purposes
 int             starttime;     // for comparative timing purposes
 dboolean         deathmatch;    // only if started as net death
 dboolean         netgame;       // only true if packets are broadcast
-dboolean         playeringame[MAXPLAYERS];
-player_t        players[MAXPLAYERS];
+dboolean         playeringame[MAX_MAXPLAYERS];
+player_t        players[MAX_MAXPLAYERS];
+pclass_t        PlayerClass[MAX_MAXPLAYERS];
 int             upmove;
 int             consoleplayer; // player taking events and displaying
 int             displayplayer; // view being displayed
@@ -202,7 +200,6 @@ int shorttics;
 //
 
 #define MAXPLMOVE   (forwardmove[1])
-#define TURBOTHRESHOLD  0x32
 #define SLOWTURNTICS  6
 #define QUICKREVERSE (short)32768 // 180 degree reverse                    // phares
 
@@ -210,10 +207,6 @@ fixed_t forwardmove[2] = {0x19, 0x32};
 fixed_t sidemove[2]    = {0x18, 0x28};
 fixed_t angleturn[3]   = {640, 1280, 320};  // + slow turn
 fixed_t flyspeed[2]    = {1*256, 3*256};
-
-fixed_t forwardmove_normal[2] = {0x19, 0x32};
-fixed_t sidemove_normal[2]    = {0x18, 0x28};
-fixed_t sidemove_strafe50[2]  = {0x19, 0x32};
 
 static int     turnheld;       // for accelerative turning
 
@@ -293,6 +286,24 @@ static dboolean InventoryMoveLeft(void);
 static dboolean InventoryMoveRight(void);
 // end heretic
 
+// hexen
+#include "heretic/sb_bar.h"
+#include "hexen/a_action.h"
+#include "hexen/p_acs.h"
+#include "hexen/sn_sonix.h"
+#include "hexen/sv_save.h"
+
+// Position indicator for cooperative net-play reborn
+int RebornPosition;
+
+int LeaveMap;
+static int LeavePosition;
+
+void G_DoTeleportNewMap(void);
+static void Hexen_G_DoCompleted(void);
+static void Hexen_G_DoReborn(int playernum);
+// end hexen
+
 typedef enum
 {
   carry_vertmouse,
@@ -333,19 +344,31 @@ static inline signed char fudgef(signed char b)
   return b;
 }
 
-void G_SetSpeed(void)
+void G_SetSpeed(dboolean reset)
 {
   int p;
+  dsda_pclass_t *player_class;
+  static dsda_pclass_t *last_player_class = NULL;
+
+  player_class = &pclass[players[consoleplayer].pclass];
+
+  if (last_player_class == player_class && !reset)
+    return;
+
+  last_player_class = player_class;
+
+  forwardmove[0] = player_class->forwardmove[0];
+  forwardmove[1] = player_class->forwardmove[1];
 
   if(dsda_AlwaysSR50())
   {
-    sidemove[0] = sidemove_strafe50[0];
-    sidemove[1] = sidemove_strafe50[1];
+    sidemove[0] = player_class->forwardmove[0];
+    sidemove[1] = player_class->forwardmove[1];
   }
   else
   {
-    sidemove[0] = sidemove_normal[0];
-    sidemove[1] = sidemove_normal[1];
+    sidemove[0] = player_class->sidemove[0];
+    sidemove[1] = player_class->sidemove[1];
   }
 
   if ((p = M_CheckParm ("-turbo")))
@@ -354,9 +377,9 @@ void G_SetSpeed(void)
     scale = BETWEEN(10, 400, scale);
 
     //jff 9/3/98 use logical output routine
-    lprintf (LO_CONFIRM,"turbo scale: %i%%\n",scale);
-    forwardmove[0] = forwardmove_normal[0]*scale/100;
-    forwardmove[1] = forwardmove_normal[1]*scale/100;
+    lprintf (LO_INFO,"turbo scale: %i%%\n",scale);
+    forwardmove[0] = player_class->forwardmove[0]*scale/100;
+    forwardmove[1] = player_class->forwardmove[1]*scale/100;
     sidemove[0] = sidemove[0]*scale/100;
     sidemove[1] = sidemove[1]*scale/100;
   }
@@ -366,12 +389,11 @@ static dboolean WeaponSelectable(weapontype_t weapon)
 {
   if (heretic)
   {
-    if (weapon == wp_beak)
-    {
-      return false;
-    }
-
-    return players[consoleplayer].weaponowned[weapon];
+    return weapon != wp_beak && players[consoleplayer].weaponowned[weapon];
+  }
+  else if (hexen)
+  {
+    return weapon < HEXEN_NUMWEAPONS && players[consoleplayer].weaponowned[weapon];
   }
 
   if (gamemode == shareware)
@@ -439,6 +461,11 @@ void G_BuildTiccmd(ticcmd_t* cmd)
   int forward;
   int side;
   int newweapon;                                          // phares
+
+  dsda_pclass_t *player_class = &pclass[players[consoleplayer].pclass];
+
+  G_SetSpeed(false);
+
   /* cphipps - remove needless I_BaseTiccmd call, just set the ticcmd to zero */
   memset(cmd,0,sizeof*cmd);
   cmd->consistancy = consistancy[consoleplayer][maketic%BACKUPTICS];
@@ -482,27 +509,27 @@ void G_BuildTiccmd(ticcmd_t* cmd)
   // let movement keys cancel each other out
 
   if (strafe)
-    {
-      if (dsda_InputActive(dsda_input_turnright))
-        side += sidemove[speed];
-      if (dsda_InputActive(dsda_input_turnleft))
-        side -= sidemove[speed];
-      if (joyxmove > 0)
-        side += sidemove[speed];
-      if (joyxmove < 0)
-        side -= sidemove[speed];
-    }
+  {
+    if (dsda_InputActive(dsda_input_turnright))
+      side += sidemove[speed];
+    if (dsda_InputActive(dsda_input_turnleft))
+      side -= sidemove[speed];
+    if (joyxmove > 0)
+      side += sidemove[speed];
+    if (joyxmove < 0)
+      side -= sidemove[speed];
+  }
   else
-    {
-      if (dsda_InputActive(dsda_input_turnright))
-        cmd->angleturn -= angleturn[tspeed];
-      if (dsda_InputActive(dsda_input_turnleft))
-        cmd->angleturn += angleturn[tspeed];
-      if (joyxmove > 0)
-        cmd->angleturn -= angleturn[tspeed];
-      if (joyxmove < 0)
-        cmd->angleturn += angleturn[tspeed];
-    }
+  {
+    if (dsda_InputActive(dsda_input_turnright))
+      cmd->angleturn -= angleturn[tspeed];
+    if (dsda_InputActive(dsda_input_turnleft))
+      cmd->angleturn += angleturn[tspeed];
+    if (joyxmove > 0)
+      cmd->angleturn -= angleturn[tspeed];
+    if (joyxmove < 0)
+      cmd->angleturn += angleturn[tspeed];
+  }
 
   if (dsda_InputActive(dsda_input_forward))
     forward += forwardmove[speed];
@@ -517,7 +544,7 @@ void G_BuildTiccmd(ticcmd_t* cmd)
   if (dsda_InputActive(dsda_input_strafeleft))
     side -= sidemove[speed];
 
-  if (heretic)
+  if (raven)
   {
     int lspeed;
     int look, arti;
@@ -583,50 +610,134 @@ void G_BuildTiccmd(ticcmd_t* cmd)
       }
       else
       {
-        cmd->arti = players[consoleplayer].inventory[inv_ptr].type;
+        cmd->arti |= players[consoleplayer].inventory[inv_ptr].type & AFLAG_MASK;
       }
     }
-    if (dsda_InputTickActivated(dsda_input_arti_tome) && !cmd->arti
-        && !players[consoleplayer].powers[pw_weaponlevel2])
+
+    if (hexen)
     {
-      cmd->arti = arti_tomeofpower;
+      extern int mn_SuicideConsole;
+
+      if (dsda_InputActive(dsda_input_jump))
+      {
+        cmd->arti |= AFLAG_JUMP;
+      }
+
+      if (mn_SuicideConsole)
+      {
+          cmd->arti |= AFLAG_SUICIDE;
+          mn_SuicideConsole = false;
+      }
+
+      if (!cmd->arti)
+      {
+        if (dsda_InputTickActivated(dsda_input_arti_ring))
+        {
+          cmd->arti = hexen_arti_invulnerability;
+        }
+        else if (dsda_InputTickActivated(dsda_input_arti_quartz) &&
+                 players[consoleplayer].mo->health < MAXHEALTH)
+        {
+          cmd->arti = hexen_arti_health;
+        }
+        else if (dsda_InputTickActivated(dsda_input_arti_urn))
+        {
+          cmd->arti = hexen_arti_superhealth;
+        }
+        else if (dsda_InputTickActivated(dsda_input_hexen_arti_incant))
+        {
+          cmd->arti = hexen_arti_healingradius;
+        }
+        else if (dsda_InputTickActivated(dsda_input_hexen_arti_summon))
+        {
+          cmd->arti = hexen_arti_summon;
+        }
+        else if (dsda_InputTickActivated(dsda_input_arti_torch))
+        {
+          cmd->arti = hexen_arti_torch;
+        }
+        else if (dsda_InputTickActivated(dsda_input_arti_morph))
+        {
+          cmd->arti = hexen_arti_egg;
+        }
+        else if (dsda_InputTickActivated(dsda_input_arti_wings))
+        {
+          cmd->arti = hexen_arti_fly;
+        }
+        else if (dsda_InputTickActivated(dsda_input_hexen_arti_disk))
+        {
+          cmd->arti = hexen_arti_blastradius;
+        }
+        else if (dsda_InputTickActivated(dsda_input_hexen_arti_flechette))
+        {
+          cmd->arti = hexen_arti_poisonbag;
+        }
+        else if (dsda_InputTickActivated(dsda_input_hexen_arti_banishment))
+        {
+          cmd->arti = hexen_arti_teleportother;
+        }
+        else if (dsda_InputTickActivated(dsda_input_hexen_arti_boots))
+        {
+          cmd->arti = hexen_arti_speed;
+        }
+        else if (dsda_InputTickActivated(dsda_input_hexen_arti_krater))
+        {
+          cmd->arti = hexen_arti_boostmana;
+        }
+        else if (dsda_InputTickActivated(dsda_input_hexen_arti_bracers))
+        {
+          cmd->arti = hexen_arti_boostarmor;
+        }
+        else if (dsda_InputTickActivated(dsda_input_arti_chaosdevice))
+        {
+          cmd->arti = hexen_arti_teleport;
+        }
+      }
     }
-    else if (dsda_InputTickActivated(dsda_input_arti_quartz) && !cmd->arti
-        && (players[consoleplayer].mo->health < MAXHEALTH))
+    else
     {
-      cmd->arti = arti_health;
-    }
-    else if (dsda_InputTickActivated(dsda_input_arti_urn) && !cmd->arti)
-    {
-      cmd->arti = arti_superhealth;
-    }
-    else if (dsda_InputTickActivated(dsda_input_arti_bomb) && !cmd->arti)
-    {
-      cmd->arti = arti_firebomb;
-    }
-    else if (dsda_InputTickActivated(dsda_input_arti_ring) && !cmd->arti)
-    {
-      cmd->arti = arti_invulnerability;
-    }
-    else if (dsda_InputTickActivated(dsda_input_arti_chaosdevice) && !cmd->arti)
-    {
-      cmd->arti = arti_teleport;
-    }
-    else if (dsda_InputTickActivated(dsda_input_arti_shadowsphere) && !cmd->arti)
-    {
-      cmd->arti = arti_invisibility;
-    }
-    else if (dsda_InputTickActivated(dsda_input_arti_wings) && !cmd->arti)
-    {
-      cmd->arti = arti_fly;
-    }
-    else if (dsda_InputTickActivated(dsda_input_arti_torch) && !cmd->arti)
-    {
-      cmd->arti = arti_torch;
-    }
-    else if (dsda_InputTickActivated(dsda_input_arti_morph) && !cmd->arti)
-    {
-      cmd->arti = arti_egg;
+      if (dsda_InputTickActivated(dsda_input_arti_tome) && !cmd->arti
+          && !players[consoleplayer].powers[pw_weaponlevel2])
+      {
+        cmd->arti = arti_tomeofpower;
+      }
+      else if (dsda_InputTickActivated(dsda_input_arti_quartz) && !cmd->arti
+          && (players[consoleplayer].mo->health < MAXHEALTH))
+      {
+        cmd->arti = arti_health;
+      }
+      else if (dsda_InputTickActivated(dsda_input_arti_urn) && !cmd->arti)
+      {
+        cmd->arti = arti_superhealth;
+      }
+      else if (dsda_InputTickActivated(dsda_input_arti_bomb) && !cmd->arti)
+      {
+        cmd->arti = arti_firebomb;
+      }
+      else if (dsda_InputTickActivated(dsda_input_arti_ring) && !cmd->arti)
+      {
+        cmd->arti = arti_invulnerability;
+      }
+      else if (dsda_InputTickActivated(dsda_input_arti_chaosdevice) && !cmd->arti)
+      {
+        cmd->arti = arti_teleport;
+      }
+      else if (dsda_InputTickActivated(dsda_input_arti_shadowsphere) && !cmd->arti)
+      {
+        cmd->arti = arti_invisibility;
+      }
+      else if (dsda_InputTickActivated(dsda_input_arti_wings) && !cmd->arti)
+      {
+        cmd->arti = arti_fly;
+      }
+      else if (dsda_InputTickActivated(dsda_input_arti_torch) && !cmd->arti)
+      {
+        cmd->arti = arti_torch;
+      }
+      else if (dsda_InputTickActivated(dsda_input_arti_morph) && !cmd->arti)
+      {
+        cmd->arti = arti_egg;
+      }
     }
 
     if (players[consoleplayer].playerstate == PST_LIVE)
@@ -644,18 +755,18 @@ void G_BuildTiccmd(ticcmd_t* cmd)
     cmd->lookfly |= flyheight << 4;
   }
 
-    // buttons
+  // buttons
   cmd->chatchar = HU_dequeueChatChar();
 
   if (dsda_InputActive(dsda_input_fire))
     cmd->buttons |= BT_ATTACK;
 
   if (dsda_InputActive(dsda_input_use) || dsda_InputTickActivated(dsda_input_use))
-    {
-      cmd->buttons |= BT_USE;
-      // clear double clicks if hit use button
-      dclicks = 0;
-    }
+  {
+    cmd->buttons |= BT_USE;
+    // clear double clicks if hit use button
+    dclicks = 0;
+  }
 
   // Toggle between the top 2 favorite weapons.                   // phares
   // If not currently aiming one of these, switch to              // phares
@@ -671,21 +782,29 @@ void G_BuildTiccmd(ticcmd_t* cmd)
   // Make Boom insert only a single weapon change command on autoswitch.
   if ((!demo_compatibility && players[consoleplayer].attackdown && // killough
        !P_CheckAmmo(&players[consoleplayer]) && !(done_autoswitch && boom_autoswitch)) ||
-       dsda_InputActive(dsda_input_toggleweapon))
+       (!hexen && dsda_InputActive(dsda_input_toggleweapon)))
   {
     newweapon = P_SwitchWeapon(&players[consoleplayer]);           // phares
     done_autoswitch = true;
   }
   else
-    {                                 // phares 02/26/98: Added gamemode checks
-      if (next_weapon)
-      {
-        newweapon = G_NextWeapon(next_weapon);
-        next_weapon = 0;
-      }
-      else
-      {
-        // HERETIC_TODO: fix this
+  {                                 // phares 02/26/98: Added gamemode checks
+    if (next_weapon && players[consoleplayer].morphTics == 0)
+    {
+      newweapon = G_NextWeapon(next_weapon);
+    }
+    else if (hexen)
+    {
+      newweapon =
+        dsda_InputActive(dsda_input_weapon1) ? wp_first :    // killough 5/2/98: reformatted
+        dsda_InputActive(dsda_input_weapon2) ? wp_second :
+        dsda_InputActive(dsda_input_weapon3) ? wp_third :
+        dsda_InputActive(dsda_input_weapon4) ? wp_fourth :
+        wp_nochange;
+    }
+    else
+    {
+      // HERETIC_TODO: fix this
       newweapon =
         dsda_InputActive(dsda_input_weapon1) ? wp_fist :    // killough 5/2/98: reformatted
         dsda_InputActive(dsda_input_weapon2) ? wp_pistol :
@@ -697,64 +816,63 @@ void G_BuildTiccmd(ticcmd_t* cmd)
         dsda_InputActive(dsda_input_weapon8) ? wp_chainsaw :
         (!demo_compatibility && dsda_InputActive(dsda_input_weapon9) && gamemode == commercial) ? wp_supershotgun :
         wp_nochange;
-      }
-
-      // killough 3/22/98: For network and demo consistency with the
-      // new weapons preferences, we must do the weapons switches here
-      // instead of in p_user.c. But for old demos we must do it in
-      // p_user.c according to the old rules. Therefore demo_compatibility
-      // determines where the weapons switch is made.
-
-      // killough 2/8/98:
-      // Allow user to switch to fist even if they have chainsaw.
-      // Switch to fist or chainsaw based on preferences.
-      // Switch to shotgun or SSG based on preferences.
-
-      if (!demo_compatibility)
-        {
-          const player_t *player = &players[consoleplayer];
-
-          // only select chainsaw from '1' if it's owned, it's
-          // not already in use, and the player prefers it or
-          // the fist is already in use, or the player does not
-          // have the berserker strength.
-
-          if (newweapon==wp_fist && player->weaponowned[wp_chainsaw] &&
-              player->readyweapon!=wp_chainsaw &&
-              (player->readyweapon==wp_fist ||
-               !player->powers[pw_strength] ||
-               P_WeaponPreferred(wp_chainsaw, wp_fist)))
-            newweapon = wp_chainsaw;
-
-          // Select SSG from '3' only if it's owned and the player
-          // does not have a shotgun, or if the shotgun is already
-          // in use, or if the SSG is not already in use and the
-          // player prefers it.
-
-          if (newweapon == wp_shotgun && gamemode == commercial &&
-              player->weaponowned[wp_supershotgun] &&
-              (!player->weaponowned[wp_shotgun] ||
-               player->readyweapon == wp_shotgun ||
-               (player->readyweapon != wp_supershotgun &&
-                P_WeaponPreferred(wp_supershotgun, wp_shotgun))))
-            newweapon = wp_supershotgun;
-        }
-      // killough 2/8/98, 3/22/98 -- end of weapon selection changes
-      //}
     }
+
+    // killough 3/22/98: For network and demo consistency with the
+    // new weapons preferences, we must do the weapons switches here
+    // instead of in p_user.c. But for old demos we must do it in
+    // p_user.c according to the old rules. Therefore demo_compatibility
+    // determines where the weapons switch is made.
+
+    // killough 2/8/98:
+    // Allow user to switch to fist even if they have chainsaw.
+    // Switch to fist or chainsaw based on preferences.
+    // Switch to shotgun or SSG based on preferences.
+
+    if (!demo_compatibility)
+    {
+      const player_t *player = &players[consoleplayer];
+
+      // only select chainsaw from '1' if it's owned, it's
+      // not already in use, and the player prefers it or
+      // the fist is already in use, or the player does not
+      // have the berserker strength.
+
+      if (newweapon==wp_fist && player->weaponowned[wp_chainsaw] &&
+          player->readyweapon!=wp_chainsaw &&
+          (player->readyweapon==wp_fist ||
+           !player->powers[pw_strength] ||
+           P_WeaponPreferred(wp_chainsaw, wp_fist)))
+        newweapon = wp_chainsaw;
+
+      // Select SSG from '3' only if it's owned and the player
+      // does not have a shotgun, or if the shotgun is already
+      // in use, or if the SSG is not already in use and the
+      // player prefers it.
+
+      if (newweapon == wp_shotgun && gamemode == commercial &&
+          player->weaponowned[wp_supershotgun] &&
+          (!player->weaponowned[wp_shotgun] ||
+           player->readyweapon == wp_shotgun ||
+           (player->readyweapon != wp_supershotgun &&
+            P_WeaponPreferred(wp_supershotgun, wp_shotgun))))
+        newweapon = wp_supershotgun;
+    }
+  }
+
+  next_weapon = 0;
 
   if (newweapon != wp_nochange && players[consoleplayer].chickenTics == 0)
-    {
-      cmd->buttons |= BT_CHANGE;
-      cmd->buttons |= newweapon<<BT_WEAPONSHIFT;
-    }
+  {
+    cmd->buttons |= BT_CHANGE;
+    cmd->buttons |= newweapon<<BT_WEAPONSHIFT;
+  }
 
   // mouse
 
   if (mouse_doubleclick_as_use) {//e6y
-
-  // forward double click
-  if (dsda_InputMouseBActive(dsda_input_forward) != dclickstate && dclicktime > 1 )
+    // forward double click
+    if (dsda_InputMouseBActive(dsda_input_forward) != dclickstate && dclicktime > 1 )
     {
       dclickstate = dsda_InputMouseBActive(dsda_input_forward);
       if (dclickstate)
@@ -767,17 +885,16 @@ void G_BuildTiccmd(ticcmd_t* cmd)
       else
         dclicktime = 0;
     }
-  else
-    if ((dclicktime += ticdup) > 20)
+    else
+      if ((dclicktime += ticdup) > 20)
       {
         dclicks = 0;
         dclickstate = 0;
       }
 
-  // strafe double click
-
-  bstrafe = dsda_InputMouseBActive(dsda_input_strafe) || dsda_InputJoyBActive(dsda_input_strafe);
-  if (bstrafe != dclickstate2 && dclicktime2 > 1 )
+    // strafe double click
+    bstrafe = dsda_InputMouseBActive(dsda_input_strafe) || dsda_InputJoyBActive(dsda_input_strafe);
+    if (bstrafe != dclickstate2 && dclicktime2 > 1 )
     {
       dclickstate2 = bstrafe;
       if (dclickstate2)
@@ -790,19 +907,19 @@ void G_BuildTiccmd(ticcmd_t* cmd)
       else
         dclicktime2 = 0;
     }
-  else
-    if ((dclicktime2 += ticdup) > 20)
+    else
+      if ((dclicktime2 += ticdup) > 20)
       {
         dclicks2 = 0;
         dclickstate2 = 0;
       }
-
-  }//e6y: end if (mouse_doubleclick_as_use)
+  }
 
   if(!movement_mousenovert)
   {
     forward += mousey;
   }
+
   if (strafe)
   {
     static double mousestrafe_carry = 0;
@@ -832,6 +949,7 @@ void G_BuildTiccmd(ticcmd_t* cmd)
     forward = MAXPLMOVE;
   else if (forward < -MAXPLMOVE)
     forward = -MAXPLMOVE;
+
   if (side > MAXPLMOVE)
     side = MAXPLMOVE;
   else if (side < -MAXPLMOVE)
@@ -842,18 +960,24 @@ void G_BuildTiccmd(ticcmd_t* cmd)
   {
     if (!speed)
     {
-      if (side > sidemove_strafe50[0])
-        side = sidemove_strafe50[0];
-      else if (side < -sidemove_strafe50[0])
-        side = -sidemove_strafe50[0];
+      if (side > player_class->forwardmove[0])
+        side = player_class->forwardmove[0];
+      else if (side < -player_class->forwardmove[0])
+        side = -player_class->forwardmove[0];
     }
     else if(!movement_strafe50onturns && !strafe && cmd->angleturn)
     {
-      if (side > sidemove_normal[1])
-        side = sidemove_normal[1];
-      else if (side < -sidemove_normal[1])
-        side = -sidemove_normal[1];
+      if (side > player_class->sidemove[1])
+        side = player_class->sidemove[1];
+      else if (side < -player_class->sidemove[1])
+        side = -player_class->sidemove[1];
     }
+  }
+
+  if (players[consoleplayer].powers[pw_speed] && !players[consoleplayer].morphTics)
+  {                           // Adjust for a player with a speed artifact
+      forward = (3 * forward) >> 1;
+      side = (3 * side) >> 1;
   }
 
   if (stroller) side = 0;
@@ -928,9 +1052,13 @@ static void G_DoLoadLevel (void)
   //  we look for an actual index, instead of simply
   //  setting one.
 
-  skyflatnum = R_FlatNumForName ( SKYFLATNAME );
+  skyflatnum = R_FlatNumForName(g_skyflatname);
 
-  if (gamemapinfo && gamemapinfo->skytexture[0])
+  if (hexen)
+  {
+    skytexture = Sky1Texture;
+  }
+  else if (gamemapinfo && gamemapinfo->skytexture[0])
   {
     skytexture = R_TextureNumForName(gamemapinfo->skytexture);
   }
@@ -950,17 +1078,18 @@ static void G_DoLoadLevel (void)
   else if (gamemode == commercial)
     // || gamemode == pack_tnt   //jff 3/27/98 sorry guys pack_tnt,pack_plut
     // || gamemode == pack_plut) //aren't gamemodes, this was matching retail
-    {
-      skytexture = R_TextureNumForName ("SKY3");
-      if (gamemap < 12)
-        skytexture = R_TextureNumForName ("SKY1");
-      else
-        if (gamemap < 21)
-          skytexture = R_TextureNumForName ("SKY2");
-    }
+  {
+    skytexture = R_TextureNumForName ("SKY3");
+    if (gamemap < 12)
+      skytexture = R_TextureNumForName ("SKY1");
+    else
+      if (gamemap < 21)
+        skytexture = R_TextureNumForName ("SKY2");
+  }
   else //jff 3/27/98 and lets not forget about DOOM and Ultimate DOOM huh?
+  {
     switch (gameepisode)
-      {
+    {
       case 1:
         skytexture = R_TextureNumForName ("SKY1");
         break;
@@ -973,7 +1102,8 @@ static void G_DoLoadLevel (void)
       case 4: // Special Edition sky
         skytexture = R_TextureNumForName ("SKY4");
         break;
-      }//jff 3/27/98 end sky setting fix
+    }//jff 3/27/98 end sky setting fix
+  }
 
   // [RH] Set up details about sky rendering
   R_InitSkyMap ();
@@ -992,18 +1122,21 @@ static void G_DoLoadLevel (void)
 
   gamestate = GS_LEVEL;
 
-  for (i=0 ; i<MAXPLAYERS ; i++)
-    {
-      if (playeringame[i] && players[i].playerstate == PST_DEAD)
-        players[i].playerstate = PST_REBORN;
-      memset (players[i].frags,0,sizeof(players[i].frags));
-    }
+  for (i = 0; i < g_maxplayers; i++)
+  {
+    if (playeringame[i] && players[i].playerstate == PST_DEAD)
+      players[i].playerstate = PST_REBORN;
+    memset(players[i].frags, 0, sizeof(players[i].frags));
+  }
 
   // initialize the msecnode_t freelist.                     phares 3/25/98
   // any nodes in the freelist are gone by now, cleared
   // by Z_FreeTag() when the previous level ended or player
   // died.
   P_FreeSecNodeList();
+
+  if (hexen)
+    SN_StopAllSequences();
 
   P_SetupLevel (gameepisode, gamemap, 0, gameskill);
   if (!demoplayback) // Don't switch views if playing a demo
@@ -1025,14 +1158,14 @@ static void G_DoLoadLevel (void)
   // Move to end of function to minimize noise -- killough 2/22/98:
 
   if (timingdemo)
-    {
-      static int first=1;
-      if (first)
-        {
-          starttime = I_GetTime_RealTime ();
-          first=0;
-        }
-    }
+  {
+    static int first=1;
+    if (first)
+      {
+        starttime = I_GetTime_RealTime ();
+        first=0;
+      }
+  }
 }
 
 
@@ -1060,7 +1193,7 @@ dboolean G_Responder (event_t* ev)
       gamestate == GS_LEVEL)
   {
     do                                          // spy mode
-      if (++displayplayer >= MAXPLAYERS)
+      if (++displayplayer >= g_maxplayers)
         displayplayer = 0;
     while (!playeringame[displayplayer] && displayplayer!=consoleplayer);
 
@@ -1130,27 +1263,27 @@ dboolean G_Responder (event_t* ev)
       return true;    // eat key down events
 
     case ev_mousemotion:
+    {
+      double value;
+
+      value = dsda_FineSensitivity(mouseSensitivity_horiz) * AccelerateMouse(ev->data2);
+      mousex += G_CarryDouble(carry_mousex, value);
+      if(GetMouseLook())
       {
-        double value;
-
-        value = dsda_FineSensitivity(mouseSensitivity_horiz) * AccelerateMouse(ev->data2);
-        mousex += G_CarryDouble(carry_mousex, value);
-        if(GetMouseLook())
-        {
-          value = (double) mouseSensitivity_mlook * AccelerateMouse(ev->data3);
-          if (movement_mouseinvert)
-            mlooky += G_CarryDouble(carry_mousey, value);
-          else
-            mlooky -= G_CarryDouble(carry_mousey, value);
-        }
+        value = (double) mouseSensitivity_mlook * AccelerateMouse(ev->data3);
+        if (movement_mouseinvert)
+          mlooky += G_CarryDouble(carry_mousey, value);
         else
-        {
-          value = (double) mouseSensitivity_vert * AccelerateMouse(ev->data3) / 8;
-          mousey += G_CarryDouble(carry_vertmouse, value);
-        }
-
-        return true;    // eat events
+          mlooky -= G_CarryDouble(carry_mousey, value);
       }
+      else
+      {
+        value = (double) mouseSensitivity_vert * AccelerateMouse(ev->data3) / 8;
+        mousey += G_CarryDouble(carry_vertmouse, value);
+      }
+
+      return true;    // eat events
+    }
 
     case ev_joystick:
       joyxmove = ev->data2;
@@ -1184,141 +1317,136 @@ void G_Ticker (void)
   }
   P_MapStart();
   // do player reborns if needed
-  for (i=0 ; i<MAXPLAYERS ; i++)
+  for (i = 0; i < g_maxplayers; i++)
     if (playeringame[i] && players[i].playerstate == PST_REBORN)
-      G_DoReborn (i);
+      G_DoReborn(i);
   P_MapEnd();
 
   // do things to change the game state
   while (gameaction != ga_nothing)
+  {
+    switch (gameaction)
     {
-      switch (gameaction)
-        {
-        case ga_loadlevel:
-    // force players to be initialized on level reload
-    for (i=0 ; i<MAXPLAYERS ; i++)
-      players[i].playerstate = PST_REBORN;
-          G_DoLoadLevel ();
-          break;
-        case ga_newgame:
-          G_DoNewGame ();
-          break;
-        case ga_loadgame:
-          G_DoLoadGame ();
-          break;
-        case ga_savegame:
-          G_DoSaveGame (false);
-          break;
-        case ga_playdemo:
-          G_DoPlayDemo ();
-          break;
-        case ga_completed:
-          G_DoCompleted ();
-          break;
-        case ga_victory:
-          F_StartFinale ();
-          break;
-        case ga_worlddone:
-          G_DoWorldDone ();
-          break;
-        case ga_screenshot:
-          M_ScreenShot ();
-          gameaction = ga_nothing;
-          break;
-        case ga_nothing:
-          break;
-        }
+      case ga_loadlevel:
+        // force players to be initialized on level reload
+        if (!hexen)
+          for (i = 0; i < g_maxplayers; i++)
+            players[i].playerstate = PST_REBORN;
+        G_DoLoadLevel();
+        break;
+      case ga_newgame:
+        G_DoNewGame();
+        break;
+      case ga_loadgame:
+        G_DoLoadGame();
+        break;
+      case ga_savegame:
+        G_DoSaveGame(false);
+        break;
+      case ga_playdemo:
+        G_DoPlayDemo();
+        break;
+      case ga_completed:
+        G_DoCompleted();
+        break;
+      case ga_victory:
+        F_StartFinale();
+        break;
+      case ga_worlddone:
+        G_DoWorldDone();
+        break;
+      case ga_screenshot:
+        M_ScreenShot();
+        gameaction = ga_nothing;
+        break;
+      case ga_leavemap:
+        G_DoTeleportNewMap();
+        break;
+      case ga_nothing:
+        break;
     }
+  }
 
   if (paused & 2 || (!demoplayback && menuactive && !netgame))
     basetic++;  // For revenant tracers and RNG -- we must maintain sync
   else {
     // get commands, check consistancy, and build new consistancy check
-    int buf = (gametic/ticdup)%BACKUPTICS;
+    int buf = (gametic / ticdup) % BACKUPTICS;
 
     dsda_UpdateAutoKeyFrames();
 
-    for (i=0 ; i<MAXPLAYERS ; i++) {
+    for (i = 0; i < g_maxplayers; i++)
+    {
       if (playeringame[i])
+      {
+        ticcmd_t *cmd = &players[i].cmd;
+
+        memcpy(cmd, &netcmds[i][buf], sizeof *cmd);
+
+        if (dsda_KeyFrameRestored())
+          dsda_JoinDemoCmd(cmd);
+
+        //e6y
+        if (democontinue)
+          G_ReadDemoContinueTiccmd(cmd);
+
+        if (demoplayback)
+          G_ReadDemoTiccmd(cmd);
+        if (demorecording)
+          G_WriteDemoTiccmd(cmd);
+
+        if (netgame && !netdemo && !(gametic % ticdup) )
         {
-          ticcmd_t *cmd = &players[i].cmd;
-
-          memcpy(cmd, &netcmds[i][buf], sizeof *cmd);
-
-          if (dsda_KeyFrameRestored())
-            dsda_JoinDemoCmd(cmd);
-
-          //e6y
-          if (democontinue)
-            G_ReadDemoContinueTiccmd (cmd);
-
-          if (demoplayback)
-            G_ReadDemoTiccmd (cmd);
-          if (demorecording)
-            G_WriteDemoTiccmd (cmd);
-
-          // check for turbo cheats
-          // killough 2/14/98, 2/20/98 -- only warn in netgames and demos
-
-          if ((netgame || demoplayback) && cmd->forwardmove > TURBOTHRESHOLD &&
-              !(gametic&31) && ((gametic>>5)&3) == i )
-            {
-        extern char *player_names[];
-        /* cph - don't use sprintf, use doom_printf */
-              doom_printf ("%s is turbo!", player_names[i]);
-            }
-
-          if (netgame && !netdemo && !(gametic%ticdup) )
-            {
-              if (gametic > BACKUPTICS
-                  && consistancy[i][buf] != cmd->consistancy)
-                I_Error("G_Ticker: Consistency failure (%i should be %i)",
-            cmd->consistancy, consistancy[i][buf]);
-              if (players[i].mo)
-                consistancy[i][buf] = players[i].mo->x;
-              else
-                consistancy[i][buf] = 0; // killough 2/14/98
-            }
+          if (gametic > BACKUPTICS
+              && consistancy[i][buf] != cmd->consistancy)
+            I_Error("G_Ticker: Consistency failure (%i should be %i)",
+                    cmd->consistancy, consistancy[i][buf]);
+          if (players[i].mo)
+            consistancy[i][buf] = players[i].mo->x;
+          else
+            consistancy[i][buf] = 0; // killough 2/14/98
         }
+      }
     }
 
     dsda_InputFlushTick();
     dsda_WatchCommand();
 
     // check for special buttons
-    for (i=0; i<MAXPLAYERS; i++) {
+    for (i = 0; i < g_maxplayers; i++)
+    {
       if (playeringame[i])
+      {
+        if (players[i].cmd.buttons & BT_SPECIAL)
         {
-          if (players[i].cmd.buttons & BT_SPECIAL)
-            {
-              switch (players[i].cmd.buttons & BT_SPECIALMASK)
-                {
-                case BTS_PAUSE:
-                  paused ^= 1;
-                  if (paused)
-                    S_PauseSound ();
-                  else
-                    S_ResumeSound ();
-                  break;
+          switch (players[i].cmd.buttons & BT_SPECIALMASK)
+          {
+            case BTS_PAUSE:
+              paused ^= 1;
+              if (paused)
+                S_PauseSound();
+              else
+                S_ResumeSound();
+              break;
 
-                case BTS_SAVEGAME:
-                  if (!savedescription[0])
-                    strcpy(savedescription, "NET GAME");
-                  savegameslot =
-                    (players[i].cmd.buttons & BTS_SAVEMASK)>>BTS_SAVESHIFT;
-                  gameaction = ga_savegame;
-                  break;
+            case BTS_SAVEGAME:
+              if (!savedescription[0])
+                strcpy(savedescription, "NET GAME");
+              savegameslot =
+                (players[i].cmd.buttons & BTS_SAVEMASK) >> BTS_SAVESHIFT;
+              gameaction = ga_savegame;
+              break;
 
-      // CPhipps - Restart the level
-    case BTS_RESTARTLEVEL:
-                  if (demoplayback || (compatibility_level < lxdoom_1_compatibility))
-                    break;     // CPhipps - Ignore in demos or old games
-      gameaction = ga_loadlevel;
-      break;
-                }
-        players[i].cmd.buttons = 0;
-            }
+            // CPhipps - Restart the level
+            case BTS_RESTARTLEVEL:
+              if (demoplayback || (compatibility_level < lxdoom_1_compatibility))
+                break;     // CPhipps - Ignore in demos or old games
+              gameaction = ga_loadlevel;
+              break;
+          }
+          players[i].cmd.buttons = 0;
         }
+      }
     }
 
     // turn inventory off after a certain amount of time
@@ -1335,12 +1463,12 @@ void G_Ticker (void)
   // cph - if the gamestate changed, we may need to clean up the old gamestate
   if (gamestate != prevgamestate) {
     switch (prevgamestate) {
-    case GS_LEVEL:
-      break;
-    case GS_INTERMISSION:
-      WI_End();
-    default:
-      break;
+      case GS_LEVEL:
+        break;
+      case GS_INTERMISSION:
+        WI_End();
+      default:
+        break;
     }
     prevgamestate = gamestate;
   }
@@ -1353,28 +1481,28 @@ void G_Ticker (void)
 
   // do main actions
   switch (gamestate)
-    {
+  {
     case GS_LEVEL:
-      P_Ticker ();
+      P_Ticker();
       P_WalkTicker();
       mlooky = 0;
       AM_Ticker();
-      ST_Ticker ();
-      HU_Ticker ();
+      ST_Ticker();
+      HU_Ticker();
       break;
 
     case GS_INTERMISSION:
-       WI_Ticker ();
+      WI_Ticker();
       break;
 
     case GS_FINALE:
-      F_Ticker ();
+      F_Ticker();
       break;
 
     case GS_DEMOSCREEN:
-      D_PageTicker ();
+      D_PageTicker();
       break;
-    }
+  }
 }
 
 //
@@ -1415,7 +1543,7 @@ static void G_PlayerFinishLevel(int player)
   playerkeys = 0;
   if (p == &players[consoleplayer])
   {
-    SB_state = -1;          // refresh the status bar
+    SB_Start();          // refresh the status bar
   }
 
   memset(p->powers, 0, sizeof p->powers);
@@ -1445,7 +1573,7 @@ void G_ChangedPlayerColour(int pn, int cl)
   // Rebuild colour translation tables accordingly
   R_InitTranslationTables();
   // Change translations on existing player mobj's
-  for (i=0; i<MAXPLAYERS; i++) {
+  for (i = 0; i < g_maxplayers; i++) {
     if ((gamestate == GS_LEVEL) && playeringame[i] && (players[i].mo != NULL)) {
       players[i].mo->flags &= ~MF_TRANSLATION;
       players[i].mo->flags |= ((uint_64_t)playernumtotrans[i]) << MF_TRANSSHIFT;
@@ -1463,17 +1591,19 @@ void G_PlayerReborn (int player)
 {
   player_t *p;
   int i;
-  int frags[MAXPLAYERS];
+  int frags[MAX_MAXPLAYERS];
   int killcount;
   int itemcount;
   int secretcount;
   int maxkilldiscount; //e6y
+  unsigned int worldTimer;
 
   memcpy (frags, players[player].frags, sizeof frags);
   killcount = players[player].killcount;
   itemcount = players[player].itemcount;
   secretcount = players[player].secretcount;
   maxkilldiscount = players[player].maxkilldiscount; //e6y
+  worldTimer = players[player].worldTimer;
 
   p = &players[player];
 
@@ -1489,23 +1619,37 @@ void G_PlayerReborn (int player)
   players[player].itemcount = itemcount;
   players[player].secretcount = secretcount;
   players[player].maxkilldiscount = maxkilldiscount; //e6y
+  players[player].worldTimer = worldTimer;
+  players[player].pclass = PlayerClass[player];
 
   p->usedown = p->attackdown = true;  // don't do anything immediately
   p->playerstate = PST_LIVE;
   p->health = initial_health;  // Ty 03/12/98 - use dehacked values
-  p->readyweapon = p->pendingweapon = g_wp_pistol;
-  p->weaponowned[g_wp_fist] = true;
-  p->weaponowned[g_wp_pistol] = true;
-  if (heretic)
-    p->ammo[am_goldwand] = 50;
+
+  if (hexen)
+  {
+    p->readyweapon = p->pendingweapon = wp_first;
+    p->weaponowned[wp_first] = true;
+  }
   else
-    p->ammo[am_clip] = initial_bullets; // Ty 03/12/98 - use dehacked values
+  {
+    p->readyweapon = p->pendingweapon = g_wp_pistol;
+    p->weaponowned[g_wp_fist] = true;
+    p->weaponowned[g_wp_pistol] = true;
+    if (heretic)
+      p->ammo[am_goldwand] = 50;
+    else
+      p->ammo[am_clip] = initial_bullets; // Ty 03/12/98 - use dehacked values
+  }
+
   p->lookdir = 0;
+  localQuakeHappening[player] = false;
   if (p == &players[consoleplayer])
   {
-    SB_state = -1;          // refresh the status bar
+    SB_Start();             // refresh the status bar
     inv_ptr = 0;            // reset the inventory pointer
     curpos = 0;
+    viewangleoffset = 0;
   }
 
   for (i=0 ; i<NUMAMMO ; i++)
@@ -1538,7 +1682,7 @@ static dboolean G_CheckSpot(int playernum, mapthing_t *mthing)
   x = mthing->x << FRACBITS;
   y = mthing->y << FRACBITS;
 
-  if (heretic)
+  if (raven)
   {
     unsigned an;
     mobj_t *mo;
@@ -1556,10 +1700,10 @@ static dboolean G_CheckSpot(int playernum, mapthing_t *mthing)
     an = ((unsigned) ANG45 * (mthing->angle / 45)) >> ANGLETOFINESHIFT;
 
     mo = P_SpawnMobj(x + 20 * finecosine[an], y + 20 * finesine[an],
-                     ss->sector->floorheight + TELEFOGHEIGHT, HERETIC_MT_TFOG);
+                     ss->sector->floorheight + TELEFOGHEIGHT, g_mt_tfog);
 
     if (players[consoleplayer].viewz != 1)
-      S_StartSound(mo, heretic_sfx_telept);   // don't start sound on first frame
+      S_StartSound(mo, g_sfx_telept);   // don't start sound on first frame
 
     return true;
   }
@@ -1653,9 +1797,9 @@ void G_DeathMatchSpawnPlayer (int playernum)
 {
   int j, selections = deathmatch_p - deathmatchstarts;
 
-  if (selections < MAXPLAYERS)
+  if (selections < g_maxplayers)
     I_Error("G_DeathMatchSpawnPlayer: Only %i deathmatch spots, %d required",
-    selections, MAXPLAYERS);
+    selections, g_maxplayers);
 
   for (j=0 ; j<20 ; j++)
     {
@@ -1669,7 +1813,7 @@ void G_DeathMatchSpawnPlayer (int playernum)
     }
 
   // no good spot, so the player will probably get stuck
-  P_SpawnPlayer (playernum, &playerstarts[playernum]);
+  P_SpawnPlayer (playernum, &playerstarts[0][playernum]);
 }
 
 //
@@ -1678,6 +1822,9 @@ void G_DeathMatchSpawnPlayer (int playernum)
 
 void G_DoReborn (int playernum)
 {
+  if (hexen)
+    return Hexen_G_DoReborn(playernum);
+
   if (!netgame)
     gameaction = ga_loadlevel;      // reload the level from scratch
   else
@@ -1694,23 +1841,23 @@ void G_DoReborn (int playernum)
           return;
         }
 
-      if (G_CheckSpot (playernum, &playerstarts[playernum]) )
+      if (G_CheckSpot (playernum, &playerstarts[0][playernum]) )
         {
-          P_SpawnPlayer (playernum, &playerstarts[playernum]);
+          P_SpawnPlayer (playernum, &playerstarts[0][playernum]);
           return;
         }
 
       // try to spawn at one of the other players spots
-      for (i=0 ; i<MAXPLAYERS ; i++)
+      for (i = 0; i < g_maxplayers; i++)
         {
-          if (G_CheckSpot (playernum, &playerstarts[i]) )
+          if (G_CheckSpot (playernum, &playerstarts[0][i]) )
             {
-              P_SpawnPlayer (playernum, &playerstarts[i]);
+              P_SpawnPlayer (playernum, &playerstarts[0][i]);
               return;
             }
           // he's going to be inside something.  Too bad.
         }
-      P_SpawnPlayer (playernum, &playerstarts[playernum]);
+      P_SpawnPlayer (playernum, &playerstarts[0][playernum]);
     }
 }
 
@@ -1765,9 +1912,12 @@ void G_DoCompleted (void)
 {
   int i;
 
+  if (hexen)
+    return Hexen_G_DoCompleted();
+
   gameaction = ga_nothing;
 
-  for (i=0; i<MAXPLAYERS; i++)
+  for (i = 0; i < g_maxplayers; i++)
     if (playeringame[i])
       G_PlayerFinishLevel(i);        // take away cards and stuff
 
@@ -1797,7 +1947,7 @@ void G_DoCompleted (void)
       // episode change
       if (wminfo.nextep != wminfo.epsd)
       {
-        for (i = 0; i < MAXPLAYERS; i++)
+        for (i = 0; i < g_maxplayers; i++)
           players[i].didsecret = false;
       }
       wminfo.didsecret = players[consoleplayer].didsecret;
@@ -1808,25 +1958,10 @@ void G_DoCompleted (void)
 
   if (gamemode != commercial) // kilough 2/7/98
   {
-    // Chex Quest ends after 5 levels, rather than 8.
-    if (gamemission == chex)
+    if (gamemap == 9)
     {
-      if (gamemap == 5)
-      {
-        gameaction = ga_victory;
-        return;
-      }
-    }
-    else
-    {
-      switch(gamemap)
-      {
-      // cph - Remove ExM8 special case, so it gets summary screen displayed
-      case 9:
-        for (i=0 ; i<MAXPLAYERS ; i++)
-          players[i].didsecret = true;
-        break;
-      }
+      for (i = 0; i < g_maxplayers; i++)
+        players[i].didsecret = true;
     }
   }
 
@@ -1924,7 +2059,7 @@ frommapinfo:
   wminfo.maxfrags = 0;
   wminfo.pnum = consoleplayer;
 
-  for (i=0 ; i<MAXPLAYERS ; i++)
+  for (i = 0; i < g_maxplayers; i++)
     {
       wminfo.plyr[i].in = playeringame[i];
       wminfo.plyr[i].skills = players[i].killcount;
@@ -2023,6 +2158,8 @@ void G_WorldDone (void)
          F_StartFinale ();
   else if (gamemap == 8)
     gameaction = ga_victory; // cph - after ExM8 summary screen, show victory stuff
+  else if (gamemap == 5 && gamemission == chex)
+    gameaction = ga_victory;
 }
 
 void G_DoWorldDone (void)
@@ -2080,7 +2217,7 @@ static uint_64_t G_Signature(void)
     for (episode = gamemode==retail ? 4 :
      gamemode==shareware ? 1 : 3; episode; episode--)
       for (map = 9; map; map--)
-  sprintf(name, "E%dM%d", episode, map), s = G_UpdateSignature(s, name);
+        sprintf(name, "E%dM%d", episode, map), s = G_UpdateSignature(s, name);
   }
   return s;
 }
@@ -2133,7 +2270,7 @@ static void G_LoadGameErr(const char *msg)
 
 // CPhipps - size of version header
 #define VERSIONSIZE   16
-#define SAVEVERSION "DSDA-DOOM 1"
+#define SAVEVERSION "DSDA-DOOM 2"
 
 const char * comp_lev_str[MAX_COMPATIBILITY_LEVEL] =
 { "Doom v1.2", "Doom v1.666", "Doom/Doom2 v1.9", "Ultimate Doom/Doom95", "Final Doom",
@@ -2203,10 +2340,20 @@ void G_DoLoadGame(void)
   int savegame_compatibility = -1;
   //e6y: numeric version number of package should be zero before initializing from savegame
   unsigned int packageversion = 0;
-  char maplump[8];
+  const char *maplump;
   int time, ttime;
 
   name = dsda_SaveGameName(savegameslot, demoplayback);
+
+  // [crispy] loaded game must always be single player.
+  // Needed for ability to use a further game loading, as well as
+  // cheat codes and other single player only specifics.
+  if (!command_loadgame)
+  {
+    netdemo = false;
+    netgame = false;
+    deathmatch = false;
+  }
 
   gameaction = ga_nothing;
 
@@ -2272,9 +2419,9 @@ void G_DoLoadGame(void)
   gamemap = *save_p++;
   gamemapinfo = G_LookupMapinfo(gameepisode, gamemap);
 
-  for (i=0 ; i<MAXPLAYERS ; i++)
+  for (i = 0; i < g_maxplayers; i++)
     playeringame[i] = *save_p++;
-  save_p += MIN_MAXPLAYERS-MAXPLAYERS;         // killough 2/28/98
+  save_p += FUTURE_MAXPLAYERS - g_maxplayers;         // killough 2/28/98
 
   idmusnum = *save_p++;           // jff 3/17/98 restore idmus music
   if (idmusnum==255) idmusnum=-1; // jff 3/18/98 account for unsigned byte
@@ -2302,13 +2449,8 @@ void G_DoLoadGame(void)
   basetic = gametic - *save_p++;
 
   // dearchive all the modifications
-  P_MapStart();
-  P_UnArchivePlayers ();
-  P_UnArchiveWorld ();
-  P_TrueUnArchiveThinkers();
-  P_UnArchiveRNG ();    // killough 1/18/98: load RNG information
-  P_UnArchiveMap ();    // killough 1/22/98: load automap information
-  P_MapEnd();
+  dsda_UnArchiveAll();
+
   R_ActivateSectorInterpolations();//e6y
   R_SmoothPlaying_Reset(NULL); // e6y
 
@@ -2323,10 +2465,7 @@ void G_DoLoadGame(void)
     I_Error ("G_DoLoadGame: Bad savegame");
 
   /* Print some information about the save game */
-  if (gamemode == commercial)
-    sprintf(maplump, "MAP%02d", gamemap);
-  else
-    sprintf(maplump, "E%dM%d", gameepisode, gamemap);
+  maplump = MAPNAME(gameepisode, gamemap);
   time = leveltime / TICRATE;
   ttime = (totalleveltimes + leveltime) / TICRATE;
 
@@ -2336,6 +2475,11 @@ void G_DoLoadGame(void)
 
   // done
   Z_Free (savebuffer);
+
+  if (hexen)
+  {
+    SB_SetClassData();
+  }
 
   if (setsizeneeded)
     R_ExecuteSetViewSize ();
@@ -2404,7 +2548,7 @@ static void G_DoSaveGame (dboolean menu)
   int  i;
   //e6y: numeric version number of package
   unsigned int packageversion = GetPackageVersion();
-  char maplump[8];
+  const char *maplump;
   int time, ttime;
 
   gameaction = ga_nothing; // cph - cancel savegame at top of this function,
@@ -2445,7 +2589,7 @@ static void G_DoSaveGame (dboolean menu)
     *save_p++ = 0;
   }
 
-  CheckSaveGame(dsda_GameOptionSize()+MIN_MAXPLAYERS+14+strlen(NEWFORMATSIG)+sizeof packageversion);
+  CheckSaveGame(dsda_GameOptionSize()+FUTURE_MAXPLAYERS+14+strlen(NEWFORMATSIG)+sizeof packageversion);
 
   //e6y: saving of the version number of package
   strcpy((char*)save_p, NEWFORMATSIG);
@@ -2459,10 +2603,10 @@ static void G_DoSaveGame (dboolean menu)
   *save_p++ = gameepisode;
   *save_p++ = gamemap;
 
-  for (i=0 ; i<MAXPLAYERS ; i++)
+  for (i = 0; i < g_maxplayers; i++)
     *save_p++ = playeringame[i];
 
-  for (;i<MIN_MAXPLAYERS;i++)         // killough 2/28/98
+  for (;i<FUTURE_MAXPLAYERS;i++)         // killough 2/28/98
     *save_p++ = 0;
 
   *save_p++ = idmusnum;               // jff 3/17/98 save idmus state
@@ -2482,24 +2626,7 @@ static void G_DoSaveGame (dboolean menu)
   // killough 11/98: save revenant tracer state
   *save_p++ = (gametic-basetic) & 255;
 
-  P_ArchivePlayers();
-
-  // phares 9/13/98: Move mobj_t->index out of P_ArchiveThinkers so the
-  // indices can be used by P_ArchiveWorld when the sectors are saved.
-  // This is so we can save the index of the mobj_t of the thinker that
-  // caused a sound, referenced by sector_t->soundtarget.
-  P_ThinkerToIndex();
-
-  P_ArchiveWorld();
-  P_TrueArchiveThinkers();
-
-  // phares 9/13/98: Move index->mobj_t out of P_ArchiveThinkers, simply
-  // for symmetry with the P_ThinkerToIndex call above.
-
-  P_IndexToThinker();
-
-  P_ArchiveRNG();    // killough 1/18/98: save RNG information
-  P_ArchiveMap();    // killough 1/22/98: save automap information
+  dsda_ArchiveAll();
 
   *save_p++ = 0xe6;   // consistancy marker
 
@@ -2508,10 +2635,7 @@ static void G_DoSaveGame (dboolean menu)
          : "Game save failed!"); // CPhipps - not externalised
 
   /* Print some information about the save game */
-  if (gamemode == commercial)
-    sprintf(maplump, "MAP%02d", gamemap);
-  else
-    sprintf(maplump, "E%dM%d", gameepisode, gamemap);
+  maplump = MAPNAME(gameepisode, gamemap);
   time = leveltime / TICRATE;
   ttime = (totalleveltimes + leveltime) / TICRATE;
 
@@ -2727,7 +2851,7 @@ void G_ReloadDefaults(void)
   netdemo = false;
 
   // killough 2/21/98:
-  memset(playeringame+1, 0, sizeof(*playeringame)*(MAXPLAYERS-1));
+  memset(playeringame + 1, 0, sizeof(*playeringame) * (MAX_MAXPLAYERS - 1));
 
   consoleplayer = 0;
 
@@ -2778,6 +2902,8 @@ void G_ReloadDefaults(void)
 void G_DoNewGame (void)
 {
   extern int solo_net;
+  int realMap = d_map;
+  int realEpisode = d_episode;
 
   // e6y: allow new level's music to be loaded
   idmusnum = -1;
@@ -2785,7 +2911,19 @@ void G_DoNewGame (void)
   G_ReloadDefaults();            // killough 3/1/98
   netgame = solo_net;
   deathmatch = false;
-  G_InitNew (d_skill, d_episode, d_map);
+
+  if (hexen)
+  {
+    G_StartNewInit();
+    realMap = P_TranslateMap(d_map);
+    if (realMap == -1)
+    {
+        realMap = 1;
+    }
+    realEpisode = 1;
+  }
+
+  G_InitNew (d_skill, realEpisode, realMap);
   gameaction = ga_nothing;
 
   dsda_WatchNewGame();
@@ -2802,6 +2940,11 @@ void G_SetFastParms(int fast_pending)
 {
   static int fast = 0;            // remembers fast state
   int i;
+
+  if (hexen)
+  {
+    return;
+  }
 
   if (heretic)
   {
@@ -2916,10 +3059,10 @@ void G_InitNew(skill_t skill, int episode, int map)
     compatibility_level == finaldoom_compatibility;
 
   if (paused)
-    {
-      paused = false;
-      S_ResumeSound();
-    }
+  {
+    paused = false;
+    S_ResumeSound();
+  }
 
   if (skill > sk_nightmare)
     skill = sk_nightmare;
@@ -2938,6 +3081,13 @@ void G_InitNew(skill_t skill, int episode, int map)
         map = 1;
       if (map > 9)
         map = 9;
+    }
+    else if (hexen)
+    {
+      if (map < 1)
+        map = 1;
+      if (map > 99)
+        map = 99;
     }
     else
     {
@@ -2993,11 +3143,14 @@ void G_InitNew(skill_t skill, int episode, int map)
 
   M_ClearRandom();
 
-  respawnmonsters = (!heretic && skill == sk_nightmare) || respawnparm;
+  respawnmonsters = (!raven && skill == sk_nightmare) || respawnparm;
 
   // force players to be initialized upon first level load
-  for (i=0 ; i<MAXPLAYERS ; i++)
+  for (i = 0; i < g_maxplayers; i++)
+  {
     players[i].playerstate = PST_REBORN;
+    players[i].worldTimer = 0;
+  }
 
   usergame = true;                // will be set false if a demo
   paused = false;
@@ -3011,6 +3164,9 @@ void G_InitNew(skill_t skill, int episode, int map)
 
   //jff 4/16/98 force marks on automap cleared every new level start
   AM_clearMarks();
+
+  if (hexen)
+    R_InitSky(map);
 
   G_DoLoadLevel ();
 }
@@ -3040,7 +3196,7 @@ void G_ReadOneTick(ticcmd_t* cmd, const byte **data_p)
   }
   cmd->buttons = (unsigned char)(*(*data_p)++);
 
-  if (heretic)
+  if (raven)
   {
     cmd->lookfly = (unsigned char)(*(*data_p)++);
     cmd->arti = (unsigned char)(*(*data_p)++);
@@ -3104,7 +3260,7 @@ void G_WriteDemoTiccmd (ticcmd_t* cmd)
     }
     *p++ = cmd->buttons;
 
-    if (heretic)
+    if (raven)
     {
       *p++ = cmd->lookfly;
       *p++ = cmd->arti;
@@ -3326,92 +3482,8 @@ void G_BeginRecording (void)
 {
   int i;
   byte *demostart, *demo_p;
-  int num_extensions = 0;
   demostart = demo_p = malloc(1000);
   longtics = 0;
-
-  // ano - jun2019 - add the extension format if needed
-  if (umapinfo_loaded)
-  {
-    num_extensions++;
-  }
-
-  if (num_extensions > 0)
-  {
-    // demover
-    *demo_p++ = 0xFF;
-    // signature
-    *demo_p++ = prdemosig[0]; // 'P'
-    *demo_p++ = prdemosig[1]; // 'R'
-    *demo_p++ = prdemosig[2]; // '+'
-    *demo_p++ = prdemosig[3]; // 'U'
-    *demo_p++ = prdemosig[4]; // 'M'
-    *demo_p++ = '\0';
-    // extension version
-    *demo_p++ = 1;
-    //
-    *demo_p++ =  num_extensions & 0xff;
-    *demo_p++ = (num_extensions >> 8) & 0xff;
-
-    if (umapinfo_loaded)
-    {
-      int mapname_len;
-      // [XA] get the map name from gamemapinfo if the
-      // starting map has a UMAPINFO definition. if not,
-      // fall back to the usual MAPxx/ExMy default.
-      char mapname[9];
-      if (gamemapinfo)
-      {
-        strncpy(mapname, gamemapinfo->mapname, 8);
-      }
-      else if(gamemode == commercial)
-      {
-        snprintf(mapname, 9, "MAP%02d", gamemap);
-      }
-      else
-      {
-        snprintf(mapname, 9, "E%dM%d", gameepisode, gamemap);
-      }
-
-      mapname_len = strnlen(gamemapinfo ? gamemapinfo->mapname : mapname, 9);
-
-      // ano - note that the format has each length by each string
-      // as opposed to a table of lengths
-      *demo_p++ = 0x08;
-      *demo_p++ = 'U';
-      *demo_p++ = 'M';
-      *demo_p++ = 'A';
-      *demo_p++ = 'P';
-      *demo_p++ = 'I';
-      *demo_p++ = 'N';
-      *demo_p++ = 'F';
-      *demo_p++ = 'O';
-
-      // ano - to properly extend this to support other extension strings
-      // we wouldn't just plop this here, but right now we only support the 1
-      // in the future, we should assume that chunks in the header should
-      // follow the order of their appearance in the extensions table.
-      if (mapname_len > 8)
-      {
-        I_Error("Unable to save map lump name %s, too large.", mapname);
-      }
-
-      for (i = 0; i < mapname_len; i++)
-      {
-        // FIXME - the toupper is a hacky workaround for the case insensitivity
-        // in the current UMAPINFO reader. lump names should probably not be
-        // lowercase ever (?)
-        *demo_p++ = toupper(mapname[i]);
-      }
-
-      // lets pad out any spare chars if the length was too short
-      for (; i < 8; i++)
-      {
-        *demo_p++ = 0;
-      }
-    }
-  }
-  // ano - done with the extension format!
 
   /* cph - 3 demo record formats supported: MBF+, BOOM, and Doom v1.9 */
   if (mbf_features) {
@@ -3430,6 +3502,7 @@ void G_BeginRecording (void)
         case mbf21_compatibility:
              v = 221;
              longtics = 1;
+             shorttics = !M_CheckParm("-longtics");
              break;
         default: I_Error("G_BeginRecording: PrBoom compatibility level unrecognised?");
       }
@@ -3458,14 +3531,14 @@ void G_BeginRecording (void)
 
     demo_p = G_WriteOptions(demo_p); // killough 3/1/98: Save game options
 
-    for (i=0 ; i<MAXPLAYERS ; i++)
+    for (i = 0; i < g_maxplayers; i++)
       *demo_p++ = playeringame[i];
 
     // killough 2/28/98:
-    // We always store at least MIN_MAXPLAYERS bytes in demo, to
+    // We always store at least FUTURE_MAXPLAYERS bytes in demo, to
     // support enhancements later w/o losing demo compatibility
 
-    for (; i<MIN_MAXPLAYERS; i++)
+    for (; i < FUTURE_MAXPLAYERS; i++)
       *demo_p++ = 0;
 
   // FIXME } else if (compatibility_level >= boom_compatibility_compatibility) { //e6y
@@ -3498,16 +3571,16 @@ void G_BeginRecording (void)
 
     demo_p = G_WriteOptions(demo_p); // killough 3/1/98: Save game options
 
-    for (i=0 ; i<MAXPLAYERS ; i++)
+    for (i = 0; i < g_maxplayers; i++)
       *demo_p++ = playeringame[i];
 
     // killough 2/28/98:
-    // We always store at least MIN_MAXPLAYERS bytes in demo, to
+    // We always store at least FUTURE_MAXPLAYERS bytes in demo, to
     // support enhancements later w/o losing demo compatibility
 
-    for (; i<MIN_MAXPLAYERS; i++)
+    for (; i < FUTURE_MAXPLAYERS; i++)
       *demo_p++ = 0;
-  } else if (!heretic) { // cph - write old v1.9 demos (might even sync)
+  } else if (!raven) { // cph - write old v1.9 demos (might even sync)
     unsigned char v = 109;
     longtics = M_CheckParm("-longtics");
     if (longtics)
@@ -3537,7 +3610,7 @@ void G_BeginRecording (void)
     *demo_p++ = consoleplayer;
     for (i=0; i<4; i++)  // intentionally hard-coded 4 -- killough
       *demo_p++ = playeringame[i];
-  } else { // versionless heretic
+  } else { // versionless raven
     *demo_p++ = gameskill;
     *demo_p++ = gameepisode;
     *demo_p++ = gamemap;
@@ -3556,8 +3629,20 @@ void G_BeginRecording (void)
       *demo_p |= DEMOHEADER_NOMONSTERS;
     demo_p++;
 
-    for (i = 1; i < MAXPLAYERS; i++)
-      *demo_p++ = playeringame[i];
+    if (heretic)
+    {
+      for (i = 1; i < g_maxplayers; i++)
+        *demo_p++ = playeringame[i];
+    }
+    else
+    {
+      *demo_p++ = PlayerClass[0] - 1;
+      for (i = 1; i < g_maxplayers; i++)
+      {
+        *demo_p++ = playeringame[i];
+        *demo_p++ = PlayerClass[i] - 1;
+      }
+    }
   }
 
   dsda_WriteToDemo(demostart, demo_p - demostart);
@@ -3619,9 +3704,7 @@ const byte* G_ReadDemoHeader(const byte *demo_p, size_t size)
 const byte* G_ReadDemoHeaderEx(const byte *demo_p, size_t size, unsigned int params)
 {
   skill_t skill;
-  int i, episode = 1, map = 0, extension_version;
-
-  int using_umapinfo = 0;
+  int i, episode = 1, map = 0;
 
   // e6y
   // The local variable should be used instead of demobuffer,
@@ -3643,175 +3726,32 @@ const byte* G_ReadDemoHeaderEx(const byte *demo_p, size_t size, unsigned int par
   demover = *demo_p++;
   longtics = 0;
 
-  // ano - jun2019 - special extensions. originally for UMAPINFO but
-  // designed to be extensible otherwise using the list of strings.
-  // note: i consulted the eternity engine implementation of this function
-  extension_version = -1;
+  // defunct extended header or unknown (e.g., eternity)
   if (demover == 255)
   {
-    int num_extensions;
-    // ano - jun2019
-    // so the format is
-    // demover byte == 255
-    // "PR+UM" signature (w/ ending null terminator)
-    // extension_version byte. for now this should always be "1"
-    // 2 bytes for num_extensions (little-endian)
+    demo_p = dsda_StripDemoVersion255(demo_p, header_p, size);
 
-    // num_extensions *
-    //    1 byte string length
-    //    and length chars (up to 65535 obviously)
-    // note that the format has each length by each string
-    // as opposed to a table of lengths
-
-    // an example extensions string is "UMAPINFO".
-    // In no realistic scenario should num_extensions
-    // ever reach past 65535.
-
-    // so that's a total of 1+6+1+2 + (n * m) bytes + ?? for extensions
-    // or 10 + some ?? bytes + some more ??
-
-    // then finally the "real" demover byte is present here
-
-    if (CheckForOverrun(header_p, demo_p, size, 10, failonerror))
-      return NULL;
-
-    // we check for the PR+UM signature as mentioned.
-    // Eternity Engine also uses 255 demover, with other signatures.
-    if (strncmp((const char *)demo_p, prdemosig, 5) != 0)
+    if (!demo_p)
     {
-      I_Error("G_ReadDemoHeader: Extended demo format 255 found, but \"PR+UM\" string not found.");
-    }
-
-    demo_p += 6;
-    extension_version = *demo_p++;
-
-    if (extension_version != 1)
-    {
-      I_Error("G_ReadDemoHeader: Extended demo format version %d unrecognized.", extension_version);
-    }
-
-    num_extensions  =                 *demo_p++;
-    num_extensions |= ((unsigned int)(*demo_p++)) <<  8;
-
-    if (CheckForOverrun(header_p, demo_p, size, num_extensions, failonerror))
-      return NULL;
-
-    for (i = 0; i < num_extensions; i++)
-    {
-      int r_len = *demo_p++;
-
-      if (CheckForOverrun(header_p, demo_p, size, r_len, failonerror))
-        return NULL;
-
-      // ano - jun2019 - when more potential extension strings get added,
-      // this section can become more complex
-      if (r_len == 8 && strncmp((const char *)demo_p, "UMAPINFO", 8) == 0)
+      if (failonerror)
       {
-        using_umapinfo = 1;
+        I_Error("G_ReadDemoHeader: wrong demo header\n");
       }
       else
       {
-        // ano - TODO better error handling here?
-        I_Error("G_ReadDemoHeader: Extended demo format extension unrecognized.");
-      }
-
-      demo_p += r_len;
-    }
-
-    // ano - jun2019 - load lump name if we're using umapinfo
-    // this is a bit hacky to just read in episode / map number from string
-    // currently PR+ doesn't support arbitrary mapnames, but one day it may,
-    // so this is for forward compat
-    if(using_umapinfo)
-    {
-      const byte *string_end = demo_p + 8;
-
-      if (CheckForOverrun(header_p, demo_p, size, 8, failonerror))
         return NULL;
-
-      if (strncmp((const char *)demo_p, "MAP", 3) == 0)
-      {
-        // MAPx form
-        episode = 1;
-        demo_p += 3;
-        map = 0;
-
-        // we're doing hellworld number parsing and i'm sorry
-        // CAPTAIN, WE'RE PICKING UP SOME CODE DUPLICATION IN SECTOR 47
-        for (i = 0; demo_p < string_end; i++)
-        {
-          char cur = *demo_p++;
-
-          if (cur < '0' || cur > '9')
-          {
-            if (cur != 0)
-            {
-              I_Error("G_ReadDemoHeader: Unable to determine map for UMAPINFO demo.");
-            }
-            break;
-          }
-
-          map = (map * 10) + (cur - '0');
-        }
       }
-      else if(*demo_p++ == 'E')
-      {
-        // EyMx form
-        episode = 0;
-        map = 0;
-
-        // read in episode #
-        for (i = 0; demo_p < string_end; i++)
-        {
-          char cur = *demo_p++;
-
-          if (cur < '0' || cur > '9')
-          {
-            if (cur == 0 || cur == 'M')
-            {
-              break;
-            }
-
-            I_Error("G_ReadDemoHeader: Unable to determine map for UMAPINFO demo.");
-          }
-
-          episode = (episode * 10) + (cur - '0');
-        }
-
-        // read in map #
-        for (i = 0; demo_p < string_end; i++)
-        {
-          char cur = *demo_p++;
-
-          if (cur < '0' || cur > '9')
-          {
-            if (cur == 0)
-            {
-              break;
-            }
-
-            I_Error("G_ReadDemoHeader: Unable to determine map for UMAPINFO demo.");
-          }
-
-          map = (map * 10) + (cur - '0');
-        }
-      }
-      else
-      {
-        I_Error("G_ReadDemoHeader: Unable to determine map for UMAPINFO demo.");
-      }
-
-      demo_p = string_end;
     }
 
-    // ano - jun2019 - this is to support other demovers effectively?
-    // while still having the extended features
+    // update the start of the demo header
+    size -= demo_p - header_p;
+    header_p = demo_p;
+
+    if (CheckForOverrun(header_p, demo_p, size, 1, failonerror))
+      return NULL;
+
     demover = *demo_p++;
-
   }
-  // ano - okay we are done with most of the 255 extension code past this point
-  // demover has hopefully been set to the new value
-  // the only stuff related to it will be behind extension_version checks past this point
 
   // e6y
   // Handling of unrecognized demo formats
@@ -3899,11 +3839,11 @@ const byte* G_ReadDemoHeaderEx(const byte *demo_p, size_t size, unsigned int par
       //   0x20 = -respawn
       //   0x10 = -longtics
       //   0x02 = -nomonsters
-      if (heretic)
+      if (raven)
       {
         if (*demo_p & DEMOHEADER_RESPAWN)
           respawnparm = true;
-        if (*demo_p & DEMOHEADER_LONGTICS)
+        if (*demo_p & DEMOHEADER_LONGTICS || M_CheckParm("-longtics"))
           longtics = true;
         if (*demo_p & DEMOHEADER_NOMONSTERS)
           nomonsters = true;
@@ -3915,9 +3855,9 @@ const byte* G_ReadDemoHeaderEx(const byte *demo_p, size_t size, unsigned int par
         // file size test;
         // DOOM_old and HERETIC don't use maps>9;
         // 2 at 4,6 means playerclass=mage -> not DOOM_old or HERETIC;
-        if ((size >= 8 && (size - 8) % 4 != 0 && !heretic) ||
-            (map > 9) ||
-            (size >= 6 && (*(header_p + 4) == 2 || *(header_p + 6) == 2)))
+        if ((size >= 8 && (size - 8) % 4 != 0 && !raven) ||
+            (map > 9 && !hexen) ||
+            (size >= 6 && (*(header_p + 4) == 2 || *(header_p + 6) == 2) && !hexen))
         {
           I_Error("Unrecognised demo format.");
         }
@@ -3996,18 +3936,8 @@ const byte* G_ReadDemoHeaderEx(const byte *demo_p, size_t size, unsigned int par
       return NULL;
 
     skill = *demo_p++;
-
-    if (!using_umapinfo)
-    {
-      // ano - jun2019 - umapinfo loads mapname earlier
-      episode = *demo_p++;
-      map = *demo_p++;
-    }
-    else
-    {
-      *demo_p++;
-      *demo_p++;
-    }
+    episode = *demo_p++;
+    map = *demo_p++;
     deathmatch = *demo_p++;
     consoleplayer = *demo_p++;
 
@@ -4026,26 +3956,53 @@ const byte* G_ReadDemoHeaderEx(const byte *demo_p, size_t size, unsigned int par
   lprintf(LO_INFO, "G_DoPlayDemo: playing demo with %s compatibility\n",
     comp_lev_str[compatibility_level]);
 
+  for (i = 0; i < g_maxplayers; i++)
+    playeringame[i] = 0;
+
   if (demo_compatibility || demover < 200) //e6y  // only 4 players can exist in old demos
   {
-    //e6y: check for overrun
-    if (CheckForOverrun(header_p, demo_p, size, 4, failonerror))
-      return NULL;
+    if (hexen)
+    {
+      //e6y: check for overrun
+      if (CheckForOverrun(header_p, demo_p, size, g_maxplayers, failonerror))
+        return NULL;
 
-    for (i = 0; i < 4; i++)  // intentionally hard-coded 4 -- killough
-      playeringame[i] = *demo_p++;
-    for (; i < MAXPLAYERS; i++)
-      playeringame[i] = 0;
+      for (i = 0; i < g_maxplayers; i++)
+      {
+        playeringame[i] = (*demo_p++) != 0;
+        PlayerClass[i] = *demo_p++ + 1;
+      }
+    }
+    else
+    {
+      //e6y: check for overrun
+      if (CheckForOverrun(header_p, demo_p, size, g_maxplayers, failonerror))
+        return NULL;
+
+      for (i = 0; i < g_maxplayers; i++)
+        playeringame[i] = *demo_p++;
+    }
   }
   else
   {
     //e6y: check for overrun
-    if (CheckForOverrun(header_p, demo_p, size, MAXPLAYERS, failonerror))
+    if (CheckForOverrun(header_p, demo_p, size, g_maxplayers, failonerror))
       return NULL;
 
-    for (i=0 ; i < MAXPLAYERS; i++)
+    for (i=0 ; i < g_maxplayers; i++)
       playeringame[i] = *demo_p++;
-    demo_p += MIN_MAXPLAYERS - MAXPLAYERS;
+    demo_p += FUTURE_MAXPLAYERS - g_maxplayers;
+  }
+
+  {
+    int p = M_CheckParm("-consoleplayer");
+
+    if (p && (p + 1 < myargc)) {
+      consoleplayer = atoi(myargv[p + 1]);
+
+      if (consoleplayer < 0 || consoleplayer >= g_maxplayers || !playeringame[consoleplayer])
+        consoleplayer = 0;
+    }
   }
 
   if (playeringame[1])
@@ -4057,11 +4014,14 @@ const byte* G_ReadDemoHeaderEx(const byte *demo_p, size_t size, unsigned int par
   if (!(params & RDH_SKIP_HEADER))
   {
     if (gameaction != ga_loadgame) { /* killough 12/98: support -loadgame */
+      if (hexen)
+        G_StartNewInit();
+
       G_InitNew(skill, episode, map);
     }
   }
 
-  for (i = 0; i < MAXPLAYERS; i++)         // killough 4/24/98
+  for (i = 0; i < g_maxplayers; i++)         // killough 4/24/98
     players[i].cheats = 0;
 
   // e6y
@@ -4070,13 +4030,13 @@ const byte* G_ReadDemoHeaderEx(const byte *demo_p, size_t size, unsigned int par
     const byte *p = demo_p;
 
     bytes_per_tic = (longtics ? 5 : 4);
-    if (heretic) bytes_per_tic += 2;
+    if (raven) bytes_per_tic += 2;
     demo_playerscount = 0;
     demo_tics_count = 0;
     demo_curr_tic = 0;
     strcpy(demo_len_st, "-");
 
-    for (i = 0; i < MAXPLAYERS; i++)
+    for (i = 0; i < g_maxplayers; i++)
     {
       if (playeringame[i])
       {
@@ -4146,52 +4106,52 @@ dboolean G_CheckDemoStatus (void)
   P_ChecksumFinal();
 
   if (demorecording)
-    {
-      byte end_marker = DEMOMARKER;
+  {
+    byte end_marker = DEMOMARKER;
 
-      demorecording = false;
-      dsda_WriteToDemo(&end_marker, 1);
+    demorecording = false;
+    dsda_WriteToDemo(&end_marker, 1);
 
-      //e6y
-      G_WriteDemoFooter();
+    //e6y
+    G_WriteDemoFooter();
 
-      dsda_WriteDemoToFile();
+    dsda_WriteDemoToFile();
 
-      lprintf(LO_INFO, "G_CheckDemoStatus: Demo recorded\n");
+    lprintf(LO_INFO, "G_CheckDemoStatus: Demo recorded\n");
 
-      return false;  // killough
-    }
+    return false;  // killough
+  }
 
   if (timingdemo)
-    {
-      int endtime = I_GetTime_RealTime ();
-      // killough -- added fps information and made it work for longer demos:
-      unsigned realtics = endtime-starttime;
+  {
+    int endtime = I_GetTime_RealTime ();
+    // killough -- added fps information and made it work for longer demos:
+    unsigned realtics = endtime-starttime;
 
-      M_SaveDefaults();
+    M_SaveDefaults();
 
-      lprintf(LO_INFO, "Timed %u gametics in %u realtics = %-.1f frames per second\n",
-               (unsigned) gametic,realtics,
-               (unsigned) gametic * (double) TICRATE / realtics);
-      I_SafeExit(0);
-    }
+    lprintf(LO_INFO, "Timed %u gametics in %u realtics = %-.1f frames per second\n",
+             (unsigned) gametic,realtics,
+             (unsigned) gametic * (double) TICRATE / realtics);
+    I_SafeExit(0);
+  }
 
   if (demoplayback)
-    {
-      if (singledemo)
-        I_SafeExit(0);  // killough
+  {
+    if (singledemo)
+      I_SafeExit(0);  // killough
 
-      if (demolumpnum != -1) {
-  // cph - unlock the demo lump
-  W_UnlockLumpNum(demolumpnum);
-  demolumpnum = -1;
-      }
-      G_ReloadDefaults();    // killough 3/1/98
-      netgame = false;       // killough 3/29/98
-      deathmatch = false;
-      D_AdvanceDemo ();
-      return true;
+    if (demolumpnum != -1) {
+      // cph - unlock the demo lump
+      W_UnlockLumpNum(demolumpnum);
+      demolumpnum = -1;
     }
+    G_ReloadDefaults();    // killough 3/1/98
+    netgame = false;       // killough 3/29/98
+    deathmatch = false;
+    D_AdvanceDemo ();
+    return true;
+  }
   return false;
 }
 
@@ -4227,6 +4187,8 @@ void P_WalkTicker()
 
   if (!walkcamera.type || menuactive)
     return;
+
+  G_SetSpeed(false);
 
   strafe = dsda_InputActive(dsda_input_strafe);
   speed = autorun || dsda_InputActive(dsda_input_speed); // phares
@@ -4465,4 +4427,225 @@ static dboolean InventoryMoveRight(void)
         }
     }
     return true;
+}
+
+// hexen
+
+void G_Completed(int map, int position)
+{
+    if (gamemode == shareware && map > 4)
+    {
+        P_SetMessage(&players[consoleplayer], "ACCESS DENIED -- DEMO", true);
+        S_StartSound(NULL, hexen_sfx_chat);
+        return;
+    }
+
+    gameaction = ga_completed;
+    LeaveMap = map;
+    LeavePosition = position;
+}
+
+dboolean partial_reset = false;
+
+void G_StartNewInit(void)
+{
+    SV_Init();
+
+    if (partial_reset)
+    {
+      partial_reset = false;
+      return;
+    }
+
+    P_ACSInitNewGame();
+    // Default the player start spot group to 0
+    RebornPosition = 0;
+}
+
+void G_TeleportNewMap(int map, int position)
+{
+    gameaction = ga_leavemap;
+    LeaveMap = map;
+    LeavePosition = position;
+}
+
+void G_DoTeleportNewMap(void)
+{
+    SV_MapTeleport(LeaveMap, LeavePosition);
+    gamestate = GS_LEVEL;
+    gameaction = ga_nothing;
+    RebornPosition = LeavePosition;
+}
+
+void G_PlayerExitMap(int playerNumber)
+{
+    int i;
+    player_t *player;
+    int flightPower;
+
+    player = &players[playerNumber];
+
+    // Strip all current powers (retain flight)
+    flightPower = player->powers[pw_flight];
+    memset(player->powers, 0, sizeof(player->powers));
+    player->powers[pw_flight] = flightPower;
+
+    if (deathmatch)
+    {
+        player->powers[pw_flight] = 0;
+    }
+    else
+    {
+        if (P_GetMapCluster(gamemap) != P_GetMapCluster(LeaveMap))
+        {                       // Entering new cluster
+            // Strip all keys
+            for (i = 0; i < NUMCARDS; ++i)
+              player->cards[i] = 0;
+
+            // Strip flight artifact
+            for (i = 0; i < 25; i++)
+            {
+                player->powers[pw_flight] = 0;
+                P_PlayerUseArtifact(player, hexen_arti_fly);
+            }
+            player->powers[pw_flight] = 0;
+        }
+    }
+
+    if (player->morphTics)
+    {
+        player->readyweapon = player->mo->special1.i;     // Restore weapon
+        player->morphTics = 0;
+    }
+    player->lookdir = 0;
+    player->mo->flags &= ~MF_SHADOW;    // Remove invisibility
+    player->extralight = 0;     // Remove weapon flashes
+    player->fixedcolormap = 0;  // Remove torch
+    player->damagecount = 0;    // No palette changes
+    player->bonuscount = 0;
+    player->poisoncount = 0;
+    if (player == &players[consoleplayer])
+    {
+        SB_Start();          // refresh the status bar
+        viewangleoffset = 0;
+    }
+}
+
+static void Hexen_G_DoCompleted(void)
+{
+    int i;
+
+    totalleveltimes = players[consoleplayer].worldTimer;
+
+    gameaction = ga_nothing;
+
+    for (i = 0; i < g_maxplayers; i++)
+    {
+        if (playeringame[i])
+        {
+            G_PlayerExitMap(i);
+        }
+    }
+
+    if (automapmode & am_active)
+      AM_Stop();
+
+    e6y_G_DoCompleted();
+    dsda_WatchLevelCompletion();
+
+    if (LeaveMap == -1 && LeavePosition == -1)
+    {
+        gameaction = ga_victory;
+        return;
+    }
+    else
+    {
+        gamestate = GS_INTERMISSION;
+        WI_Start(&wminfo);
+    }
+}
+
+void Hexen_G_DoReborn(int playernum)
+{
+    int i;
+    dboolean oldWeaponowned[HEXEN_NUMWEAPONS];
+    dboolean oldKeys[NUMCARDS];
+    int oldPieces;
+    dboolean foundSpot;
+    int bestWeapon;
+
+    if (!netgame)
+    {
+        gameaction = ga_loadlevel;
+    }
+    else
+    {                           // Net-game
+        players[playernum].mo->player = NULL;   // Dissassociate the corpse
+
+        if (deathmatch)
+        {                       // Spawn at random spot if in death match
+            G_DeathMatchSpawnPlayer(playernum);
+            return;
+        }
+
+        // Cooperative net-play, retain keys and weapons
+        for (i = 0; i < NUMCARDS; ++i)
+          oldKeys[i] = players[playernum].cards[i];
+        oldPieces = players[playernum].pieces;
+        for (i = 0; i < HEXEN_NUMWEAPONS; i++)
+        {
+            oldWeaponowned[i] = players[playernum].weaponowned[i];
+        }
+
+        foundSpot = false;
+        if (G_CheckSpot(playernum, &playerstarts[RebornPosition][playernum]))
+        {                       // Appropriate player start spot is open
+            P_SpawnPlayer(playernum, &playerstarts[RebornPosition][playernum]);
+            foundSpot = true;
+        }
+        else
+        {
+            // Try to spawn at one of the other player start spots
+            for (i = 0; i < g_maxplayers; i++)
+            {
+                if (G_CheckSpot(playernum, &playerstarts[RebornPosition][i]))
+                {               // Found an open start spot
+
+                    // Fake as other player
+                    playerstarts[RebornPosition][i].type = playernum + 1;
+                    P_SpawnPlayer(playernum, &playerstarts[RebornPosition][i]);
+
+                    // Restore proper player type
+                    playerstarts[RebornPosition][i].type = i + 1;
+
+                    foundSpot = true;
+                    break;
+                }
+            }
+        }
+
+        if (foundSpot == false)
+        {                       // Player's going to be inside something
+            P_SpawnPlayer(playernum, &playerstarts[RebornPosition][playernum]);
+        }
+
+        // Restore keys and weapons
+        for (i = 0; i < NUMCARDS; ++i)
+          players[playernum].cards[i] = oldKeys[i];
+        players[playernum].pieces = oldPieces;
+        for (bestWeapon = 0, i = 0; i < HEXEN_NUMWEAPONS; i++)
+        {
+            if (oldWeaponowned[i])
+            {
+                bestWeapon = i;
+                players[playernum].weaponowned[i] = true;
+            }
+        }
+        players[playernum].ammo[MANA_1] = 25;
+        players[playernum].ammo[MANA_2] = 25;
+        if (bestWeapon)
+        {                       // Bring up the best weapon
+            players[playernum].pendingweapon = bestWeapon;
+        }
+    }
 }

@@ -379,9 +379,18 @@ static void R_InitSpriteLumps(void)
 static void R_InitColormaps(void)
 {
   int i;
-  firstcolormaplump = W_GetNumForName("C_START");
-  lastcolormaplump  = W_GetNumForName("C_END");
-  numcolormaps = lastcolormaplump - firstcolormaplump;
+  if (hexen)
+  {
+    firstcolormaplump = -1;
+    lastcolormaplump = -1;
+    numcolormaps = 1;
+  }
+  else
+  {
+    firstcolormaplump = W_GetNumForName("C_START");
+    lastcolormaplump  = W_GetNumForName("C_END");
+    numcolormaps = lastcolormaplump - firstcolormaplump;
+  }
   colormaps = Z_Malloc(sizeof(*colormaps) * numcolormaps, PU_STATIC, 0);
   colormaps[0] = (const lighttable_t *)W_CacheLumpName("COLORMAP");
   for (i=1; i<numcolormaps; i++)
@@ -542,8 +551,7 @@ void R_InitData(void)
   R_InitFlats();
   lprintf(LO_INFO, "Sprites ");
   R_InitSpriteLumps();
-  if (default_translucency)             // killough 3/1/98
-    R_InitTranMap(1);                   // killough 2/21/98, 3/6/98
+  R_InitTranMap(1);                   // killough 2/21/98, 3/6/98
   R_InitColormaps();                    // killough 3/20/98
 }
 
@@ -683,7 +691,15 @@ void R_PrecacheLevel(void)
   //  a wall texture, with an episode dependend
   //  name.
 
-  hitlist[skytexture] = 1;
+  if (hexen)
+  {
+    hitlist[Sky1Texture] = 1;
+    hitlist[Sky2Texture] = 1;
+  }
+  else
+  {
+    hitlist[skytexture] = 1;
+  }
 
   for (i = numtextures; --i >= 0; )
     if (hitlist[i])

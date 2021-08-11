@@ -37,6 +37,7 @@
 const demostate_t (*demostates)[4];
 extern const demostate_t doom_demostates[][4];
 extern const demostate_t heretic_demostates[][4];
+extern const demostate_t hexen_demostates[][4];
 
 state_t* states;
 int num_states;
@@ -56,10 +57,16 @@ int num_music;
 
 weaponinfo_t* weaponinfo;
 
+int g_maxplayers = 4;
+int g_viewheight = 41 * FRACUNIT;
+
 int g_mt_player;
 int g_mt_tfog;
 int g_mt_blood;
 int g_skullpop_mt;
+int g_s_bloodyskullx1;
+int g_s_bloodyskullx2;
+int g_s_play_fdth20;
 
 int g_wp_fist;
 int g_wp_chainsaw;
@@ -70,11 +77,36 @@ int g_thrust_factor;
 int g_fuzzy_aim_shift;
 int g_special_friction_low;
 
-int g_s_play_atk1;
-int g_s_play_atk2;
-int g_s_play_run1;
-int g_s_play;
 int g_s_null;
+
+int g_mt_bloodsplatter;
+int g_bloodsplatter_shift;
+int g_bloodsplatter_weight;
+int g_mons_look_range;
+int g_hide_state;
+int g_lava_type;
+
+int g_mntr_charge_speed;
+int g_mntr_atk1_sfx;
+int g_mntr_decide_range;
+int g_mntr_charge_rng;
+int g_mntr_fire_rng;
+int g_mntr_charge_state;
+int g_mntr_fire_state;
+int g_mntr_charge_puff;
+int g_mntr_atk2_sfx;
+int g_mntr_atk2_dice;
+int g_mntr_atk2_missile;
+int g_mntr_atk3_sfx;
+int g_mntr_atk3_dice;
+int g_mntr_atk3_missile;
+int g_mntr_atk3_state;
+int g_mntr_fire;
+
+int g_arti_health;
+int g_arti_superhealth;
+int g_arti_fly;
+int g_arti_limit;
 
 int g_sfx_sawup;
 int g_sfx_telept;
@@ -90,6 +122,7 @@ int g_sfx_itemup;
 int g_sfx_pistol;
 int g_sfx_oof;
 int g_sfx_menu;
+int g_sfx_respawn;
 
 int g_door_normal;
 int g_door_raise_in_5_mins;
@@ -116,6 +149,12 @@ int g_menu_cr_item;
 int g_menu_cr_hilite;
 int g_menu_cr_select;
 int g_menu_cr_disable;
+
+const char* g_skyflatname;
+
+dboolean hexen = false;
+dboolean heretic = false;
+dboolean raven = false;
 
 extern patchnum_t hu_font[HU_FONTSIZE];
 extern patchnum_t hu_font2[HU_FONTSIZE];
@@ -157,11 +196,14 @@ static void dsda_InitDoom(void) {
   dsda_SetStates(doom_states, NUMSTATES);
   dsda_SetSpriteNames(doom_sprnames, NUMSPRITES);
   dsda_SetSfx(doom_S_sfx, NUMSFX);
-  dsda_SetMusic(doom_S_music, NUMMUSIC);
+  dsda_SetMusic(doom_S_music, DOOM_NUMMUSIC);
 
   demostates = doom_demostates;
 
   weaponinfo = doom_weaponinfo;
+
+  g_maxplayers = 4;
+  g_viewheight = 41 * FRACUNIT;
 
   g_mt_player = MT_PLAYER;
   g_mt_tfog = MT_TFOG;
@@ -177,10 +219,6 @@ static void dsda_InitDoom(void) {
   g_fuzzy_aim_shift = 20;
   g_special_friction_low = IGNORE_VALUE;
 
-  g_s_play_atk1 = S_PLAY_ATK1;
-  g_s_play_atk2 = S_PLAY_ATK2;
-  g_s_play_run1 = S_PLAY_RUN1;
-  g_s_play = S_PLAY;
   g_s_null = S_NULL;
 
   g_sfx_sawup = sfx_sawup;
@@ -224,6 +262,8 @@ static void dsda_InitDoom(void) {
   g_menu_cr_select = CR_GRAY;
   g_menu_cr_disable = CR_GRAY;
 
+  g_skyflatname = "F_SKY1";
+
   // convert doom mobj types to shared type
   for (i = 0; i < NUMMOBJTYPES; ++i) {
     mobjinfo_p = &doom_mobjinfo[i];
@@ -262,6 +302,9 @@ static void dsda_InitDoom(void) {
     mobjinfo[i].ripsound = sfx_None;
     mobjinfo[i].altspeed = NO_ALTSPEED;
     mobjinfo[i].meleerange = MELEERANGE;
+
+    // misc
+    mobjinfo[i].bloodcolor = 0; // default
   }
 
   // don't want to reorganize info.c structure for a few tweaks...
@@ -294,7 +337,7 @@ static void dsda_InitDoom(void) {
 
 static void dsda_InitHeretic(void) {
   int i, j;
-  heretic_mobjinfo_t* mobjinfo_p;
+  raven_mobjinfo_t* mobjinfo_p;
 
   dsda_AllocateMobjInfo(HERETIC_MT_ZERO, HERETIC_NUMMOBJTYPES, TOTAL_NUMMOBJTYPES);
   dsda_SetStates(heretic_states, HERETIC_NUMSTATES);
@@ -306,10 +349,16 @@ static void dsda_InitHeretic(void) {
 
   weaponinfo = wpnlev1info;
 
+  g_maxplayers = 4;
+  g_viewheight = 41 * FRACUNIT;
+
   g_mt_player = HERETIC_MT_PLAYER;
   g_mt_tfog = HERETIC_MT_TFOG;
   g_mt_blood = HERETIC_MT_BLOOD;
   g_skullpop_mt = HERETIC_MT_BLOODYSKULL;
+  g_s_bloodyskullx1 = HERETIC_S_BLOODYSKULLX1;
+  g_s_bloodyskullx2 = HERETIC_S_BLOODYSKULLX2;
+  g_s_play_fdth20 = HERETIC_S_PLAY_FDTH20;
 
   g_wp_fist = wp_staff;
   g_wp_chainsaw = wp_gauntlets;
@@ -320,11 +369,36 @@ static void dsda_InitHeretic(void) {
   g_fuzzy_aim_shift = 21;
   g_special_friction_low = 15;
 
-  g_s_play_atk1 = HERETIC_S_PLAY_ATK1;
-  g_s_play_atk2 = HERETIC_S_PLAY_ATK2;
-  g_s_play_run1 = HERETIC_S_PLAY_RUN1;
-  g_s_play = HERETIC_S_PLAY;
   g_s_null = HERETIC_S_NULL;
+
+  g_mt_bloodsplatter = HERETIC_MT_BLOODSPLATTER;
+  g_bloodsplatter_shift = 9;
+  g_bloodsplatter_weight = 2;
+  g_mons_look_range = 20 * 64 * FRACUNIT;
+  g_hide_state = HERETIC_S_HIDESPECIAL1;
+  g_lava_type = HERETIC_MT_PHOENIXFX2;
+
+  g_mntr_atk1_sfx = heretic_sfx_stfpow;
+  g_mntr_charge_speed = 13 * FRACUNIT;
+  g_mntr_decide_range = 8;
+  g_mntr_charge_rng = 150;
+  g_mntr_charge_state = HERETIC_S_MNTR_ATK4_1;
+  g_mntr_fire_rng = 220;
+  g_mntr_fire_state = HERETIC_S_MNTR_ATK3_1;
+  g_mntr_charge_puff = HERETIC_MT_PHOENIXPUFF;
+  g_mntr_atk2_sfx = heretic_sfx_minat2;
+  g_mntr_atk2_dice = 5;
+  g_mntr_atk2_missile = HERETIC_MT_MNTRFX1;
+  g_mntr_atk3_sfx = heretic_sfx_minat1;
+  g_mntr_atk3_dice = 5;
+  g_mntr_atk3_missile = HERETIC_MT_MNTRFX2;
+  g_mntr_atk3_state = HERETIC_S_MNTR_ATK3_4;
+  g_mntr_fire = HERETIC_MT_MNTRFX3;
+
+  g_arti_health = arti_health;
+  g_arti_superhealth = arti_superhealth;
+  g_arti_fly = arti_fly;
+  g_arti_limit = 16;
 
   g_sfx_sawup = heretic_sfx_gntact;
   g_sfx_telept = heretic_sfx_telept;
@@ -340,6 +414,7 @@ static void dsda_InitHeretic(void) {
   g_sfx_pistol = heretic_sfx_gldhit;
   g_sfx_oof = heretic_sfx_plroof;
   g_sfx_menu = heretic_sfx_dorcls;
+  g_sfx_respawn = heretic_sfx_respawn;
 
   g_door_normal = vld_normal;
   g_door_raise_in_5_mins = vld_raiseIn5Mins;
@@ -366,6 +441,8 @@ static void dsda_InitHeretic(void) {
   g_menu_cr_hilite = g_cr_blue;
   g_menu_cr_select = g_cr_gray;
   g_menu_cr_disable = g_cr_gray;
+
+  g_skyflatname = "F_SKY1";
 
   // convert heretic mobj types to shared type
   for (i = 0; i < HERETIC_NUMMOBJTYPES - HERETIC_MT_ZERO; ++i) {
@@ -406,6 +483,9 @@ static void dsda_InitHeretic(void) {
     mobjinfo[j].ripsound = heretic_sfx_None;
     mobjinfo[j].altspeed = NO_ALTSPEED;
     mobjinfo[j].meleerange = MELEERANGE;
+
+    // misc
+    mobjinfo[j].bloodcolor = 0; // default
   }
 
   // heretic doesn't use "clip" concept
@@ -418,6 +498,158 @@ static void dsda_InitHeretic(void) {
   maxammo[3] = 200; // skull rod
   maxammo[4] = 20;  // phoenix rod
   maxammo[5] = 150; // mace
+}
+
+static void dsda_InitHexen(void) {
+  int i, j;
+  raven_mobjinfo_t* mobjinfo_p;
+
+  dsda_AllocateMobjInfo(HEXEN_MT_ZERO, HEXEN_NUMMOBJTYPES, TOTAL_NUMMOBJTYPES);
+  dsda_SetStates(hexen_states, HEXEN_NUMSTATES);
+  dsda_SetSpriteNames(hexen_sprnames, HEXEN_NUMSPRITES);
+  dsda_SetSfx(hexen_S_sfx, HEXEN_NUMSFX);
+  dsda_SetMusic(hexen_S_music, HEXEN_NUMMUSIC);
+
+  demostates = hexen_demostates;
+
+  // weaponinfo = wpnlev1info;
+
+  g_maxplayers = 8;
+  g_viewheight = 48 * FRACUNIT;
+
+  // g_mt_player = HERETIC_MT_PLAYER;
+  g_mt_tfog = HEXEN_MT_TFOG;
+  g_mt_blood = HEXEN_MT_BLOOD;
+  g_skullpop_mt = HEXEN_MT_BLOODYSKULL;
+  g_s_bloodyskullx1 = HEXEN_S_BLOODYSKULLX1;
+  g_s_bloodyskullx2 = HEXEN_S_BLOODYSKULLX2;
+  g_s_play_fdth20 = HEXEN_S_PLAY_FDTH20;
+
+  // g_wp_fist = wp_staff;
+  // g_wp_chainsaw = wp_gauntlets;
+  // g_wp_pistol = wp_goldwand;
+
+  g_telefog_height = TELEFOGHEIGHT;
+  g_thrust_factor = 150;
+  g_fuzzy_aim_shift = 21;
+  g_special_friction_low = IGNORE_VALUE;
+
+  g_s_null = HEXEN_S_NULL;
+
+  g_mt_bloodsplatter = HEXEN_MT_BLOODSPLATTER;
+  g_bloodsplatter_shift = 10;
+  g_bloodsplatter_weight = 3;
+  g_mons_look_range = 16 * 64 * FRACUNIT;
+  g_hide_state = HEXEN_S_HIDESPECIAL1;
+  g_lava_type = HEXEN_MT_CIRCLEFLAME;
+
+  g_mntr_atk1_sfx = hexen_sfx_maulator_hammer_swing;
+  g_mntr_charge_speed = 23 * FRACUNIT;
+  g_mntr_decide_range = 16;
+  g_mntr_charge_rng = 230;
+  g_mntr_charge_state = HEXEN_S_MNTR_ATK4_1;
+  g_mntr_fire_rng = 100;
+  g_mntr_fire_state = HEXEN_S_MNTR_ATK3_1;
+  g_mntr_charge_puff = HEXEN_MT_PUNCHPUFF;
+  g_mntr_atk2_sfx = hexen_sfx_maulator_hammer_swing;
+  g_mntr_atk2_dice = 3;
+  g_mntr_atk2_missile = HEXEN_MT_MNTRFX1;
+  g_mntr_atk3_sfx = hexen_sfx_maulator_hammer_hit;
+  g_mntr_atk3_dice = 3;
+  g_mntr_atk3_missile = HEXEN_MT_MNTRFX2;
+  g_mntr_atk3_state = HEXEN_S_MNTR_ATK3_4;
+  g_mntr_fire = HEXEN_MT_MNTRFX3;
+
+  g_arti_health = hexen_arti_health;
+  g_arti_superhealth = hexen_arti_superhealth;
+  g_arti_fly = hexen_arti_fly;
+  g_arti_limit = 25;
+
+  g_sfx_telept = hexen_sfx_teleport;
+  g_sfx_stnmov = hexen_sfx_door_light_close;
+  g_sfx_swtchn = hexen_sfx_fighter_hammer_hitwall;
+  g_sfx_swtchx = hexen_sfx_fighter_hammer_hitwall;
+  g_sfx_dorcls = hexen_sfx_door_light_close;
+  g_sfx_doropn = hexen_sfx_door_open;
+  g_sfx_itemup = hexen_sfx_pickup_key;
+  g_sfx_pistol = hexen_sfx_fighter_hammer_hitwall;
+  g_sfx_oof = hexen_sfx_player_fighter_grunt;
+  g_sfx_menu = hexen_sfx_door_light_close;
+  g_sfx_respawn = hexen_sfx_respawn;
+
+  g_st_height = 39;
+  g_border_offset = 4;
+  g_mf_translucent = MF_SHADOW; // hexen_note: how does ALTSHADOW fit in?
+  g_mf_shadow = 0; // doesn't exist in hexen
+
+  g_cr_gray = CR_TAN;
+  g_cr_green = CR_GREEN;
+  g_cr_gold = CR_ORANGE;
+  g_cr_red = CR_YELLOW;
+  g_cr_blue = CR_GOLD;
+
+  g_menu_flat = "F_032";
+  g_menu_font = hu_font2;
+  g_menu_save_page_size = 5;
+  g_menu_font_spacing = 0;
+  g_menu_cr_title = 2;
+  g_menu_cr_set = g_cr_blue;
+  g_menu_cr_item = g_cr_red;
+  g_menu_cr_hilite = g_cr_gold;
+  g_menu_cr_select = g_cr_gray;
+  g_menu_cr_disable = g_cr_gray;
+
+  g_skyflatname = "F_SKY";
+
+  // convert hexen mobj types to shared type
+  for (i = 0; i < HEXEN_NUMMOBJTYPES - HEXEN_MT_ZERO; ++i) {
+    mobjinfo_p = &hexen_mobjinfo[i];
+
+    j = i + HEXEN_MT_ZERO;
+    mobjinfo[j].doomednum    = mobjinfo_p->doomednum;
+    mobjinfo[j].spawnstate   = mobjinfo_p->spawnstate;
+    mobjinfo[j].spawnhealth  = mobjinfo_p->spawnhealth;
+    mobjinfo[j].seestate     = mobjinfo_p->seestate;
+    mobjinfo[j].seesound     = mobjinfo_p->seesound;
+    mobjinfo[j].reactiontime = mobjinfo_p->reactiontime;
+    mobjinfo[j].attacksound  = mobjinfo_p->attacksound;
+    mobjinfo[j].painstate    = mobjinfo_p->painstate;
+    mobjinfo[j].painchance   = mobjinfo_p->painchance;
+    mobjinfo[j].painsound    = mobjinfo_p->painsound;
+    mobjinfo[j].meleestate   = mobjinfo_p->meleestate;
+    mobjinfo[j].missilestate = mobjinfo_p->missilestate;
+    mobjinfo[j].deathstate   = mobjinfo_p->deathstate;
+    mobjinfo[j].xdeathstate  = mobjinfo_p->xdeathstate;
+    mobjinfo[j].deathsound   = mobjinfo_p->deathsound;
+    mobjinfo[j].speed        = mobjinfo_p->speed;
+    mobjinfo[j].radius       = mobjinfo_p->radius;
+    mobjinfo[j].height       = mobjinfo_p->height;
+    mobjinfo[j].mass         = mobjinfo_p->mass;
+    mobjinfo[j].damage       = mobjinfo_p->damage;
+    mobjinfo[j].activesound  = mobjinfo_p->activesound;
+    mobjinfo[j].flags        = mobjinfo_p->flags;
+    mobjinfo[j].raisestate   = 0; // not in hexen
+    mobjinfo[j].droppeditem  = 0; // not in hexen
+    mobjinfo[j].crashstate   = mobjinfo_p->crashstate;
+    mobjinfo[j].flags2       = mobjinfo_p->flags2;
+
+    // mbf21
+    mobjinfo[j].infighting_group = IG_DEFAULT;
+    mobjinfo[j].projectile_group = PG_DEFAULT;
+    mobjinfo[j].splash_group = SG_DEFAULT;
+    mobjinfo[j].ripsound = hexen_sfx_None;
+    mobjinfo[j].altspeed = NO_ALTSPEED;
+    mobjinfo[j].meleerange = MELEERANGE;
+
+    // misc
+    mobjinfo[j].bloodcolor = 0; // default
+  }
+
+  {
+    extern void P_UseHexenRNG(void);
+
+    P_UseHexenRNG();
+  }
 }
 
 static dboolean dsda_AutoDetectHeretic(void)
@@ -433,8 +665,32 @@ static dboolean dsda_AutoDetectHeretic(void)
   return false;
 }
 
+static dboolean dsda_AutoDetectHexen(void)
+{
+  int i, length;
+  i = M_CheckParm("-iwad");
+  if (i && (++i < myargc)) {
+    length = strlen(myargv[i]);
+    if (length >= 9 && !strnicmp(myargv[i] + length - 9, "hexen.wad", 9))
+      return true;
+  }
+
+  return false;
+}
+
+extern void dsda_ResetNullPClass(void);
+
 void dsda_InitGlobal(void) {
   heretic = M_CheckParm("-heretic") || dsda_AutoDetectHeretic();
+  hexen = M_CheckParm("-hexen") || dsda_AutoDetectHexen();
+  raven = heretic || hexen;
 
-  heretic ? dsda_InitHeretic() : dsda_InitDoom();
+  if (hexen)
+    dsda_InitHexen();
+  else if (heretic)
+    dsda_InitHeretic();
+  else
+    dsda_InitDoom();
+
+  dsda_ResetNullPClass();
 }

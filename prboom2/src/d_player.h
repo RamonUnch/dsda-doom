@@ -35,6 +35,7 @@
 #ifndef __D_PLAYER__
 #define __D_PLAYER__
 
+#include "dsda/pclass.h"
 
 // The player data structure depends on a number
 // of other structs: items (internal inventory),
@@ -91,7 +92,6 @@ typedef enum
 } cheat_t;
 
 // heretic
-#define NUMINVENTORYSLOTS	14
 typedef struct
 {
     int type;
@@ -112,8 +112,48 @@ typedef enum
     arti_egg,
     arti_fly,
     arti_teleport,
-    NUMARTIFACTS
+    NUMARTIFACTS,
+
+    // hexen
+    hexen_arti_none = arti_none,
+    hexen_arti_invulnerability,
+    hexen_arti_health,
+    hexen_arti_superhealth,
+    hexen_arti_healingradius,
+    hexen_arti_summon,
+    hexen_arti_torch,
+    hexen_arti_egg,
+    hexen_arti_fly,
+    hexen_arti_blastradius,
+    hexen_arti_poisonbag,
+    hexen_arti_teleportother,
+    hexen_arti_speed,
+    hexen_arti_boostmana,
+    hexen_arti_boostarmor,
+    hexen_arti_teleport,
+    // Puzzle artifacts
+    hexen_arti_firstpuzzitem,
+    hexen_arti_puzzskull = hexen_arti_firstpuzzitem,
+    hexen_arti_puzzgembig,
+    hexen_arti_puzzgemred,
+    hexen_arti_puzzgemgreen1,
+    hexen_arti_puzzgemgreen2,
+    hexen_arti_puzzgemblue1,
+    hexen_arti_puzzgemblue2,
+    hexen_arti_puzzbook1,
+    hexen_arti_puzzbook2,
+    hexen_arti_puzzskull2,
+    hexen_arti_puzzfweapon,
+    hexen_arti_puzzcweapon,
+    hexen_arti_puzzmweapon,
+    hexen_arti_puzzgear1,
+    hexen_arti_puzzgear2,
+    hexen_arti_puzzgear3,
+    hexen_arti_puzzgear4,
+    HEXEN_NUMARTIFACTS
 } artitype_t;
+
+#define NUMINVENTORYSLOTS	HEXEN_NUMARTIFACTS
 
 //
 // Extended player object info: player_t
@@ -138,7 +178,7 @@ typedef struct player_s
   // This is only used between levels,
   // mo->health is used during levels.
   int                 health;
-  int                 armorpoints;
+  int                 armorpoints[NUMARMOR];
   // Armor type is 0-2.
   int                 armortype;
 
@@ -148,7 +188,7 @@ typedef struct player_s
   dboolean           backpack;
 
   // Frags, kills of other players.
-  int                 frags[MAXPLAYERS];
+  int                 frags[MAX_MAXPLAYERS];
   weapontype_t        readyweapon;
 
   // Is wp_nochange if not changing.
@@ -218,7 +258,6 @@ typedef struct player_s
   fixed_t prev_viewz;
   angle_t prev_viewangle;
   angle_t prev_viewpitch;
-  fixed_t jumpTics;      // delay the next jump for a moment
 
   // heretic
   int flyheight;
@@ -233,6 +272,16 @@ typedef struct player_s
   int chickenPeck;            // chicken peck countdown
   mobj_t *rain1;              // active rain maker 1
   mobj_t *rain2;              // active rain maker 2
+
+  // hexen
+  pclass_t pclass;            // player class type
+  int morphTics;              // player is a pig if > 0
+  int pieces;                 // Fourth Weapon pieces
+  short yellowMessage;
+  int poisoncount;            // screen flash for poison damage
+  mobj_t *poisoner;           // NULL for non-player mobjs
+  unsigned int jumpTics;      // delay the next jump for a moment
+  unsigned int worldTimer;    // total time the player's been playing
 } player_t;
 
 
@@ -279,7 +328,7 @@ typedef struct
   // index of this player in game
   int         pnum;
 
-  wbplayerstruct_t    plyr[MAXPLAYERS];
+  wbplayerstruct_t    plyr[MAX_MAXPLAYERS];
 
   // CPhipps - total game time for completed levels so far
   int         totaltimes;

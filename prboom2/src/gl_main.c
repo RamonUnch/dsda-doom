@@ -152,6 +152,9 @@ GLfloat cm2RGB[CR_LIMIT + 1][4] =
   {1.00f ,0.50f, 0.25f, 1.00f}, //CR_ORANGE
   {1.00f ,1.00f, 0.00f, 1.00f}, //CR_YELLOW
   {0.50f ,0.50f, 1.00f, 1.00f}, //CR_BLUE2
+  {0.00f ,0.00f, 0.00f, 1.00f}, //CR_BLACK
+  {0.50f ,0.00f, 0.50f, 1.00f}, //CR_PURPLE
+  {1.00f ,1.00f, 1.00f, 1.00f}, //CR_WHITE
   {1.00f ,1.00f, 1.00f, 1.00f}, //CR_LIMIT
 };
 
@@ -445,6 +448,8 @@ void gld_Init(int width, int height)
   gld_ResetLastTexture();
 
   I_AtExit(gld_CleanMemory, true); //e6y
+
+  glsl_Init(); // elim - Required for fuzz shader, even if lighting mode not set to "shaders"
 }
 
 void gld_InitCommandLine(void)
@@ -891,10 +896,12 @@ void gld_DrawWeapon(int weaponlump, vissprite_t *vis, int lightlevel)
   // when invisibility is about to go
   if (/*(viewplayer->mo->flags & MF_SHADOW) && */!vis->colormap)
   {
+    glsl_SetFuzzShaderActive();
+    glsl_SetFuzzTextureDimensions((float)gltexture->realtexwidth, (float)gltexture->realtexheight);
     glBlendFunc(GL_DST_COLOR, GL_ONE_MINUS_SRC_ALPHA);
     glAlphaFunc(GL_GEQUAL,0.1f);
     //glColor4f(0.2f,0.2f,0.2f,(float)tran_filter_pct/100.0f);
-    glColor4f(0.2f,0.2f,0.2f,0.33f);
+    glColor4f(0.2f,0.2f,0.2f,0.01f);
   }
   else
   {
@@ -912,9 +919,10 @@ void gld_DrawWeapon(int weaponlump, vissprite_t *vis, int lightlevel)
   if(!vis->colormap)
   {
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glAlphaFunc(GL_GEQUAL,0.5f);
+    glAlphaFunc(GL_GEQUAL,0.3f);
   }
   glColor3f(1.0f,1.0f,1.0f);
+  glsl_SetFuzzShaderInactive();
 }
 
 void gld_FillBlock(int x, int y, int width, int height, int col)
@@ -972,41 +980,79 @@ void gld_SetPalette(int palette)
     pal[transparent_pal_index*4+3]=0;
     GLEXT_glColorTableEXT(GL_SHARED_TEXTURE_PALETTE_EXT, GL_RGBA, 256, GL_RGBA, GL_UNSIGNED_BYTE, pal);
   } else {
-    if (palette>0)
+    if (palette > 0)
     {
-      if (palette<=8)
+      if (palette <= 8)
       {
-        extra_red=(float)palette/2.0f;
-        extra_green=0.0f;
-        extra_blue=0.0f;
-        extra_alpha=(float)palette/10.0f;
+        // doom [0] 226 1 1
+        extra_red = 1.0f;
+        extra_green = 0.0f;
+        extra_blue = 0.0f;
+        extra_alpha = (float) palette / 9.0f;
       }
-      else
-        if (palette<=12)
+      else if (palette <= 12)
+      {
+        // doom [0] 108 94 35
+        palette = palette - 8;
+        extra_red = 1.0f;
+        extra_green = 0.9f;
+        extra_blue = 0.3f;
+        extra_alpha = (float) palette / 10.0f;
+      }
+      else if (!hexen && palette == 13)
+      {
+        extra_red = 0.4f;
+        extra_green = 1.0f;
+        extra_blue = 0.0f;
+        extra_alpha = 0.2f;
+      }
+      else if (hexen)
+      {
+        if (palette <= 20)
         {
-          palette=palette-8;
-          extra_red=(float)palette*1.0f;
-          extra_green=(float)palette*0.8f;
-          extra_blue=(float)palette*0.1f;
-          extra_alpha=(float)palette/11.0f;
+          // hexen [0] = 35 74 29
+          palette = palette - 12;
+          extra_red = 0.5f;
+          extra_green = 1.0f;
+          extra_blue = 0.4f;
+          extra_alpha = (float) palette / 27.f;
         }
-        else
-          if (palette==13)
-          {
-            extra_red=0.4f;
-            extra_green=1.0f;
-            extra_blue=0.0f;
-            extra_alpha=0.2f;
-          }
+        else if (palette == 21)
+        {
+          // hexen [0] = 1 1 113
+          extra_red = 0.0f;
+          extra_green = 0.0f;
+          extra_blue = 1.0f;
+          extra_alpha = 0.4f;
+        }
+        else if (palette <= 24)
+        {
+          // hexen [...] = 66, 51, 36
+          palette = 24 - palette;
+          extra_red = 1.0f;
+          extra_green = 1.0f;
+          extra_blue = 1.0f;
+          extra_alpha = 0.14f + 0.06f * palette;
+        }
+        else if (palette <= 27)
+        {
+          // hexen [0] = 76 56 1
+          palette = 27 - palette;
+          extra_red = 1.0f;
+          extra_green = 0.7f;
+          extra_blue = 0.0f;
+          extra_alpha = 0.14f + 0.06f * palette;
+        }
+      }
     }
-    if (extra_red>1.0f)
-      extra_red=1.0f;
-    if (extra_green>1.0f)
-      extra_green=1.0f;
-    if (extra_blue>1.0f)
-      extra_blue=1.0f;
-    if (extra_alpha>1.0f)
-      extra_alpha=1.0f;
+    if (extra_red > 1.0f)
+      extra_red = 1.0f;
+    if (extra_green > 1.0f)
+      extra_green = 1.0f;
+    if (extra_blue > 1.0f)
+      extra_blue = 1.0f;
+    if (extra_alpha > 1.0f)
+      extra_alpha = 1.0f;
   }
 }
 
@@ -1158,6 +1204,9 @@ void gld_StartDrawScene(void)
 {
   extern int screenblocks;
 
+  // Progress fuzz time seed
+  glsl_SetFuzzTime(gametic);
+
   gld_MultisamplingSet();
 
   if (gl_shared_texture_palette)
@@ -1269,6 +1318,8 @@ void gld_ProcessExtraAlpha(void)
 {
   if (extra_alpha>0.0f && !invul_method)
   {
+    float current_color[4];
+    glGetFloatv(GL_CURRENT_COLOR, current_color);
     glDisable(GL_ALPHA_TEST);
     glColor4f(extra_red, extra_green, extra_blue, extra_alpha);
     gld_EnableTexture2D(GL_TEXTURE0_ARB, false);
@@ -1280,6 +1331,7 @@ void gld_ProcessExtraAlpha(void)
     glEnd();
     gld_EnableTexture2D(GL_TEXTURE0_ARB, true);
     glEnable(GL_ALPHA_TEST);
+    glColor4f(current_color[0], current_color[1], current_color[2], current_color[3]);
   }
 }
 
@@ -1591,6 +1643,8 @@ static void gld_DrawWall(GLWall *wall)
 
 void gld_AddWall(seg_t *seg)
 {
+  extern sector_t *poly_frontsector;
+  extern dboolean poly_add_line;
   GLWall wall;
   GLTexture *temptex;
   sector_t *frontsector;
@@ -1609,9 +1663,26 @@ void gld_AddWall(seg_t *seg)
   wall.glseg=&gl_lines[seg->linedef->iLineID];
   backseg = seg->sidedef != &sides[seg->linedef->sidenum[0]];
 
-  if (!seg->frontsector)
-    return;
-  frontsector=R_FakeFlat(seg->frontsector, &ftempsec, NULL, NULL, false); // for boom effects
+  if (poly_add_line)
+  {
+    int i = seg->linedef->iLineID;
+    // hexen_note: find some way to do this only on update?
+    gl_lines[i].x1=-(float)lines[i].v1->x/(float)MAP_SCALE;
+    gl_lines[i].z1= (float)lines[i].v1->y/(float)MAP_SCALE;
+    gl_lines[i].x2=-(float)lines[i].v2->x/(float)MAP_SCALE;
+    gl_lines[i].z2= (float)lines[i].v2->y/(float)MAP_SCALE;
+
+    if (!poly_frontsector)
+      return;
+    frontsector=R_FakeFlat(poly_frontsector, &ftempsec, NULL, NULL, false); // for boom effects
+  }
+  else
+  {
+    if (!seg->frontsector)
+      return;
+    frontsector=R_FakeFlat(seg->frontsector, &ftempsec, NULL, NULL, false); // for boom effects
+  }
+
   if (!frontsector)
     return;
 
@@ -1882,7 +1953,7 @@ void gld_AddWall(seg_t *seg)
       wall.vt = (float)((-top + ceiling_height) >> FRACBITS)/(float)wall.gltexture->realtexheight;
       wall.vb = (float)((-bottom + ceiling_height) >> FRACBITS)/(float)wall.gltexture->realtexheight;
 
-      if (seg->linedef->tranlump >= 0 && general_translucency)
+      if (seg->linedef->tranlump >= 0)
         wall.alpha=(float)tran_filter_pct/100.0f;
       gld_AddDrawWallItem((wall.alpha == 1.0f ? GLDIT_MWALL : GLDIT_TWALL), &wall);
       wall.alpha=1.0f;
@@ -2171,6 +2242,68 @@ static void gld_AddFlat(int sectornum, dboolean ceiling, visplane_t *plane)
             break;
         }
       }
+      else if (hexen)
+      {
+        int scrollOffset = leveltime >> 1 & 63;
+
+        switch (plane->special)
+        {                       // Handle scrolling flats
+          case 201:
+          case 202:
+          case 203:          // Scroll_North_xxx
+            flat.flags |= GLFLAT_HAVE_OFFSET;
+            flat.voffs = (float) (scrollOffset << (plane->special - 201) & 63) / 64;
+            break;
+          case 204:
+          case 205:
+          case 206:          // Scroll_East_xxx
+            flat.flags |= GLFLAT_HAVE_OFFSET;
+            flat.uoffs = (float) ((63 - scrollOffset) << (plane->special - 204) & 63) / 64;
+            break;
+          case 207:
+          case 208:
+          case 209:          // Scroll_South_xxx
+            flat.flags |= GLFLAT_HAVE_OFFSET;
+            flat.voffs = (float) ((63 - scrollOffset) << (plane->special - 207) & 63) / 64;
+            break;
+          case 210:
+          case 211:
+          case 212:          // Scroll_West_xxx
+            flat.flags |= GLFLAT_HAVE_OFFSET;
+            flat.uoffs = (float) (scrollOffset << (plane->special - 210) & 63) / 64;
+            break;
+          case 213:
+          case 214:
+          case 215:          // Scroll_NorthWest_xxx
+            flat.flags |= GLFLAT_HAVE_OFFSET;
+            flat.voffs = (float) (scrollOffset << (plane->special - 213) & 63) / 64;
+            flat.uoffs = (float) (scrollOffset << (plane->special - 213) & 63) / 64;
+            break;
+          case 216:
+          case 217:
+          case 218:          // Scroll_NorthEast_xxx
+            flat.flags |= GLFLAT_HAVE_OFFSET;
+            flat.voffs = (float) (scrollOffset << (plane->special - 216) & 63) / 64;
+            flat.uoffs = (float) ((63 - scrollOffset) << (plane->special - 216) & 63) / 64;
+            break;
+          case 219:
+          case 220:
+          case 221:          // Scroll_SouthEast_xxx
+            flat.flags |= GLFLAT_HAVE_OFFSET;
+            flat.voffs = (float) ((63 - scrollOffset) << (plane->special - 219) & 63) / 64;
+            flat.uoffs = (float) ((63 - scrollOffset) << (plane->special - 219) & 63) / 64;
+            break;
+          case 222:
+          case 223:
+          case 224:          // Scroll_SouthWest_xxx
+            flat.flags |= GLFLAT_HAVE_OFFSET;
+            flat.voffs = (float) ((63 - scrollOffset) << (plane->special - 222) & 63) / 64;
+            flat.uoffs = (float) (scrollOffset << (plane->special - 222) & 63) / 64;
+            break;
+          default:
+            break;
+        }
+      }
     }
   }
   else // if it is a ceiling ...
@@ -2261,6 +2394,8 @@ static void gld_DrawSprite(GLSprite *sprite)
   {
     if(sprite->flags & g_mf_shadow)
     {
+      glsl_SetFuzzShaderActive();
+      glsl_SetFuzzTextureDimensions((float)sprite->gltexture->width, (float)sprite->gltexture->height);
       glGetIntegerv(GL_BLEND_SRC, &blend_src);
       glGetIntegerv(GL_BLEND_DST, &blend_dst);
       glBlendFunc(GL_DST_COLOR, GL_ONE_MINUS_SRC_ALPHA);
@@ -2337,6 +2472,7 @@ static void gld_DrawSprite(GLSprite *sprite)
   {
     glBlendFunc(blend_src, blend_dst);
     glAlphaFunc(GL_GEQUAL, gl_mask_sprite_threshold_f);
+    glsl_SetFuzzShaderInactive();
   }
 }
 
@@ -2622,7 +2758,10 @@ void gld_ProjectSprite(mobj_t* thing, int lightlevel)
     sprite.light = gld_CalcLightLevel(lightlevel+(extralight<<5));
     sprite.fogdensity = gld_CalcFogDensity(thing->subsector->sector, lightlevel, GLDIT_SPRITE);
   }
-  sprite.cm = CR_LIMIT + (int)((thing->flags & MF_TRANSLATION) >> (MF_TRANSSHIFT));
+  if (thing->color)
+    sprite.cm = thing->color;
+  else
+    sprite.cm = CR_LIMIT + (int)((thing->flags & MF_TRANSLATION) >> (MF_TRANSSHIFT));
   sprite.gltexture = gld_RegisterPatch(lump, sprite.cm, true);
   if (!sprite.gltexture)
     goto unlock_patch;

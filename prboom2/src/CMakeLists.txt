@@ -19,6 +19,8 @@ set(COMMON_SRC
     doomtype.h
     dsda.c
     dsda.h
+    dsda/analysis.c
+    dsda/analysis.h
     dsda/command_display.c
     dsda/command_display.h
     dsda/console.c
@@ -51,6 +53,8 @@ set(COMMON_SRC
     dsda/options.h
     dsda/palette.c
     dsda/palette.h
+    dsda/pclass.c
+    dsda/pclass.h
     dsda/save.c
     dsda/save.h
     dsda/settings.c
@@ -89,10 +93,8 @@ set(COMMON_SRC
     g_overflow.c
     g_overflow.h
     heretic/d_main.c
-    heretic/def.c
     heretic/def.h
     heretic/dstrings.h
-    heretic/dstrings.c
     heretic/f_finale.h
     heretic/f_finale.c
     heretic/info.c
@@ -105,6 +107,27 @@ set(COMMON_SRC
     heretic/sb_bar.c
     heretic/sb_bar.h
     heretic/sounds.c
+    hexen/a_action.c
+    hexen/a_action.h
+    hexen/info.c
+    hexen/f_finale.c
+    hexen/f_finale.h
+    hexen/h2_main.c
+    hexen/in_lude.c
+    hexen/in_lude.h
+    hexen/p_acs.c
+    hexen/p_acs.h
+    hexen/p_anim.c
+    hexen/p_anim.h
+    hexen/p_things.c
+    hexen/p_things.h
+    hexen/po_man.c
+    hexen/po_man.h
+    hexen/sn_sonix.c
+    hexen/sn_sonix.h
+    hexen/sounds.c
+    hexen/sv_save.c
+    hexen/sv_save.h
     hu_lib.c
     hu_lib.h
     hu_stuff.c

@@ -96,6 +96,9 @@ typedef struct draw_column_vars_s
   int                 drawingmasked;
   enum sloped_edge_type_e edgetype;
   unsigned int        flags; //e6y: for detect patches ind colfunc()
+
+  // heretic
+  int baseclip;
 } draw_column_vars_t;
 
 void R_SetDefaultDrawColumnVars(draw_column_vars_t *dcvars);
@@ -117,10 +120,8 @@ typedef struct {
 } draw_span_vars_t;
 
 typedef struct {
-  byte           *byte_topleft;
-  unsigned int   *int_topleft;
-  int   byte_pitch;
-  int   int_pitch;
+  byte           *topleft;
+  int   pitch;
 
   enum draw_filter_type_e filterwall;
   enum draw_filter_type_e filterfloor;
@@ -139,7 +140,7 @@ typedef struct {
 
 extern draw_vars_t drawvars;
 
-extern byte playernumtotrans[MAXPLAYERS]; // CPhipps - what translation table for what player
+extern byte playernumtotrans[MAX_MAXPLAYERS]; // CPhipps - what translation table for what player
 extern byte       *translationtables;
 
 R_DrawColumn_f R_GetDrawColumnFunc(enum column_pipeline_e type,

@@ -47,6 +47,8 @@
 /* cph 2006/07/23 - needs direct access to thinkercap */
 #include "p_tick.h"
 #include "w_wad.h"
+#include "p_setup.h"
+#include "lprintf.h"
 
 #include "heretic/def.h"
 
@@ -80,7 +82,6 @@ static void cheat_rate();
 static void cheat_comp();
 static void cheat_friction();
 static void cheat_pushers();
-static void cheat_tnttran();
 static void cheat_massacre();
 static void cheat_ddt();
 static void cheat_hom();
@@ -104,6 +105,13 @@ static void cheat_reset_health();
 static void cheat_tome();
 static void cheat_chicken();
 static void cheat_artifact();
+
+// hexen
+static void cheat_inventory();
+static void cheat_puzzle();
+static void cheat_class();
+static void cheat_init();
+static void cheat_script();
 
 //-----------------------------------------------------------------------------
 //
@@ -174,15 +182,11 @@ cheatseq_t cheat[] = {
   CHEAT("tntammo",    NULL,               cht_never, cheat_tntammo, 0),
   // killough 2/16/98: end generalized weapons
   CHEAT("tntammo",    NULL,               cht_never, cheat_tntammox, -1),
-  // invoke translucency         // phares
-  CHEAT("tnttran",    NULL,               always, cheat_tnttran, 0),
   // killough 2/21/98: smart monster toggle
   CHEAT("tntsmart",   NULL,               cht_never, cheat_smart, 0),
   // killough 2/21/98: pitched sound toggle
   CHEAT("tntpitch",   NULL,               always, cheat_pitch, 0),
   // killough 2/21/98: reduce RSI injury by adding simpler alias sequences:
-  // killough 2/21/98: same as tnttran
-  CHEAT("tntran",     NULL,               always, cheat_tnttran, 0),
   // killough 2/21/98: same as tntammo
   CHEAT("tntamo",     NULL,               cht_never, cheat_tntammo, 0),
   // killough 2/21/98: same as tntammo
@@ -211,6 +215,22 @@ cheatseq_t cheat[] = {
   CHEAT("engage", NULL, cht_never | not_menu, cheat_clev, -2),
   CHEAT("ravmap", NULL, not_dm, cheat_ddt, 0),
   CHEAT("cockadoodledoo", NULL, cht_never, cheat_chicken, 0),
+
+  // hexen
+  CHEAT("satan", NULL, cht_never, cheat_god, 0),
+  CHEAT("clubmed", NULL, cht_never, cheat_reset_health, 0),
+  CHEAT("butcher", NULL, cht_never, cheat_massacre, 0),
+  CHEAT("nra", NULL, cht_never, cheat_fa, 0),
+  CHEAT("indiana", NULL, cht_never, cheat_inventory, 0),
+  CHEAT("locksmith", NULL, cht_never, cheat_k, 0),
+  CHEAT("sherlock", NULL, cht_never, cheat_puzzle, 0),
+  CHEAT("casper", NULL, cht_never, cheat_noclip, 0),
+  CHEAT("shadowcaster", NULL, cht_never, cheat_class, -1),
+  CHEAT("visit", NULL, cht_never | not_menu, cheat_clev, -2),
+  CHEAT("init", NULL, cht_never, cheat_init, 0),
+  CHEAT("puke", NULL, cht_never, cheat_script, -2),
+  CHEAT("mapsco", NULL, not_dm, cheat_ddt, 0),
+  CHEAT("deliverance", NULL, cht_never, cheat_chicken, 0),
 
   // end-of-list marker
   {NULL}
@@ -301,7 +321,7 @@ static void cheat_god()
   else
     plyr->message = s_STSTR_DQDOFF; // Ty 03/27/98 - externalized
 
-  if (heretic) SB_Start();
+  if (raven) SB_Start();
 }
 
 // CPhipps - new health and armour cheat codes
@@ -317,7 +337,7 @@ static void cheat_health()
 
 static void cheat_megaarmour()
 {
-  plyr->armorpoints = idfa_armor;      // Ty 03/09/98 - deh
+  plyr->armorpoints[ARMOR_ARMOR] = idfa_armor;      // Ty 03/09/98 - deh
   plyr->armortype = idfa_armor_class;  // Ty 03/09/98 - deh
   plyr->message = s_STSTR_BEHOLDX; // Ty 03/27/98 - externalized
 }
@@ -326,27 +346,45 @@ static void cheat_fa()
 {
   int i;
 
-  if (!plyr->backpack)
+  if (hexen)
+  {
+    for (i = 0; i < NUMARMOR; i++)
+    {
+        plyr->armorpoints[i] = pclass[plyr->pclass].armor_increment[i];
+    }
+    for (i = 0; i < HEXEN_NUMWEAPONS; i++)
+    {
+        plyr->weaponowned[i] = true;
+    }
+    for (i = 0; i < NUMMANA; i++)
+    {
+        plyr->ammo[i] = MAX_MANA;
+    }
+  }
+  else
+  {
+    if (!plyr->backpack)
     {
       for (i=0 ; i<NUMAMMO ; i++)
         plyr->maxammo[i] *= 2;
       plyr->backpack = true;
     }
 
-  plyr->armorpoints = idfa_armor;      // Ty 03/09/98 - deh
-  plyr->armortype = idfa_armor_class;  // Ty 03/09/98 - deh
+    plyr->armorpoints[ARMOR_ARMOR] = idfa_armor;      // Ty 03/09/98 - deh
+    plyr->armortype = idfa_armor_class;  // Ty 03/09/98 - deh
 
-  // You can't own weapons that aren't in the game // phares 02/27/98
-  for (i=0;i<NUMWEAPONS;i++)
-    if (!(((i == wp_plasma || i == wp_bfg) && gamemode == shareware) ||
-          (i == wp_supershotgun && gamemode != commercial)))
-      plyr->weaponowned[i] = true;
+    // You can't own weapons that aren't in the game // phares 02/27/98
+    for (i=0;i<NUMWEAPONS;i++)
+      if (!(((i == wp_plasma || i == wp_bfg) && gamemode == shareware) ||
+            (i == wp_supershotgun && gamemode != commercial)))
+        plyr->weaponowned[i] = true;
 
-  for (i=0;i<NUMAMMO;i++)
-    if (i!=am_cell || gamemode!=shareware)
-      plyr->ammo[i] = plyr->maxammo[i];
+    for (i=0;i<NUMAMMO;i++)
+      if (i!=am_cell || gamemode!=shareware)
+        plyr->ammo[i] = plyr->maxammo[i];
 
-  plyr->message = s_STSTR_FAADDED;
+    plyr->message = s_STSTR_FAADDED;
+  }
 }
 
 static void cheat_k()
@@ -360,7 +398,7 @@ static void cheat_k()
       }
 
   // heretic - reset status bar
-  SB_state = -1;
+  SB_Start();
 }
 
 static void cheat_kfa()
@@ -412,6 +450,11 @@ static dboolean cannot_clev(int epsd, int map)
     (gamemission == pack_nerve && map > 9)
   ) return true;
 
+  if (hexen)
+  {
+    map = P_TranslateMap(map);
+  }
+
   // Catch invalid maps.
   next = MAPNAME(epsd, map);
   if (W_CheckNumForName(next) == -1)
@@ -433,15 +476,15 @@ static void cheat_clev(char buf[3])
   struct MapEntry* entry;
 
   if (gamemode == commercial)
-    {
-      epsd = 1; //jff was 0, but espd is 1-based
-      map = (buf[0] - '0')*10 + buf[1] - '0';
-    }
+  {
+    epsd = 1; //jff was 0, but espd is 1-based
+    map = (buf[0] - '0') * 10 + buf[1] - '0';
+  }
   else
-    {
-      epsd = buf[0] - '0';
-      map = buf[1] - '0';
-    }
+  {
+    epsd = buf[0] - '0';
+    map = buf[1] - '0';
+  }
 
   // First check if we have a mapinfo entry for the requested level. If this is present the remaining checks should be skipped.
   entry = G_LookupMapinfo(epsd, map);
@@ -510,18 +553,6 @@ static void cheat_pushers()
 {
   plyr->message =                      // Ty 03/27/98 - *not* externalized
     (allow_pushers = !allow_pushers) ? "Pushers enabled" : "Pushers disabled";
-}
-
-// translucency cheat
-static void cheat_tnttran()
-{
-  plyr->message =                      // Ty 03/27/98 - *not* externalized
-    (general_translucency = !general_translucency) ? "Translucency enabled" :
-                                                     "Translucency disabled";
-
-  // killough 3/1/98, 4/11/98: cache translucency map on a demand basis
-  if (general_translucency && !main_tranmap)
-    R_InitTranMap(0);
 }
 
 static void cheat_massacre()    // jff 2/01/98 kill all monsters
@@ -964,11 +995,15 @@ static void cheat_reset_health(void)
   {
     plyr->health = plyr->mo->health = MAXCHICKENHEALTH;
   }
+  else if (hexen && plyr->morphTics)
+  {
+    plyr->health = plyr->mo->health = MAXMORPHHEALTH;
+  }
   else
   {
     plyr->health = plyr->mo->health = MAXHEALTH;
   }
-  plyr->message = DEH_String("FULL HEALTH");
+  plyr->message = "FULL HEALTH";
 }
 
 static void cheat_artifact(char buf[3])
@@ -995,24 +1030,24 @@ static void cheat_artifact(char buf[3])
         P_GiveArtifact(plyr, i, NULL);
       }
     }
-    plyr->message = DEH_String("YOU GOT IT");
+    plyr->message = "YOU GOT IT";
   }
   else if (type > arti_none && type < NUMARTIFACTS && count > 0 && count < 10)
   {
     if (gamemode == shareware && (type == arti_superhealth || type == arti_teleport))
     {
-      plyr->message = DEH_String("BAD INPUT");
+      plyr->message = "BAD INPUT";
       return;
     }
     for (i = 0; i < count; i++)
     {
       P_GiveArtifact(plyr, type, NULL);
     }
-    plyr->message = DEH_String("YOU GOT IT");
+    plyr->message = "YOU GOT IT";
   }
   else
   { // Bad input
-    plyr->message = DEH_String("BAD INPUT");
+    plyr->message = "BAD INPUT";
   }
 }
 
@@ -1023,30 +1058,159 @@ static void cheat_tome(void)
   if (plyr->powers[pw_weaponlevel2])
   {
     plyr->powers[pw_weaponlevel2] = 0;
-    plyr->message = DEH_String("POWER OFF");
+    plyr->message = "POWER OFF";
   }
   else
   {
     P_UseArtifact(plyr, arti_tomeofpower);
-    plyr->message = DEH_String("POWER ON");
+    plyr->message = "POWER ON";
   }
 }
 
 static void cheat_chicken(void)
 {
-  if (!heretic) return;
+  if (!raven) return;
 
   P_MapStart();
-  if (plyr->chickenTics)
+  if (heretic)
   {
-    if (P_UndoPlayerChicken(plyr))
+    if (plyr->chickenTics)
     {
-        plyr->message = DEH_String("CHICKEN OFF");
+      if (P_UndoPlayerChicken(plyr))
+      {
+          plyr->message = "CHICKEN OFF";
+      }
+    }
+    else if (P_ChickenMorphPlayer(plyr))
+    {
+      plyr->message = "CHICKEN ON";
     }
   }
-  else if (P_ChickenMorphPlayer(plyr))
+  else
   {
-    plyr->message = DEH_String("CHICKEN ON");
+    if (plyr->morphTics)
+    {
+      P_UndoPlayerMorph(plyr);
+    }
+    else
+    {
+      P_MorphPlayer(plyr);
+    }
+    plyr->message = "SQUEAL!!";
   }
   P_MapEnd();
+}
+
+// hexen
+
+#include "hexen/p_acs.h"
+
+static void cheat_init(void)
+{
+  extern dboolean partial_reset;
+
+  if (!hexen) return;
+
+  partial_reset = true;
+
+  G_DeferedInitNew(gameskill, gameepisode, P_GetMapWarpTrans(gamemap));
+
+  P_SetMessage(plyr, "LEVEL WARP", true);
+}
+
+static void cheat_inventory(void)
+{
+  int i, j;
+  int start, end;
+
+  if (!raven) return;
+
+  if (heretic)
+  {
+    start = arti_none + 1;
+    end = NUMARTIFACTS;
+  }
+  else
+  {
+    start = hexen_arti_none + 1;
+    end = hexen_arti_firstpuzzitem;
+  }
+
+  for (i = start; i < end; i++)
+  {
+    for (j = 0; j < g_arti_limit; j++)
+    {
+      P_GiveArtifact(plyr, i, NULL);
+    }
+  }
+  P_SetMessage(plyr, "ALL ARTIFACTS", true);
+}
+
+static void cheat_puzzle(void)
+{
+  int i, j;
+
+  if (!hexen) return;
+
+  for (i = hexen_arti_firstpuzzitem; i < HEXEN_NUMARTIFACTS; i++)
+  {
+    P_GiveArtifact(plyr, i, NULL);
+  }
+  P_SetMessage(plyr, "ALL PUZZLE ITEMS", true);
+}
+
+static void cheat_class(char buf[2])
+{
+  int i;
+  int new_class;
+
+  if (!hexen) return;
+
+  if (plyr->morphTics)
+  {                           // don't change class if the player is morphed
+      return;
+  }
+
+  new_class = 1 + (buf[0] - '0');
+  if (new_class > PCLASS_MAGE || new_class < PCLASS_FIGHTER)
+  {
+    P_SetMessage(plyr, "INVALID PLAYER CLASS", true);
+    return;
+  }
+  plyr->pclass = new_class;
+  for (i = 0; i < NUMARMOR; i++)
+  {
+    plyr->armorpoints[i] = 0;
+  }
+  PlayerClass[consoleplayer] = new_class;
+  P_PostMorphWeapon(plyr, wp_first);
+  SB_SetClassData();
+  SB_Start();
+  P_SetMessage(plyr, "CLASS CHANGED", true);
+}
+
+static void cheat_script(char buf[3])
+{
+  int script;
+  byte script_args[3];
+  int tens, ones;
+  static char textBuffer[40];
+
+  if (!hexen) return;
+
+  tens = buf[0] - '0';
+  ones = buf[1] - '0';
+  script = tens * 10 + ones;
+  if (script < 1)
+      return;
+  if (script > 99)
+      return;
+  script_args[0] = script_args[1] = script_args[2] = 0;
+
+  if (P_StartACS(script, 0, script_args, plyr->mo, NULL, 0))
+  {
+    doom_snprintf(textBuffer, sizeof(textBuffer),
+                  "RUNNING SCRIPT %.2d", script);
+    P_SetMessage(plyr, textBuffer, true);
+  }
 }

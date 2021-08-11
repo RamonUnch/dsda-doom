@@ -81,9 +81,6 @@ extern complevel_t compatibility_level, default_compatibility_level;
 // v1.1-like pitched sounds
 extern int pitched_sounds;        // killough
 
-extern int     default_translucency; // config file says           // phares
-extern dboolean general_translucency; // true if translucency is ok // phares
-
 extern int demo_insurance;      // killough 4/5/98
 
 // -------------------------------------------
@@ -133,7 +130,6 @@ enum {
   comperr_passuse,
   comperr_hangsolid,
   comperr_blockmap,
-  comperr_allowjump,
   comperr_freeaim,
 
   COMPERR_NUM
@@ -174,6 +170,8 @@ extern  dboolean netgame;
 extern  dboolean deathmatch;
 
 extern dboolean coop_spawns;
+
+extern dboolean randomclass;
 
 // ------------------------------------------
 // Internal parameters for sound rendering.
@@ -267,12 +265,13 @@ extern  int   gametic;
 extern  dboolean realframe;
 
 // Bookkeeping on players - state.
-extern  player_t  players[MAXPLAYERS];
+extern  player_t  players[MAX_MAXPLAYERS];
 extern  int       upmove;
 
 // Alive? Disconnected?
-extern  dboolean   playeringame[MAXPLAYERS];
-extern  dboolean   realplayeringame[MAXPLAYERS];
+extern  dboolean   playeringame[MAX_MAXPLAYERS];
+
+extern pclass_t PlayerClass[MAX_MAXPLAYERS];
 
 extern  mapthing_t *deathmatchstarts;     // killough
 extern  size_t     num_deathmatchstarts; // killough
@@ -280,7 +279,8 @@ extern  size_t     num_deathmatchstarts; // killough
 extern  mapthing_t *deathmatch_p;
 
 // Player spawn spots.
-extern  mapthing_t playerstarts[];
+#define MAX_PLAYER_STARTS 8
+extern  mapthing_t playerstarts[MAX_PLAYER_STARTS][MAX_MAXPLAYERS];
 
 // Intermission stats.
 // Parameters for world map / intermission.

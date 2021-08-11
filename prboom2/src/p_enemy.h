@@ -143,14 +143,21 @@ void A_RemoveFlags(mobj_t *);
 
 // heretic
 
-void P_NoiseAlert(mobj_t * target, mobj_t * emmiter);
+void A_UnHideThing(mobj_t * actor);
 void P_InitMonsters(void);
 void P_AddBossSpot(fixed_t x, fixed_t y, angle_t angle);
 void P_Massacre(void);
 void P_DSparilTeleport(mobj_t * actor);
-void Heretic_A_Scream(mobj_t * actor);
 void Heretic_A_BossDeath(mobj_t * actor);
 dboolean Heretic_P_LookForMonsters(mobj_t * actor);
 dboolean Heretic_P_LookForPlayers(mobj_t * actor, dboolean allaround);
+
+// hexen
+
+void P_InitCreatureCorpseQueue(dboolean corpseScan);
+void A_DeQueueCorpse(mobj_t * actor);
+dboolean A_RaiseMobj(mobj_t * actor);
+dboolean A_SinkMobj(mobj_t * actor);
+void A_NoBlocking(mobj_t * actor);
 
 #endif // __P_ENEMY__

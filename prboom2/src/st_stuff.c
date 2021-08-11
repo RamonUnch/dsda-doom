@@ -307,7 +307,7 @@ static patchnum_t shortnum[10];
 
 // 3 key-cards, 3 skulls, 3 card/skull combos
 // jff 2/24/98 extend number of patches by three skull/card combos
-static patchnum_t keys[NUMCARDS+3];
+static patchnum_t keys[DOOM_NUMCARDS+3];
 
 // face status patches
 static patchnum_t faces[ST_NUMFACES];
@@ -442,10 +442,6 @@ static void ST_refreshBackground(void)
     {
       flags = VPT_ALIGN_BOTTOM;
 
-      // Applies palette to backfill
-      if (V_GetMode() != VID_MODE8)
-        R_FillBackScreen();
-
       V_DrawNumPatch(ST_X, y, BG, stbarbg.lumpnum, CR_DEFAULT, flags);
       if (!deathmatch)
       {
@@ -468,7 +464,7 @@ static void ST_refreshBackground(void)
 //  intercept cheats.
 dboolean ST_Responder(event_t *ev)
 {
-  if (heretic) return SB_Responder(ev);
+  if (raven) return SB_Responder(ev);
 
   // Filter automap on/off.
   if (ev->type == ev_keyup && (ev->data1 & 0xffff0000) == AM_MSGHEADER)
@@ -754,7 +750,7 @@ static void ST_updateWidgets(void)
   st_fragson = deathmatch && st_statusbaron;
   st_fragscount = 0;
 
-  for (i=0 ; i<MAXPLAYERS ; i++)
+  for (i = 0; i < g_maxplayers; i++)
     {
       if (i != displayplayer)            // killough 3/7/98
         st_fragscount += plyr->frags[i];
@@ -770,7 +766,7 @@ static void ST_updateWidgets(void)
 
 void ST_Ticker(void)
 {
-  if (heretic) return SB_Ticker();
+  if (raven) return SB_Ticker();
 
   st_clock++;
   st_randomnumber = M_Random();
@@ -832,11 +828,6 @@ static void ST_doPaletteStuff(void)
 
   if (palette != st_palette) {
     V_SetPalette(st_palette = palette); // CPhipps - use new palette function
-
-    // have to redraw the entire status bar when the palette changes
-    // in truecolor modes - POPE
-    if (V_GetMode() == VID_MODE32)
-      st_firsttime = true;
   }
 }
 
@@ -937,7 +928,7 @@ void ST_SetResolution(void)
 
 void ST_Drawer(dboolean statusbaron, dboolean refresh, dboolean fullmenu)
 {
-  if (heretic) return SB_Drawer(statusbaron, refresh, fullmenu);
+  if (raven) return SB_Drawer(statusbaron, refresh, fullmenu);
 
   /* cph - let status bar on be controlled
    * completely by the call from D_Display
@@ -948,7 +939,7 @@ void ST_Drawer(dboolean statusbaron, dboolean refresh, dboolean fullmenu)
   ST_doPaletteStuff();  // Do red-/gold-shifts from damage/items
 
   if (statusbaron) {
-    if (st_firsttime || (V_GetMode() == VID_MODEGL))
+    if (st_firsttime || (V_IsOpenGLMode()))
     {
       /* If just after ST_Start(), refresh all */
       st_firsttime = false;
@@ -993,7 +984,7 @@ static void ST_loadGraphics(dboolean doload)
   R_SetPatchNum(&tallpercent,"STTPRCNT");
 
   // key cards
-  for (i=0;i<NUMCARDS+3;i++)  //jff 2/23/98 show both keys too
+  for (i=0;i<DOOM_NUMCARDS+3;i++)  //jff 2/23/98 show both keys too
     {
       sprintf(namebuf, "STKEYS%d", i);
       R_SetPatchNum(&keys[i], namebuf);
@@ -1163,7 +1154,7 @@ static void ST_createWidgets(void)
                     ST_ARMORX,
                     ST_ARMORY,
                     tallnum,
-                    &plyr->armorpoints,
+                    &plyr->armorpoints[ARMOR_ARMOR],
                     &st_statusbaron, &tallpercent);
 
   // keyboxes 0-2
@@ -1259,7 +1250,7 @@ static dboolean st_stopped = true;
 
 void ST_Start(void)
 {
-  if (heretic) return SB_Start();
+  if (raven) return SB_Start();
 
   if (!st_stopped)
     ST_Stop();
@@ -1278,7 +1269,7 @@ static void ST_Stop(void)
 
 void ST_Init(void)
 {
-  if (heretic) return SB_Init();
+  if (raven) return SB_Init();
 
   veryfirsttime = 0;
   ST_loadData();

@@ -112,7 +112,7 @@ int *screenheightarray;  // change to MAX_* // dropoff overflow
 spritedef_t *sprites;
 int numsprites;
 
-#define MAX_SPRITE_FRAMES 29          /* Macroized -- killough 1/25/98 */
+#define MAX_SPRITE_FRAMES 30          /* Macroized -- killough 1/25/98 */
 
 static spriteframe_t sprtemp[MAX_SPRITE_FRAMES];
 static int maxframe;
@@ -476,6 +476,9 @@ void R_DrawMaskedColumn(
       if (dcvars->yl <= mceilingclip[dcvars->x])
         dcvars->yl = mceilingclip[dcvars->x]+1;
 
+      if (dcvars->yh >= dcvars->baseclip && dcvars->baseclip != -1)
+        dcvars->yh = dcvars->baseclip;
+
       // killough 3/2/98, 3/27/98: Failsafe against overflow/crash:
       if (dcvars->yl <= dcvars->yh && dcvars->yh < viewheight)
         {
@@ -532,26 +535,61 @@ static void R_DrawVisSprite(vissprite_t *vis)
   dcvars.colormap = vis->colormap;
   dcvars.nextcolormap = dcvars.colormap; // for filtering -- POPE
 
+  // hexen_note: colfunc: No idea how to merge this right now...
+  // if (vis->mobjflags & (MF_SHADOW | MF_ALTSHADOW))
+  // {
+  //     if (vis->mobjflags & MF_TRANSLATION)
+  //     {
+  //         colfunc = R_DrawTranslatedTLColumn;
+  //         dc_translation = translationtables - 256
+  //             + (vis->pclass - 1) * ((g_maxplayers - 1) * 256) +
+  //             ((vis->mobjflags & MF_TRANSLATION) >> (MF_TRANSSHIFT - 8));
+  //     }
+  //     else if (vis->mobjflags & MF_SHADOW)
+  //     {                       // Draw using shadow column function
+  //         colfunc = tlcolfunc;
+  //     }
+  //     else
+  //     {
+  //         colfunc = R_DrawAltTLColumn;
+  //     }
+  // }
+  // else if (vis->mobjflags & MF_TRANSLATION)
+  // {
+  //     // Draw using translated column function
+  //     colfunc = R_DrawTranslatedColumn;
+  //     dc_translation = translationtables - 256
+  //         + (vis->pclass - 1) * ((g_maxplayers - 1) * 256) +
+  //         ((vis->mobjflags & MF_TRANSLATION) >> (MF_TRANSSHIFT - 8));
+  // }
+
   // killough 4/11/98: rearrange and handle translucent sprites
   // mixed with translucent/non-translucenct 2s normals
 
   if (!dcvars.colormap)   // NULL colormap = shadow draw
+  {
     colfunc = R_GetDrawColumnFunc(RDC_PIPELINE_FUZZ, filter, filterz);    // killough 3/14/98
+  }
+  else if (vis->color)
+  {
+    colfunc = R_GetDrawColumnFunc(RDC_PIPELINE_TRANSLATED, filter, filterz);
+    dcvars.translation = colrngs[vis->color];
+  }
+  else if (vis->mobjflags & MF_TRANSLATION)
+  {
+    colfunc = R_GetDrawColumnFunc(RDC_PIPELINE_TRANSLATED, filter, filterz);
+    dcvars.translation = translationtables - 256 +
+      ((vis->mobjflags & MF_TRANSLATION) >> (MF_TRANSSHIFT-8) );
+  }
+  else if (vis->mobjflags & g_mf_translucent) // phares
+  {
+    colfunc = R_GetDrawColumnFunc(RDC_PIPELINE_TRANSLUCENT, filter, filterz);
+    tranmap = main_tranmap;       // killough 4/11/98
+  }
   else
-    if (vis->mobjflags & MF_TRANSLATION)
-      {
-        colfunc = R_GetDrawColumnFunc(RDC_PIPELINE_TRANSLATED, filter, filterz);
-        dcvars.translation = translationtables - 256 +
-          ((vis->mobjflags & MF_TRANSLATION) >> (MF_TRANSSHIFT-8) );
-      }
-    else
-      if (vis->mobjflags & g_mf_translucent && general_translucency) // phares
-        {
-          colfunc = R_GetDrawColumnFunc(RDC_PIPELINE_TRANSLUCENT, filter, filterz);
-          tranmap = main_tranmap;       // killough 4/11/98
-        }
-      else
-        colfunc = R_GetDrawColumnFunc(RDC_PIPELINE_STANDARD, filter, filterz); // killough 3/14/98, 4/11/98
+  {
+    colfunc = R_GetDrawColumnFunc(RDC_PIPELINE_STANDARD, filter, filterz); // killough 3/14/98, 4/11/98
+  }
 
 // proff 11/06/98: Changed for high-res
   dcvars.iscale = FixedDiv (FRACUNIT, vis->scale);
@@ -569,6 +607,12 @@ static void R_DrawVisSprite(vissprite_t *vis)
     dcvars.iscale = pspriteiyscale;
     dcvars.texturemid += FixedMul(((centery - viewheight/2)<<FRACBITS), dcvars.iscale);
     sprtopscreen += (viewheight/2 - centery)<<FRACBITS;
+  }
+
+  if (vis->floorclip && !(vis->mobjflags & MF_PLAYERSPRITE))
+  {
+    fixed_t sprbotscreen = sprtopscreen + FixedMul(LittleShort(patch->height) << FRACBITS, spryscale);
+    dcvars.baseclip = (sprbotscreen - FixedMul(vis->floorclip, spryscale)) >> FRACBITS;
   }
 
   for (dcvars.x=vis->x1 ; dcvars.x<=vis->x2 ; dcvars.x++, frac += vis->xiscale)
@@ -594,7 +638,7 @@ void R_SetClipPlanes(void)
 {
   // thing is behind view plane?
 #ifdef GL_DOOM
-  if ((V_GetMode() == VID_MODEGL) &&
+  if ((V_IsOpenGLMode()) &&
       (HaveMouseLook() || (render_fov > FOV90)) &&
       (!render_paperitems || simple_shadows.loaded))
   {
@@ -611,6 +655,8 @@ void R_SetClipPlanes(void)
 // R_ProjectSprite
 // Generates a vissprite for a thing if it might be visible.
 //
+
+dboolean LevelUseFullBright = true;
 
 static void R_ProjectSprite (mobj_t* thing, int lightlevel)
 {
@@ -636,7 +682,7 @@ static void R_ProjectSprite (mobj_t* thing, int lightlevel)
   int width;
 
 #ifdef GL_DOOM
-  if (V_GetMode() == VID_MODEGL)
+  if (V_IsOpenGLMode())
   {
     gld_ProjectSprite(thing, lightlevel);
     return;
@@ -798,10 +844,47 @@ static void R_ProjectSprite (mobj_t* thing, int lightlevel)
 // proff 11/06/98: Changed for high-res
   vis->scale = FixedDiv(projectiony, tz);
   vis->gzt = gzt;                          // killough 3/27/98
-  vis->texturemid = vis->gzt - viewz;
+
+  if (heretic)
+  {
+    if (thing->flags2 & MF2_FEETARECLIPPED
+        && vis->gz <= thing->subsector->sector->floorheight)
+    {
+      vis->floorclip = 10 << FRACBITS;
+    }
+    else
+      vis->floorclip = 0;
+  }
+  else if (hexen)
+  {
+    if (thing->flags & MF_TRANSLATION)
+    {
+      if (thing->player)
+      {
+        vis->pclass = thing->player->pclass;
+      }
+      else
+      {
+        vis->pclass = thing->special1.i;
+      }
+      if (vis->pclass > 3)
+      {
+        vis->pclass = 1;
+      }
+    }
+    // foot clipping
+    vis->floorclip = thing->floorclip;
+  }
+  else
+  {
+    vis->floorclip = 0;
+  }
+
+  vis->texturemid = vis->gzt - viewz - vis->floorclip;
   vis->x1 = x1 < 0 ? 0 : x1;
   vis->x2 = x2 >= viewwidth ? viewwidth-1 : x2;
   iscale = FixedDiv (FRACUNIT, xscale);
+  vis->color = thing->color;
 
   if (flip)
     {
@@ -825,7 +908,7 @@ static void R_ProjectSprite (mobj_t* thing, int lightlevel)
       vis->colormap = NULL;             // shadow draw
   else if (fixedcolormap)
     vis->colormap = fixedcolormap;      // fixed map
-  else if (thing->frame & FF_FULLBRIGHT)
+  else if (LevelUseFullBright && thing->frame & FF_FULLBRIGHT)
     vis->colormap = fullcolormap;     // full bright  // killough 3/20/98
   else
     {      // diminished light
@@ -929,7 +1012,8 @@ static void R_ApplyWeaponBob (fixed_t *sx, dboolean bobx, fixed_t *sy, dboolean 
 //
 
 // heretic
-static int PSpriteSY[NUMWEAPONS] = {
+static int PSpriteSY[NUMCLASSES][NUMWEAPONS] = {
+  {
     0,                          // staff
     5 * FRACUNIT,               // goldwand
     15 * FRACUNIT,              // crossbow
@@ -939,6 +1023,11 @@ static int PSpriteSY[NUMWEAPONS] = {
     15 * FRACUNIT,              // mace
     15 * FRACUNIT,              // gauntlets
     15 * FRACUNIT               // beak
+  },
+  {0, -12 * FRACUNIT, -10 * FRACUNIT, 10 * FRACUNIT}, // Fighter
+  {-8 * FRACUNIT, 10 * FRACUNIT, 10 * FRACUNIT, 0}, // Cleric
+  {9 * FRACUNIT, 20 * FRACUNIT, 20 * FRACUNIT, 20 * FRACUNIT}, // Mage
+  {10 * FRACUNIT, 10 * FRACUNIT, 10 * FRACUNIT, 10 * FRACUNIT} // Pig
 };
 
 static void R_DrawPSprite (pspdef_t *psp)
@@ -1015,13 +1104,15 @@ static void R_DrawPSprite (pspdef_t *psp)
   // store information in a vissprite
   vis = &avis;
   vis->mobjflags = MF_PLAYERSPRITE;
+  vis->pclass = 0;
+  vis->floorclip = 0;
    // killough 12/98: fix psprite positioning problem
   vis->texturemid = (BASEYCENTER<<FRACBITS) /* +  FRACUNIT/2 */ -
                     (psp_sy-topoffset);
 
-  if (viewheight == SCREENHEIGHT && heretic)
+  if (viewheight == SCREENHEIGHT && raven)
   {
-    vis->texturemid -= PSpriteSY[players[consoleplayer].readyweapon];
+    vis->texturemid -= PSpriteSY[viewplayer->pclass][players[consoleplayer].readyweapon];
   }
 
   // Move the weapon down for 1280x1024.
@@ -1031,6 +1122,7 @@ static void R_DrawPSprite (pspdef_t *psp)
   vis->x2 = x2 >= viewwidth ? viewwidth-1 : x2;
 // proff 11/06/98: Added for high-res
   vis->scale = pspriteyscale;
+  vis->color = 0;
 
   if (flip)
     {
@@ -1059,6 +1151,25 @@ static void R_DrawPSprite (pspdef_t *psp)
     else
     {
       vis->colormap = NULL;                    // shadow draw
+    }
+  }
+  else if (viewplayer->powers[pw_invulnerability] && viewplayer->pclass == PCLASS_CLERIC)
+  {
+    vis->colormap = spritelights[MAXLIGHTSCALE - 1];
+    if (viewplayer->powers[pw_invulnerability] > 4 * 32)
+    {
+      if (viewplayer->mo->flags2 & MF2_DONTDRAW)
+      {                   // don't draw the psprite
+        vis->mobjflags |= MF_SHADOW;
+      }
+      else if (viewplayer->mo->flags & MF_SHADOW)
+      {
+        vis->mobjflags |= MF_ALTSHADOW;
+      }
+    }
+    else if (viewplayer->powers[pw_invulnerability] & 8)
+    {
+      vis->mobjflags |= MF_SHADOW;
     }
   }
   else if (fixedcolormap)
@@ -1108,7 +1219,7 @@ static void R_DrawPSprite (pspdef_t *psp)
   }
 
   // proff 11/99: don't use software stuff in OpenGL
-  if (V_GetMode() != VID_MODEGL)
+  if (V_IsSoftwareMode())
   {
     R_DrawVisSprite(vis);
   }

@@ -59,6 +59,11 @@
 #include "e6y.h"//e6y
 #include "dsda.h"
 
+#include "hexen/p_acs.h"
+#include "hexen/p_anim.h"
+#include "hexen/po_man.h"
+#include "hexen/sn_sonix.h"
+
 #include "config.h"
 #ifdef HAVE_LIBZ
 #include <zlib.h>
@@ -94,6 +99,92 @@ int      *sslines_indexes;
 ssline_t *sslines;
 
 byte     *map_subsectors;
+
+// hexen
+#define MAPINFO_SCRIPT_NAME "MAPINFO"
+#define MCMD_SKY1 1
+#define MCMD_SKY2 2
+#define MCMD_LIGHTNING 3
+#define MCMD_FADETABLE 4
+#define MCMD_DOUBLESKY 5
+#define MCMD_CLUSTER 6
+#define MCMD_WARPTRANS 7
+#define MCMD_NEXT 8
+#define MCMD_CDTRACK 9
+#define MCMD_CD_STARTTRACK 10
+#define MCMD_CD_END1TRACK 11
+#define MCMD_CD_END2TRACK 12
+#define MCMD_CD_END3TRACK 13
+#define MCMD_CD_INTERTRACK 14
+#define MCMD_CD_TITLETRACK 15
+
+#define UNKNOWN_MAP_NAME "DEVELOPMENT MAP"
+#define DEFAULT_SKY_NAME "SKY1"
+#define DEFAULT_SONG_LUMP "DEFSONG"
+#define DEFAULT_FADE_TABLE "COLORMAP"
+
+typedef struct mapInfo_s
+{
+    short cluster;
+    short warpTrans;
+    short nextMap;
+    short cdTrack;
+    char name[32];
+    short sky1Texture;
+    short sky2Texture;
+    fixed_t sky1ScrollDelta;
+    fixed_t sky2ScrollDelta;
+    dboolean doubleSky;
+    dboolean lightning;
+    int fadetable;
+    char songLump[10];
+} mapInfo_t;
+
+int MapCount;
+
+static mapInfo_t MapInfo[99];
+
+static const char *MapCmdNames[] = {
+    "SKY1",
+    "SKY2",
+    "DOUBLESKY",
+    "LIGHTNING",
+    "FADETABLE",
+    "CLUSTER",
+    "WARPTRANS",
+    "NEXT",
+    "CDTRACK",
+    "CD_START_TRACK",
+    "CD_END1_TRACK",
+    "CD_END2_TRACK",
+    "CD_END3_TRACK",
+    "CD_INTERMISSION_TRACK",
+    "CD_TITLE_TRACK",
+    NULL
+};
+
+static int MapCmdIDs[] = {
+    MCMD_SKY1,
+    MCMD_SKY2,
+    MCMD_DOUBLESKY,
+    MCMD_LIGHTNING,
+    MCMD_FADETABLE,
+    MCMD_CLUSTER,
+    MCMD_WARPTRANS,
+    MCMD_NEXT,
+    MCMD_CDTRACK,
+    MCMD_CD_STARTTRACK,
+    MCMD_CD_END1TRACK,
+    MCMD_CD_END2TRACK,
+    MCMD_CD_END3TRACK,
+    MCMD_CD_INTERTRACK,
+    MCMD_CD_TITLETRACK
+};
+
+static int cd_NonLevelTracks[6];        // Non-level specific song cd track numbers
+
+static int QualifyMap(int map);
+// end hexen
 
 ////////////////////////////////////////////////////////////////////////////////////////////
 // figgi 08/21/00 -- constants and globals for glBsp support
@@ -185,7 +276,7 @@ mapthing_t *deathmatchstarts;      // killough
 size_t     num_deathmatchstarts;   // killough
 
 mapthing_t *deathmatch_p;
-mapthing_t playerstarts[MAXPLAYERS];
+mapthing_t playerstarts[MAX_PLAYER_STARTS][MAX_MAXPLAYERS];
 
 static int current_episode = -1;
 static int current_map = -1;
@@ -928,6 +1019,9 @@ static void P_LoadSectors (int lump)
       // [kb] For R_WiggleFix
       ss->cachedheight = 0;
       ss->scaleindex = 0;
+
+      // hexen
+      ss->seqType = SEQTYPE_STONE;    // default seqType
     }
 
   W_UnlockLumpNum(lump); // cph - release the data
@@ -1383,45 +1477,82 @@ static int C_DECL dicmp_sprite_by_pos(const void *a, const void *b)
 
 static void P_LoadThings (int lump)
 {
-  int  i, numthings = W_LumpLength (lump) / sizeof(mapthing_t);
-  const mapthing_t *data = W_CacheLumpNum (lump);
-
+  int  i, numthings;
+  const mapthing_t *data;
+  const doom_mapthing_t *doom_data;
   mobj_t *mobj;
   int mobjcount = 0;
-  mobj_t **mobjlist = malloc(numthings * sizeof(mobjlist[0]));
+  mobj_t **mobjlist;
+
+  numthings = W_LumpLength (lump) / (hexen ? sizeof(mapthing_t) : sizeof(doom_mapthing_t));
+  data = W_CacheLumpNum(lump);
+  doom_data = (const doom_mapthing_t*) data;
+  mobjlist = malloc(numthings * sizeof(mobjlist[0]));
 
   if ((!data) || (!numthings))
     I_Error("P_LoadThings: no things in level");
 
   for (i=0; i<numthings; i++)
-    {
-      mapthing_t mt = data[i];
+  {
+    mapthing_t mt;
 
+    if (hexen)
+    {
+      mt = data[i];
+
+      mt.tid = LittleShort(mt.tid);
       mt.x = LittleShort(mt.x);
       mt.y = LittleShort(mt.y);
+      mt.height = LittleShort(mt.height);
       mt.angle = LittleShort(mt.angle);
       mt.type = LittleShort(mt.type);
       mt.options = LittleShort(mt.options);
-
-      if (!P_IsDoomnumAllowed(mt.type))
-        continue;
-
-      // Although all resources of the Wolf SS have been removed
-      // off the BFG Edition, there is still one left in MAP33.
-      // Replace with a Former Human instead.
-      if (bfgedition && singleplayer && mt.type == 84)
-        mt.type = 3004;
-
-      // Do spawn all other stuff.
-      mobj = P_SpawnMapThing(&mt, i);
-      if (mobj && mobj->info->speed == 0)
-        mobjlist[mobjcount++] = mobj;
+      // special & args are bytes - don't need to convert anything
     }
+    else
+    {
+      doom_mapthing_t dmt = doom_data[i];
+
+      mt.x = LittleShort(dmt.x);
+      mt.y = LittleShort(dmt.y);
+      mt.angle = LittleShort(dmt.angle);
+      mt.type = LittleShort(dmt.type);
+      mt.options = LittleShort(dmt.options);
+      mt.tid = 0;
+      mt.height = 0;
+      mt.special = 0;
+      mt.arg1 = 0;
+      mt.arg2 = 0;
+      mt.arg3 = 0;
+      mt.arg4 = 0;
+      mt.arg5 = 0;
+    }
+
+    if (!P_IsDoomnumAllowed(mt.type))
+      continue;
+
+    // Although all resources of the Wolf SS have been removed
+    // off the BFG Edition, there is still one left in MAP33.
+    // Replace with a Former Human instead.
+    if (bfgedition && singleplayer && mt.type == 84)
+      mt.type = 3004;
+
+    // Do spawn all other stuff.
+    mobj = P_SpawnMapThing(&mt, i);
+    if (mobj && mobj->info->speed == 0)
+      mobjlist[mobjcount++] = mobj;
+  }
+
+  if (hexen)
+  {
+    P_CreateTIDList();
+    P_InitCreatureCorpseQueue(false);   // false = do NOT scan for corpses
+  }
 
   W_UnlockLumpNum(lump); // cph - release the data
 
 #ifdef GL_DOOM
-  if (V_GetMode() == VID_MODEGL)
+  if (V_IsOpenGLMode())
   {
     no_overlapped_sprites = true;
     qsort(mobjlist, mobjcount, sizeof(mobjlist[0]), dicmp_sprite_by_pos);
@@ -1474,21 +1605,50 @@ static void P_LoadLineDefs (int lump)
   const byte *data; // cph - const*
   int  i;
 
-  numlines = W_LumpLength (lump) / sizeof(maplinedef_t);
+  numlines = W_LumpLength (lump) / (hexen ? sizeof(hexen_maplinedef_t) : sizeof(doom_maplinedef_t));
   lines = calloc_IfSameLevel(lines, numlines, sizeof(line_t));
   data = W_CacheLumpNum (lump); // cph - wad lump handling updated
 
   for (i=0; i<numlines; i++)
     {
-      const maplinedef_t *mld = (const maplinedef_t *) data + i;
       line_t *ld = lines+i;
       vertex_t *v1, *v2;
 
-      ld->flags = (unsigned short)LittleShort(mld->flags);
-      ld->special = LittleShort(mld->special);
-      ld->tag = LittleShort(mld->tag);
-      v1 = ld->v1 = &vertexes[(unsigned short)LittleShort(mld->v1)];
-      v2 = ld->v2 = &vertexes[(unsigned short)LittleShort(mld->v2)];
+      if (hexen)
+      {
+        const hexen_maplinedef_t *mld = (const hexen_maplinedef_t *) data + i;
+
+        ld->flags = (unsigned short)LittleShort(mld->flags);
+        ld->special = mld->special; // just a byte in hexen
+        ld->tag = 0;
+        ld->arg1 = mld->arg1;
+        ld->arg2 = mld->arg2;
+        ld->arg3 = mld->arg3;
+        ld->arg4 = mld->arg4;
+        ld->arg5 = mld->arg5;
+        v1 = ld->v1 = &vertexes[(unsigned short)LittleShort(mld->v1)];
+        v2 = ld->v2 = &vertexes[(unsigned short)LittleShort(mld->v2)];
+        ld->sidenum[0] = LittleShort(mld->sidenum[0]);
+        ld->sidenum[1] = LittleShort(mld->sidenum[1]);
+      }
+      else
+      {
+        const doom_maplinedef_t *mld = (const doom_maplinedef_t *) data + i;
+
+        ld->flags = (unsigned short)LittleShort(mld->flags);
+        ld->special = LittleShort(mld->special);
+        ld->tag = LittleShort(mld->tag);
+        ld->arg1 = 0;
+        ld->arg2 = 0;
+        ld->arg3 = 0;
+        ld->arg4 = 0;
+        ld->arg5 = 0;
+        v1 = ld->v1 = &vertexes[(unsigned short)LittleShort(mld->v1)];
+        v2 = ld->v2 = &vertexes[(unsigned short)LittleShort(mld->v2)];
+        ld->sidenum[0] = LittleShort(mld->sidenum[0]);
+        ld->sidenum[1] = LittleShort(mld->sidenum[1]);
+      }
+
       ld->dx = v2->x - v1->x;
       ld->dy = v2->y - v1->y;
 #ifdef GL_DOOM
@@ -1532,8 +1692,6 @@ static void P_LoadLineDefs (int lump)
       ld->soundorg.y = ld->bbox[BOXTOP] / 2 + ld->bbox[BOXBOTTOM] / 2;
 
       ld->iLineID=i; // proff 04/05/2000: needed for OpenGL
-      ld->sidenum[0] = LittleShort(mld->sidenum[0]);
-      ld->sidenum[1] = LittleShort(mld->sidenum[1]);
 
       {
         /* cph 2006/09/30 - fix sidedef errors right away.
@@ -1591,25 +1749,29 @@ static void P_LoadLineDefs2(int lump)
   int i = numlines;
   register line_t *ld = lines;
   for (;i--;ld++)
+  {
+    ld->frontsector = sides[ld->sidenum[0]].sector; //e6y: Can't be NO_INDEX here
+    ld->backsector  = ld->sidenum[1]!=NO_INDEX ? sides[ld->sidenum[1]].sector : 0;
+
+    if (!raven)
     {
-      ld->frontsector = sides[ld->sidenum[0]].sector; //e6y: Can't be NO_INDEX here
-      ld->backsector  = ld->sidenum[1]!=NO_INDEX ? sides[ld->sidenum[1]].sector : 0;
       switch (ld->special)
-        {                       // killough 4/11/98: handle special types
-          int lump, j;
+      {                       // killough 4/11/98: handle special types
+        int lump, j;
 
         case 260:               // killough 4/11/98: translucent 2s textures
-            transparentpresent = true;//e6y
-            lump = sides[*ld->sidenum].special; // translucency from sidedef
-            if (!ld->tag)                       // if tag==0,
-              ld->tranlump = lump;              // affect this linedef only
-            else
-              for (j=0;j<numlines;j++)          // if tag!=0,
-                if (lines[j].tag == ld->tag)    // affect all matching linedefs
-                  lines[j].tranlump = lump;
-            break;
-        }
+          transparentpresent = true;//e6y
+          lump = sides[*ld->sidenum].special; // translucency from sidedef
+          if (!ld->tag)                       // if tag==0,
+            ld->tranlump = lump;              // affect this linedef only
+          else
+            for (j=0;j<numlines;j++)          // if tag!=0,
+              if (lines[j].tag == ld->tag)    // affect all matching linedefs
+                lines[j].tranlump = lump;
+          break;
+      }
     }
+  }
 }
 
 //
@@ -1633,28 +1795,30 @@ static void P_LoadSideDefs2(int lump)
   int  i;
 
   for (i=0; i<numsides; i++)
-    {
-      register const mapsidedef_t *msd = (const mapsidedef_t *) data + i;
-      register side_t *sd = sides + i;
-      register sector_t *sec;
+  {
+    register const mapsidedef_t *msd = (const mapsidedef_t *) data + i;
+    register side_t *sd = sides + i;
+    register sector_t *sec;
 
-      sd->textureoffset = LittleShort(msd->textureoffset)<<FRACBITS;
-      sd->rowoffset = LittleShort(msd->rowoffset)<<FRACBITS;
+    sd->textureoffset = LittleShort(msd->textureoffset)<<FRACBITS;
+    sd->rowoffset = LittleShort(msd->rowoffset)<<FRACBITS;
 
-      { /* cph 2006/09/30 - catch out-of-range sector numbers; use sector 0 instead */
-        unsigned short sector_num = LittleShort(msd->sector);
-        if (sector_num >= numsectors) {
-          lprintf(LO_WARN,"P_LoadSideDefs2: sidedef %i has out-of-range sector num %u\n", i, sector_num);
-          sector_num = 0;
-        }
-        sd->sector = sec = &sectors[sector_num];
+    { /* cph 2006/09/30 - catch out-of-range sector numbers; use sector 0 instead */
+      unsigned short sector_num = LittleShort(msd->sector);
+      if (sector_num >= numsectors) {
+        lprintf(LO_WARN,"P_LoadSideDefs2: sidedef %i has out-of-range sector num %u\n", i, sector_num);
+        sector_num = 0;
       }
+      sd->sector = sec = &sectors[sector_num];
+    }
 
-      // killough 4/4/98: allow sidedef texture names to be overloaded
-      // killough 4/11/98: refined to allow colormaps to work as wall
-      // textures if invalid as colormaps but valid as textures.
+    // killough 4/4/98: allow sidedef texture names to be overloaded
+    // killough 4/11/98: refined to allow colormaps to work as wall
+    // textures if invalid as colormaps but valid as textures.
+    if (!raven)
+    {
       switch (sd->special)
-        {
+      {
         case 242:                       // variable colormap via 242 linedef
           sd->bottomtexture =
             (sec->bottommap =   R_ColormapNumForName(msd->bottomtexture)) < 0 ?
@@ -1692,8 +1856,15 @@ static void P_LoadSideDefs2(int lump)
           sd->toptexture = R_SafeTextureNumForName(msd->toptexture, i);
           sd->bottomtexture = R_SafeTextureNumForName(msd->bottomtexture, i);
           break;
-        }
+      }
     }
+    else
+    {
+      sd->midtexture = R_SafeTextureNumForName(msd->midtexture, i);
+      sd->toptexture = R_SafeTextureNumForName(msd->toptexture, i);
+      sd->bottomtexture = R_SafeTextureNumForName(msd->bottomtexture, i);
+    }
+  }
 
   W_UnlockLumpNum(lump); // cph - release the lump
 }
@@ -2101,43 +2272,43 @@ static void P_LoadBlockMap (int lump)
   if (M_CheckParm("-blockmap") || W_LumpLength(lump)<8 || (count = W_LumpLength(lump)/2) >= 0x10000) //e6y
     P_CreateBlockMap();
   else
+  {
+    long i;
+    // cph - const*, wad lump handling updated
+    const short *wadblockmaplump = W_CacheLumpNum(lump);
+    blockmaplump = malloc_IfSameLevel(blockmaplump, sizeof(*blockmaplump) * count);
+
+    // killough 3/1/98: Expand wad blockmap into larger internal one,
+    // by treating all offsets except -1 as unsigned and zero-extending
+    // them. This potentially doubles the size of blockmaps allowed,
+    // because Doom originally considered the offsets as always signed.
+
+    blockmaplump[0] = LittleShort(wadblockmaplump[0]);
+    blockmaplump[1] = LittleShort(wadblockmaplump[1]);
+    blockmaplump[2] = (long)(LittleShort(wadblockmaplump[2])) & 0xffff;
+    blockmaplump[3] = (long)(LittleShort(wadblockmaplump[3])) & 0xffff;
+
+    for (i=4 ; i<count ; i++)
     {
-      long i;
-      // cph - const*, wad lump handling updated
-      const short *wadblockmaplump = W_CacheLumpNum(lump);
-      blockmaplump = malloc_IfSameLevel(blockmaplump, sizeof(*blockmaplump) * count);
-
-      // killough 3/1/98: Expand wad blockmap into larger internal one,
-      // by treating all offsets except -1 as unsigned and zero-extending
-      // them. This potentially doubles the size of blockmaps allowed,
-      // because Doom originally considered the offsets as always signed.
-
-      blockmaplump[0] = LittleShort(wadblockmaplump[0]);
-      blockmaplump[1] = LittleShort(wadblockmaplump[1]);
-      blockmaplump[2] = (long)(LittleShort(wadblockmaplump[2])) & 0xffff;
-      blockmaplump[3] = (long)(LittleShort(wadblockmaplump[3])) & 0xffff;
-
-      for (i=4 ; i<count ; i++)
-        {
-          short t = LittleShort(wadblockmaplump[i]);          // killough 3/1/98
-          blockmaplump[i] = t == -1 ? -1l : (long) t & 0xffff;
-        }
-
-      W_UnlockLumpNum(lump); // cph - unlock the lump
-
-      bmaporgx = blockmaplump[0]<<FRACBITS;
-      bmaporgy = blockmaplump[1]<<FRACBITS;
-      bmapwidth = blockmaplump[2];
-      bmapheight = blockmaplump[3];
-
-      // haleyjd 03/04/10: check for blockmap problems
-      // http://www.doomworld.com/idgames/index.php?id=12935
-      if (!P_VerifyBlockMap(count))
-      {
-        lprintf(LO_INFO, "P_LoadBlockMap: erroneous BLOCKMAP lump may cause crashes.\n");
-        lprintf(LO_INFO, "P_LoadBlockMap: use \"-blockmap\" command line switch for rebuilding\n");
-      }
+      short t = LittleShort(wadblockmaplump[i]);          // killough 3/1/98
+      blockmaplump[i] = t == -1 ? -1l : (long) t & 0xffff;
     }
+
+    W_UnlockLumpNum(lump); // cph - unlock the lump
+
+    bmaporgx = blockmaplump[0]<<FRACBITS;
+    bmaporgy = blockmaplump[1]<<FRACBITS;
+    bmapwidth = blockmaplump[2];
+    bmapheight = blockmaplump[3];
+
+    // haleyjd 03/04/10: check for blockmap problems
+    // http://www.doomworld.com/idgames/index.php?id=12935
+    if (!P_VerifyBlockMap(count))
+    {
+      lprintf(LO_INFO, "P_LoadBlockMap: erroneous BLOCKMAP lump may cause crashes.\n");
+      lprintf(LO_INFO, "P_LoadBlockMap: use \"-blockmap\" command line switch for rebuilding\n");
+    }
+  }
 
   // clear out mobj chains - CPhipps - use calloc
   blocklinks = calloc_IfSameLevel(blocklinks, bmapwidth * bmapheight, sizeof(*blocklinks));
@@ -2221,14 +2392,14 @@ static int P_GroupLines (void)
 
   // count number of lines in each sector
   for (i=0,li=lines; i<numlines; i++, li++)
+  {
+    li->frontsector->linecount++;
+    if (li->backsector && li->backsector != li->frontsector)
     {
-      li->frontsector->linecount++;
-      if (li->backsector && li->backsector != li->frontsector)
-        {
-          li->backsector->linecount++;
-          total++;
-        }
+      li->backsector->linecount++;
+      total++;
     }
+  }
 
   {  // allocate line tables for each sector
     line_t **linebuffer = Z_Malloc(total*sizeof(line_t *), PU_LEVEL, 0);
@@ -2500,8 +2671,13 @@ void P_CheckLevelWadStructure(const char *mapname)
     }
   }
 
+  if (hexen)
+  {
+    return;
+  }
+
   // refuse to load Hexen-format maps, avoid segfaults
-  i = lumpnum + ML_BLOCKMAP + 1;
+  i = lumpnum + ML_BEHAVIOR;
   if (P_CheckLumpsForSameSource(lumpnum, i))
   {
     if (!strncasecmp(lumpinfo[i].name, "BEHAVIOR", 8))
@@ -2541,6 +2717,7 @@ void P_InitSubsectorsLines(void)
     {
       if (!seg->linedef) continue;
       seg->linedef->validcount = 0;
+      seg->linedef->validcount2 = 0;
     }
 
     for (seg = segs + subsectors[num].firstline; seg < seg_last; seg++)
@@ -2569,6 +2746,7 @@ void P_InitSubsectorsLines(void)
     {
       if (!seg->linedef) continue;
       seg->linedef->validcount = 0;
+      seg->linedef->validcount2 = 0;
     }
 
     for (seg = segs + subsectors[num].firstline; seg < seg_last; seg++)
@@ -2600,6 +2778,7 @@ void P_InitSubsectorsLines(void)
   for (num = 0; num < numlines; num++)
   {
     lines[num].validcount = 0;
+    lines[num].validcount2 = 0;
   }
 }
 
@@ -2629,7 +2808,7 @@ void P_SetupLevel(int episode, int map, int playermask, skill_t skill)
   totallive = totalkills = totalitems = totalsecret = wminfo.maxfrags = 0;
   wminfo.partime = 180;
 
-  for (i=0; i<MAXPLAYERS; i++)
+  for (i = 0; i < g_maxplayers; i++)
   {
     players[i].killcount = players[i].secretcount = players[i].itemcount = 0;
     players[i].maxkilldiscount = 0;//e6y
@@ -2653,10 +2832,10 @@ void P_SetupLevel(int episode, int map, int playermask, skill_t skill)
   //    W_Reload ();     killough 1/31/98: W_Reload obsolete
 
   // find map name
-  if (gamemode == commercial)
+  if (gamemode == commercial || hexen)
   {
-    sprintf(lumpname, "map%02d", map);           // killough 1/24/98: simplify
-    sprintf(gl_lumpname, "gl_map%02d", map);    // figgi
+    sprintf(lumpname, "MAP%02d", map);           // killough 1/24/98: simplify
+    sprintf(gl_lumpname, "GL_MAP%02d", map);    // figgi
   }
   else
   {
@@ -2794,25 +2973,46 @@ void P_SetupLevel(int episode, int map, int playermask, skill_t skill)
 
   bodyqueslot = 0;
 
+  po_NumPolyobjs = 0; // hexen
+
   /* cph - reset all multiplayer starts */
   memset(playerstarts,0,sizeof(playerstarts));
   deathmatch_p = deathmatchstarts;
-  for (i = 0; i < MAXPLAYERS; i++)
+  for (i = 0; i < g_maxplayers; i++)
     players[i].mo = NULL;
   TracerClearStarts();
 
   P_MapStart();
 
-  P_InitAmbientSound();
-  P_InitMonsters();
-  P_OpenWeapons();
+  if (heretic)
+  {
+    P_InitAmbientSound();
+    P_InitMonsters();
+    P_OpenWeapons();
+  }
+
+  if (hexen)
+  {
+    PO_ResetBlockMap(true);
+  }
+
   P_LoadThings(lumpnum+ML_THINGS);
-  P_CloseWeapons();
+
+  if (hexen)
+  {
+    PO_Init(lumpnum + ML_THINGS);       // Initialize the polyobjs
+    P_LoadACScripts(lumpnum + ML_BEHAVIOR);     // ACS object code
+  }
+
+  if (heretic)
+  {
+    P_CloseWeapons();
+  }
 
   // if deathmatch, randomly spawn the active players
   if (deathmatch)
   {
-    for (i=0; i<MAXPLAYERS; i++)
+    for (i = 0; i < g_maxplayers; i++)
       if (playeringame[i])
         {
           players[i].mo = NULL; // not needed? - done before P_LoadThings
@@ -2821,7 +3021,7 @@ void P_SetupLevel(int episode, int map, int playermask, skill_t skill)
   }
   else // if !deathmatch, check all necessary player starts actually exist
   {
-    for (i=0; i<MAXPLAYERS; i++)
+    for (i = 0; i < g_maxplayers; i++)
       if (playeringame[i] && !players[i].mo)
         I_Error("P_SetupLevel: missing player %d start\n", i+1);
   }
@@ -2832,7 +3032,7 @@ void P_SetupLevel(int episode, int map, int playermask, skill_t skill)
   }
 
   // killough 3/26/98: Spawn icon landings:
-  if (gamemode==commercial)
+  if (gamemode == commercial && !hexen)
     P_SpawnBrainTargets();
 
   if (gamemode != shareware)
@@ -2850,12 +3050,29 @@ void P_SetupLevel(int episode, int map, int playermask, skill_t skill)
 
   P_MapEnd();
 
+  if (hexen)
+  {
+    extern dboolean LevelUseFullBright;
+
+    // Load colormap and set the fullbright flag
+    i = P_GetMapFadeTable(gamemap);
+    colormaps[0] = (const lighttable_t *) W_CacheLumpNum(i);
+    if (i == W_GetNumForName("COLORMAP"))
+    {
+      LevelUseFullBright = true;
+    }
+    else
+    {                           // Probably fog ... don't use fullbright sprites
+      LevelUseFullBright = false;
+    }
+  }
+
   // preload graphics
   if (precache)
     R_PrecacheLevel();
 
 #ifdef GL_DOOM
-  if (V_GetMode() == VID_MODEGL)
+  if (V_IsOpenGLMode())
   {
     // e6y
     // Do not preprocess GL data during skipping,
@@ -2871,16 +3088,308 @@ void P_SetupLevel(int episode, int map, int playermask, skill_t skill)
   //e6y
   P_SyncWalkcam(true, true);
   R_SmoothPlaying_Reset(NULL);
+
+  if (hexen)
+  {
+    // Check if the level is a lightning level
+    P_InitLightning();
+    SN_StopAllSequences();
+  }
 }
+
+static void InitMapInfo(void);
 
 //
 // P_Init
 //
 void P_Init (void)
 {
+  InitMapInfo();
   P_InitSwitchList();
+  P_InitFTAnims();
   P_InitPicAnims();
   P_InitTerrainTypes();
   P_InitLava();
   R_InitSprites(sprnames);
+}
+
+// hexen
+
+#include "sc_man.h"
+
+static void InitMapInfo(void)
+{
+    int map;
+    int mapMax;
+    int mcmdValue;
+    mapInfo_t *info;
+    char songMulch[10];
+    const char *default_sky_name = DEFAULT_SKY_NAME;
+
+    if (!hexen) return;
+
+    mapMax = 1;
+
+    if (gamemode == shareware)
+    {
+        default_sky_name = "SKY2";
+    }
+
+    // Put defaults into MapInfo[0]
+    info = MapInfo;
+    info->cluster = 0;
+    info->warpTrans = 0;
+    info->nextMap = 1;          // Always go to map 1 if not specified
+    info->cdTrack = 1;
+    info->sky1Texture = R_TextureNumForName(default_sky_name);
+    info->sky2Texture = info->sky1Texture;
+    info->sky1ScrollDelta = 0;
+    info->sky2ScrollDelta = 0;
+    info->doubleSky = false;
+    info->lightning = false;
+    info->fadetable = W_GetNumForName(DEFAULT_FADE_TABLE);
+    M_StringCopy(info->name, UNKNOWN_MAP_NAME, sizeof(info->name));
+
+    SC_OpenLump(MAPINFO_SCRIPT_NAME);
+    while (SC_GetString())
+    {
+        if (SC_Compare("MAP") == false)
+        {
+            SC_ScriptError(NULL);
+        }
+        SC_MustGetNumber();
+        if (sc_Number < 1 || sc_Number > 99)
+        {
+            SC_ScriptError(NULL);
+        }
+        map = sc_Number;
+
+        info = &MapInfo[map];
+
+        // Save song lump name
+        M_StringCopy(songMulch, info->songLump, sizeof(songMulch));
+
+        // Copy defaults to current map definition
+        memcpy(info, &MapInfo[0], sizeof(*info));
+
+        // Restore song lump name
+        M_StringCopy(info->songLump, songMulch, sizeof(info->songLump));
+
+        // The warp translation defaults to the map number
+        info->warpTrans = map;
+
+        // Map name must follow the number
+        SC_MustGetString();
+        M_StringCopy(info->name, sc_String, sizeof(info->name));
+
+        // Process optional tokens
+        while (SC_GetString())
+        {
+            if (SC_Compare("MAP"))
+            {                   // Start next map definition
+                SC_UnGet();
+                break;
+            }
+            mcmdValue = MapCmdIDs[SC_MustMatchString(MapCmdNames)];
+            switch (mcmdValue)
+            {
+                case MCMD_CLUSTER:
+                    SC_MustGetNumber();
+                    info->cluster = sc_Number;
+                    break;
+                case MCMD_WARPTRANS:
+                    SC_MustGetNumber();
+                    info->warpTrans = sc_Number;
+                    break;
+                case MCMD_NEXT:
+                    SC_MustGetNumber();
+                    info->nextMap = sc_Number;
+                    break;
+                case MCMD_CDTRACK:
+                    SC_MustGetNumber();
+                    info->cdTrack = sc_Number;
+                    break;
+                case MCMD_SKY1:
+                    SC_MustGetString();
+                    info->sky1Texture = R_TextureNumForName(sc_String);
+                    SC_MustGetNumber();
+                    info->sky1ScrollDelta = sc_Number << 8;
+                    break;
+                case MCMD_SKY2:
+                    SC_MustGetString();
+                    info->sky2Texture = R_TextureNumForName(sc_String);
+                    SC_MustGetNumber();
+                    info->sky2ScrollDelta = sc_Number << 8;
+                    break;
+                case MCMD_DOUBLESKY:
+                    info->doubleSky = true;
+                    break;
+                case MCMD_LIGHTNING:
+                    info->lightning = true;
+                    break;
+                case MCMD_FADETABLE:
+                    SC_MustGetString();
+                    info->fadetable = W_GetNumForName(sc_String);
+                    break;
+                case MCMD_CD_STARTTRACK:
+                case MCMD_CD_END1TRACK:
+                case MCMD_CD_END2TRACK:
+                case MCMD_CD_END3TRACK:
+                case MCMD_CD_INTERTRACK:
+                case MCMD_CD_TITLETRACK:
+                    SC_MustGetNumber();
+                    cd_NonLevelTracks[mcmdValue - MCMD_CD_STARTTRACK] =
+                        sc_Number;
+                    break;
+            }
+        }
+        mapMax = map > mapMax ? map : mapMax;
+    }
+    SC_Close();
+    MapCount = mapMax;
+}
+
+int P_GetMapCluster(int map)
+{
+    return MapInfo[QualifyMap(map)].cluster;
+}
+
+int P_GetMapCDTrack(int map)
+{
+    return MapInfo[QualifyMap(map)].cdTrack;
+}
+
+int P_GetMapWarpTrans(int map)
+{
+    return MapInfo[QualifyMap(map)].warpTrans;
+}
+
+int P_GetMapNextMap(int map)
+{
+    return MapInfo[QualifyMap(map)].nextMap;
+}
+
+int P_TranslateMap(int map)
+{
+    int i;
+
+    for (i = 1; i < 99; i++)    // Make this a macro
+    {
+        if (MapInfo[i].warpTrans == map)
+        {
+            return i;
+        }
+    }
+    // Not found
+    return -1;
+}
+
+int P_GetMapSky1Texture(int map)
+{
+    return MapInfo[QualifyMap(map)].sky1Texture;
+}
+
+int P_GetMapSky2Texture(int map)
+{
+    return MapInfo[QualifyMap(map)].sky2Texture;
+}
+
+char *P_GetMapName(int map)
+{
+    return MapInfo[QualifyMap(map)].name;
+}
+
+fixed_t P_GetMapSky1ScrollDelta(int map)
+{
+    return MapInfo[QualifyMap(map)].sky1ScrollDelta;
+}
+
+fixed_t P_GetMapSky2ScrollDelta(int map)
+{
+    return MapInfo[QualifyMap(map)].sky2ScrollDelta;
+}
+
+dboolean P_GetMapDoubleSky(int map)
+{
+    return MapInfo[QualifyMap(map)].doubleSky;
+}
+
+dboolean P_GetMapLightning(int map)
+{
+    return MapInfo[QualifyMap(map)].lightning;
+}
+
+dboolean P_GetMapFadeTable(int map)
+{
+    return MapInfo[QualifyMap(map)].fadetable;
+}
+
+char *P_GetMapSongLump(int map)
+{
+    if (!strcasecmp(MapInfo[QualifyMap(map)].songLump, DEFAULT_SONG_LUMP))
+    {
+        return NULL;
+    }
+    else
+    {
+        return MapInfo[QualifyMap(map)].songLump;
+    }
+}
+
+void P_PutMapSongLump(int map, char *lumpName)
+{
+    if (map < 1 || map > MapCount)
+    {
+        return;
+    }
+    M_StringCopy(MapInfo[map].songLump, lumpName,
+                 sizeof(MapInfo[map].songLump));
+}
+
+int P_GetCDStartTrack(void)
+{
+    return cd_NonLevelTracks[MCMD_CD_STARTTRACK - MCMD_CD_STARTTRACK];
+}
+
+int P_GetCDEnd1Track(void)
+{
+    return cd_NonLevelTracks[MCMD_CD_END1TRACK - MCMD_CD_STARTTRACK];
+}
+
+int P_GetCDEnd2Track(void)
+{
+    return cd_NonLevelTracks[MCMD_CD_END2TRACK - MCMD_CD_STARTTRACK];
+}
+
+int P_GetCDEnd3Track(void)
+{
+    return cd_NonLevelTracks[MCMD_CD_END3TRACK - MCMD_CD_STARTTRACK];
+}
+
+int P_GetCDIntermissionTrack(void)
+{
+    return cd_NonLevelTracks[MCMD_CD_INTERTRACK - MCMD_CD_STARTTRACK];
+}
+
+int P_GetCDTitleTrack(void)
+{
+    return cd_NonLevelTracks[MCMD_CD_TITLETRACK - MCMD_CD_STARTTRACK];
+}
+
+static int QualifyMap(int map)
+{
+    return (map < 1 || map > MapCount) ? 0 : map;
+}
+
+// Special early initializer needed to start sound before R_Init()
+void InitMapMusicInfo(void)
+{
+    int i;
+
+    for (i = 0; i < 99; i++)
+    {
+        M_StringCopy(MapInfo[i].songLump, DEFAULT_SONG_LUMP,
+                     sizeof(MapInfo[i].songLump));
+    }
+    MapCount = 98;
 }

@@ -389,7 +389,7 @@ default_t defaults[] =
   {"mus_opl_gain",{&mus_opl_gain},{50},0,1000,def_int,ss_none}, // NSM  fine tune opl output level
 
   {"Video settings",{NULL},{0},UL,UL,def_none,ss_none},
-  {"videomode",{NULL, &default_videomode},{0,"8bit"},UL,UL,def_str,ss_none},
+  {"videomode",{NULL, &default_videomode},{0,"Software"},UL,UL,def_str,ss_none},
   /* 640x480 default resolution */
   {"screen_resolution",{NULL, &screen_resolution},{0,"640x480"},UL,UL,def_str,ss_none},
   {"use_fullscreen",{&use_fullscreen},{0},0,1, /* proff 21/05/2000 */
@@ -398,8 +398,6 @@ default_t defaults[] =
   def_bool,ss_none},
   {"render_vsync",{&render_vsync},{1},0,1,
    def_bool,ss_none},
-  {"translucency",{&default_translucency},{1},0,1,   // phares
-   def_bool,ss_none}, // enables translucency
   {"tran_filter_pct",{&tran_filter_pct},{66},0,100,         // killough 2/21/98
    def_int,ss_none}, // set percentage of foreground/background translucency mix
   {"screenblocks",{&screenblocks},{10},3,11,  // killough 2/21/98: default to 10
@@ -743,7 +741,7 @@ default_t defaults[] =
   { "input_invleft", { NULL }, { 0 }, UL, UL, def_input, ss_keys, NULL, NULL,
     dsda_input_invleft, { 0, -1, -1 } },
   { "input_invright", { NULL }, { 0 }, UL, UL, def_input, ss_keys, NULL, NULL,
-  dsda_input_invright, { 0, -1, -1 } },
+    dsda_input_invright, { 0, -1, -1 } },
   { "input_store_quick_key_frame", { NULL }, { 0 }, UL, UL, def_input, ss_keys, NULL, NULL,
     dsda_input_store_quick_key_frame, { 0, -1, -1 } },
   { "input_restore_quick_key_frame", { NULL }, { 0 }, UL, UL, def_input, ss_keys, NULL, NULL,
@@ -762,6 +760,25 @@ default_t defaults[] =
     dsda_input_console, { 0, -1, -1 } },
   { "input_coordinate_display", { NULL }, { 0 }, UL, UL, def_input, ss_keys, NULL, NULL,
     dsda_input_coordinate_display, { 0, -1, -1 } },
+
+  { "input_jump", { NULL }, { 0 }, UL, UL, def_input, ss_keys, NULL, NULL,
+    dsda_input_jump, { 0, -1, -1 } },
+  { "input_hexen_arti_incant", { NULL }, { 0 }, UL, UL, def_input, ss_keys, NULL, NULL,
+    dsda_input_hexen_arti_incant, { 0, -1, -1 } },
+  { "input_hexen_arti_summon", { NULL }, { 0 }, UL, UL, def_input, ss_keys, NULL, NULL,
+    dsda_input_hexen_arti_summon, { 0, -1, -1 } },
+  { "input_hexen_arti_disk", { NULL }, { 0 }, UL, UL, def_input, ss_keys, NULL, NULL,
+    dsda_input_hexen_arti_disk, { 0, -1, -1 } },
+  { "input_hexen_arti_flechette", { NULL }, { 0 }, UL, UL, def_input, ss_keys, NULL, NULL,
+    dsda_input_hexen_arti_flechette, { 0, -1, -1 } },
+  { "input_hexen_arti_banishment", { NULL }, { 0 }, UL, UL, def_input, ss_keys, NULL, NULL,
+    dsda_input_hexen_arti_banishment, { 0, -1, -1 } },
+  { "input_hexen_arti_boots", { NULL }, { 0 }, UL, UL, def_input, ss_keys, NULL, NULL,
+    dsda_input_hexen_arti_boots, { 0, -1, -1 } },
+  { "input_hexen_arti_krater", { NULL }, { 0 }, UL, UL, def_input, ss_keys, NULL, NULL,
+    dsda_input_hexen_arti_krater, { 0, -1, -1 } },
+  { "input_hexen_arti_bracers", { NULL }, { 0 }, UL, UL, def_input, ss_keys, NULL, NULL,
+    dsda_input_hexen_arti_bracers, { 0, -1, -1 } },
 
   {"Mouse settings",{NULL},{0},UL,UL,def_none,ss_none},
   {"use_mouse",{&usemouse},{1},0,1,
@@ -1192,8 +1209,6 @@ default_t defaults[] =
    def_bool,ss_stat},
   {"comperr_blockmap", {&default_comperr[comperr_blockmap]},  {0},0,1,
    def_bool,ss_stat},
-  {"comperr_allowjump", {&default_comperr[comperr_allowjump]},  {0},0,2,
-   def_int,ss_stat},
   {"comperr_freeaim", {&default_comperr[comperr_freeaim]},  {0},0,1,
    def_bool,ss_stat},
 
@@ -1485,7 +1500,7 @@ void M_LoadDefaults (void)
     doom_snprintf(defaultfile, len+1, "%s/" BOOM_CFG, exedir);
   }
 
-  lprintf (LO_CONFIRM, " default file: %s\n",defaultfile);
+  lprintf (LO_INFO, " default file: %s\n",defaultfile);
 
   // read the file in, overriding any set defaults
 
@@ -1768,6 +1783,45 @@ void M_ScreenShot(void)
   doom_printf ("M_ScreenShot: Couldn't create screenshot");
   return;
 }
+
+
+// Safe string copy function that works like OpenBSD's strlcpy().
+// Returns true if the string was not truncated.
+
+dboolean M_StringCopy(char *dest, const char *src, size_t dest_size)
+{
+    size_t len;
+
+    if (dest_size >= 1)
+    {
+        dest[dest_size - 1] = '\0';
+        strncpy(dest, src, dest_size - 1);
+    }
+    else
+    {
+        return false;
+    }
+
+    len = strlen(dest);
+    return src[len] == '\0';
+}
+
+// Safe string concat function that works like OpenBSD's strlcat().
+// Returns true if string not truncated.
+
+dboolean M_StringConcat(char *dest, const char *src, size_t dest_size)
+{
+    size_t offset;
+
+    offset = strlen(dest);
+    if (offset > dest_size)
+    {
+        offset = dest_size;
+    }
+
+    return M_StringCopy(dest + offset, src, dest_size - offset);
+}
+
 
 int M_StrToInt(const char *s, int *l)
 {

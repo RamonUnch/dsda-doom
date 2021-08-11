@@ -33,6 +33,7 @@
  */
 
 #include "doomstat.h"
+#include "m_random.h"
 #include "r_defs.h"
 #include "r_state.h"
 #include "p_spec.h"
@@ -42,6 +43,8 @@
 #include "i_capture.h"
 #include "e6y.h"
 #include "dsda/settings.h"
+
+#include "hexen/a_action.h"
 
 int movement_smooth_default;
 int movement_smooth;
@@ -174,6 +177,25 @@ void R_InterpolateView(player_t *player, fixed_t frac)
       viewangle = R_SmoothPlaying_Get(player) + viewangleoffset;
       viewpitch = P_PlayerPitch(player) + viewpitchoffset;
     }
+  }
+
+  if (localQuakeHappening[displayplayer] && !paused)
+  {
+    static int x_displacement;
+    static int y_displacement;
+    static int last_leveltime = -1;
+
+    if (leveltime != last_leveltime)
+    {
+      int intensity = localQuakeHappening[displayplayer];
+
+      x_displacement = ((M_Random() % (intensity << 2)) - (intensity << 1)) << FRACBITS;
+      y_displacement = ((M_Random() % (intensity << 2)) - (intensity << 1)) << FRACBITS;
+      last_leveltime = leveltime;
+    }
+
+    viewx += x_displacement;
+    viewy += y_displacement;
   }
 
   if (!paused && movement_smooth)

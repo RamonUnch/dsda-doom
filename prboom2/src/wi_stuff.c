@@ -45,7 +45,9 @@
 #include "r_draw.h"
 #include "hu_stuff.h"
 #include "dsda/intermission_display.h"
+
 #include "heretic/in_lude.h"
+#include "hexen/in_lude.h"
 
 // Ty 03/17/98: flag that new par times have been loaded in d_deh
 extern dboolean deh_pars;
@@ -379,7 +381,7 @@ static const char total[] = {"WIMSTT"};
 static const char star[] = {"STFST01"};
 static const char bstar[] = {"STFDEAD0"};
 
-// "red P[1..MAXPLAYERS]"
+// "red P[1..g_maxplayers]"
 static const char facebackp[] = {"STPB0"};
 
 static const char *exitpic, *enterpic;
@@ -990,7 +992,13 @@ void WI_initShowNextLoc(void)
       WI_loadData();
     }
   }
-  else if ((gamemode != commercial) && (gamemap == 8)) {
+  else if (
+    gamemode != commercial &&
+    (
+      gamemap == 8 ||
+      (gamemission == chex && gamemap == 5)
+    )
+  ) {
     G_WorldDone();
     return;
   }
@@ -1119,7 +1127,7 @@ int WI_fragSum(int playernum)
   int   i;
   int   frags = 0;
 
-  for (i=0 ; i<MAXPLAYERS ; i++)
+  for (i = 0; i < g_maxplayers; i++)
   {
     if (playeringame[i]  // is this player playing?
        && i!=playernum) // and it's not the player we're calculating
@@ -1152,8 +1160,8 @@ void WI_initDeathmatchStats(void)
   int   i; // looping variables
 
   // CPhipps - allocate data structures needed
-  dm_frags  = calloc(MAXPLAYERS, sizeof(*dm_frags));
-  dm_totals = calloc(MAXPLAYERS, sizeof(*dm_totals));
+  dm_frags  = calloc(g_maxplayers, sizeof(*dm_frags));
+  dm_totals = calloc(g_maxplayers, sizeof(*dm_totals));
 
   state = StatCount;  // We're doing stats
   acceleratestage = 0;
@@ -1161,12 +1169,12 @@ void WI_initDeathmatchStats(void)
 
   cnt_pause = TICRATE;
 
-  for (i=0 ; i<MAXPLAYERS ; i++)
+  for (i = 0 ;i < g_maxplayers; i++)
   {
     if (playeringame[i])
     {
       // CPhipps - allocate frags line
-      dm_frags[i] = calloc(MAXPLAYERS, sizeof(**dm_frags)); // set all counts to zero
+      dm_frags[i] = calloc(g_maxplayers, sizeof(**dm_frags)); // set all counts to zero
 
       dm_totals[i] = 0;
     }
@@ -1184,7 +1192,7 @@ void WI_initDeathmatchStats(void)
 void WI_endDeathmatchStats(void)
 {
   int i;
-  for (i=0; i<MAXPLAYERS; i++)
+  for (i = 0; i < g_maxplayers; i++)
     free(dm_frags[i]);
 
   free(dm_frags); free(dm_totals);
@@ -1211,11 +1219,11 @@ void WI_updateDeathmatchStats(void)
   {
     acceleratestage = 0;
 
-    for (i=0 ; i<MAXPLAYERS ; i++)
+    for (i = 0; i < g_maxplayers; i++)
     {
       if (playeringame[i])
       {
-        for (j=0 ; j<MAXPLAYERS ; j++)
+        for (j = 0; j < g_maxplayers; j++)
           if (playeringame[j])
             dm_frags[i][j] = plrs[i].frags[j];
 
@@ -1236,11 +1244,11 @@ void WI_updateDeathmatchStats(void)
 
     stillticking = false;
 
-    for (i=0 ; i<MAXPLAYERS ; i++)
+    for (i = 0; i < g_maxplayers; i++)
     {
       if (playeringame[i])
       {
-        for (j=0 ; j<MAXPLAYERS ; j++)
+        for (j = 0; j < g_maxplayers; j++)
         {
           if (playeringame[j]
              && dm_frags[i][j] != plrs[i].frags[j])
@@ -1336,7 +1344,7 @@ void WI_drawDeathmatchStats(void)
   x = DM_MATRIXX + DM_SPACINGX;
   y = DM_MATRIXY;
 
-  for (i=0 ; i<MAXPLAYERS ; i++)
+  for (i = 0; i < g_maxplayers; i++)
   {
     if (playeringame[i]) {
       //int trans = playernumtotrans[i];
@@ -1363,13 +1371,13 @@ void WI_drawDeathmatchStats(void)
   y = DM_MATRIXY+10;
   w = num[0].width;
 
-  for (i=0 ; i<MAXPLAYERS ; i++)
+  for (i = 0; i < g_maxplayers; i++)
   {
     x = DM_MATRIXX + DM_SPACINGX;
 
     if (playeringame[i])
     {
-      for (j=0 ; j<MAXPLAYERS ; j++)
+      for (j = 0; j < g_maxplayers; j++)
       {
         if (playeringame[j])
           WI_drawNum(x+w, y, dm_frags[i][j], 2);
@@ -1442,12 +1450,12 @@ void WI_initNetgameStats(void)
   cnt_pause = TICRATE;
 
   // CPhipps - allocate these dynamically, blank with calloc
-  cnt_kills = calloc(MAXPLAYERS, sizeof(*cnt_kills));
-  cnt_items = calloc(MAXPLAYERS, sizeof(*cnt_items));
-  cnt_secret= calloc(MAXPLAYERS, sizeof(*cnt_secret));
-  cnt_frags = calloc(MAXPLAYERS, sizeof(*cnt_frags));
+  cnt_kills = calloc(g_maxplayers, sizeof(*cnt_kills));
+  cnt_items = calloc(g_maxplayers, sizeof(*cnt_items));
+  cnt_secret= calloc(g_maxplayers, sizeof(*cnt_secret));
+  cnt_frags = calloc(g_maxplayers, sizeof(*cnt_frags));
 
-  for (i=0 ; i<MAXPLAYERS ; i++)
+  for (i = 0; i < g_maxplayers; i++)
     if (playeringame[i])
       dofrags += WI_fragSum(i);
 
@@ -1477,7 +1485,7 @@ void WI_updateNetgameStats(void)
   {
     acceleratestage = 0;
 
-    for (i=0 ; i<MAXPLAYERS ; i++)
+    for (i = 0; i < g_maxplayers; i++)
     {
       if (!playeringame[i])
         continue;
@@ -1502,7 +1510,7 @@ void WI_updateNetgameStats(void)
 
     stillticking = false;
 
-    for (i=0 ; i<MAXPLAYERS ; i++)
+    for (i = 0; i < g_maxplayers; i++)
     {
       if (!playeringame[i])
         continue;
@@ -1528,7 +1536,7 @@ void WI_updateNetgameStats(void)
 
     stillticking = false;
 
-    for (i=0 ; i<MAXPLAYERS ; i++)
+    for (i = 0; i < g_maxplayers; i++)
     {
       if (!playeringame[i])
         continue;
@@ -1553,7 +1561,7 @@ void WI_updateNetgameStats(void)
 
     stillticking = false;
 
-    for (i=0 ; i<MAXPLAYERS ; i++)
+    for (i = 0; i < g_maxplayers; i++)
     {
       if (!playeringame[i])
         continue;
@@ -1581,7 +1589,7 @@ void WI_updateNetgameStats(void)
 
     stillticking = false;
 
-    for (i=0 ; i<MAXPLAYERS ; i++)
+    for (i = 0; i < g_maxplayers; i++)
     {
       if (!playeringame[i])
         continue;
@@ -1662,7 +1670,7 @@ void WI_drawNetgameStats(void)
   // draw stats
   y = NG_STATSY + V_NamePatchHeight(kills);
 
-  for (i=0 ; i<MAXPLAYERS ; i++)
+  for (i = 0; i < g_maxplayers; i++)
   {
     //int trans = playernumtotrans[i];
     if (!playeringame[i])
@@ -1924,7 +1932,7 @@ void WI_checkForAccelerate(void)
   player_t  *player;
 
   // check for button presses to skip delays
-  for (i=0, player = players ; i<MAXPLAYERS ; i++, player++)
+  for (i = 0, player = players; i < g_maxplayers; i++, player++)
   {
     if (playeringame[i])
     {
@@ -1959,6 +1967,7 @@ void WI_checkForAccelerate(void)
 void WI_Ticker(void)
 {
   if (heretic) return IN_Ticker();
+  if (hexen) return Hexen_IN_Ticker();
 
   // counter for general background animation
   bcnt++;
@@ -2056,6 +2065,7 @@ void WI_loadData(void)
 void WI_Drawer (void)
 {
   if (heretic) return IN_Drawer();
+  if (hexen) return Hexen_IN_Drawer();
 
   switch (state)
   {
@@ -2104,8 +2114,8 @@ void WI_initVariables(wbstartstruct_t* wbstartstruct)
     RNGCHECK(wbs->last, 0, 8);
     RNGCHECK(wbs->next, 0, 8);
   }
-  RNGCHECK(wbs->pnum, 0, MAXPLAYERS);
-  RNGCHECK(wbs->pnum, 0, MAXPLAYERS);
+  RNGCHECK(wbs->pnum, 0, g_maxplayers);
+  RNGCHECK(wbs->pnum, 0, g_maxplayers);
 #endif
 
   acceleratestage = 0;
@@ -2136,6 +2146,7 @@ void WI_initVariables(wbstartstruct_t* wbstartstruct)
 void WI_Start(wbstartstruct_t* wbstartstruct)
 {
   if (heretic) return IN_Start(wbstartstruct);
+  if (hexen) return Hexen_IN_Start(wbstartstruct);
 
   WI_initVariables(wbstartstruct);
   WI_loadData();

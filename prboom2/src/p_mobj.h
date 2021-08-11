@@ -50,8 +50,6 @@
 // Needs precompiled tables/data structures.
 #include "info.h"
 
-#include "dsda/mobj_extension.h"
-
 //
 // NOTES: mobj_t
 //
@@ -230,6 +228,12 @@
 // fly mode is active
 #define MF_FLY             LONGLONG(0x0000020000000000)
 
+// hexen
+#define	MF_ALTSHADOW	LONGLONG(0x0000040000000000) // alternate translucent draw
+#define	MF_ICECORPSE	LONGLONG(0x0000080000000000) // a frozen corpse (for blasting)
+
+// hexen_note: MF_TRANSLATION covers doom's (MF_TRANSLATION | MF_UNUSED2)
+
 #define ALIVE(thing) ((thing->health > 0) && ((thing->flags & (MF_COUNTKILL | MF_CORPSE | MF_RESSURECTED)) == MF_COUNTKILL))
 
 // killough 9/15/98: Same, but internal flags, not intended for .deh
@@ -239,6 +243,8 @@ enum {
   MIF_FALLING = 1,      // Object is falling
   MIF_ARMED = 2,        // Object is armed (for MF_TOUCHY objects)
   MIF_SCROLLING = 4,    // Object is affected by scroller / pusher / puller
+  MIF_PLAYER_DAMAGED_BARREL = 8,
+  MIF_SPAWNED_BY_ICON = 16,
 };
 
 // heretic
@@ -380,20 +386,27 @@ typedef struct mobj_s
 
     int iden_nums;		// hi word stores thing num, low word identifier num
 
-    dsda_mobj_extension_t dsda_extension;
-
     // heretic
     int damage;                 // For missiles
     uint_64_t flags2;           // Heretic & MBF21 flags
     specialval_t special1;      // Special info
     specialval_t special2;      // Special info
 
+    // hexen
+    fixed_t floorpic;           // contacted sec floorpic
+    fixed_t floorclip;          // value to use for floor clipping
+    int archiveNum;             // Identity during archive
+    short tid;                  // thing identifier
+    byte special;               // special
+    byte args[5];               // special arguments
+
+    // misc
+    byte color;
+
     // SEE WARNING ABOVE ABOUT POINTER FIELDS!!!
 } mobj_t;
 
 // External declarations (fomerly in p_local.h) -- killough 5/2/98
-
-#define VIEWHEIGHT      (41*FRACUNIT)
 
 #define GRAVITY         FRACUNIT
 #define MAXMOVE         (30*FRACUNIT)
@@ -428,7 +441,7 @@ void    P_RemoveMobj(mobj_t *th);
 dboolean P_SetMobjState(mobj_t *mobj, statenum_t state);
 void    P_MobjThinker(mobj_t *mobj);
 void    P_SpawnPuff(fixed_t x, fixed_t y, fixed_t z);
-void    P_SpawnBlood(fixed_t x, fixed_t y, fixed_t z, int damage);
+void    P_SpawnBlood(fixed_t x, fixed_t y, fixed_t z, int damage, mobj_t *bleeder);
 mobj_t  *P_SpawnMissile(mobj_t *source, mobj_t *dest, mobjtype_t type);
 mobj_t  *P_SpawnPlayerMissile(mobj_t *source, mobjtype_t type);
 dboolean P_IsDoomnumAllowed(int doomnum);
@@ -481,6 +494,20 @@ void    P_ExplodeMissile(mobj_t*);    // killough
 #define MF2_LONGMELEE LONGLONG(0x0000000800000000) // has long melee range (revenant)
 #define MF2_FULLVOLSOUNDS LONGLONG(0x0000001000000000) // full volume see / death sound
 
+// hexen
+#define MF2_BLASTED	          LONGLONG(0x0000002000000000) // missile will pass through ghosts
+#define MF2_IMPACT            LONGLONG(0x0000004000000000) // an MF_MISSILE mobj can activate SPAC_IMPACT
+#define MF2_PUSHWALL          LONGLONG(0x0000008000000000) // mobj can push walls
+#define MF2_MCROSS            LONGLONG(0x0000010000000000) // can activate monster cross lines
+#define MF2_PCROSS            LONGLONG(0x0000020000000000) // can activate projectile cross lines
+#define MF2_CANTLEAVEFLOORPIC LONGLONG(0x0000040000000000) // stay within a certain floor type
+#define MF2_NONSHOOTABLE      LONGLONG(0x0000080000000000) // mobj is totally non-shootable, but still considered solid
+#define MF2_INVULNERABLE      LONGLONG(0x0000100000000000) // mobj is invulnerable
+#define MF2_DORMANT           LONGLONG(0x0000200000000000) // thing is dormant
+#define MF2_ICEDAMAGE         LONGLONG(0x0000400000000000) // does ice damage
+#define MF2_SEEKERMISSILE     LONGLONG(0x0000800000000000) // is a seeker (for reflection)
+#define MF2_REFLECTIVE        LONGLONG(0x0001000000000000) // reflects missiles
+
 #define AMMO_GWND_WIMPY 10
 #define AMMO_GWND_HEFTY 50
 #define AMMO_CBOW_WIMPY 5
@@ -506,9 +533,25 @@ int P_HitFloor(mobj_t * thing);
 int P_GetThingFloorType(mobj_t * thing);
 int P_FaceMobj(mobj_t * source, mobj_t * target, angle_t * delta);
 void P_BloodSplatter(fixed_t x, fixed_t y, fixed_t z, mobj_t * originator);
-void P_RipperBlood(mobj_t * mo);
+void P_RipperBlood(mobj_t * mo, mobj_t * bleeder);
 dboolean Heretic_P_SetMobjState(mobj_t * mobj, statenum_t state);
 void P_FloorBounceMissile(mobj_t * mo);
 void Heretic_P_SpawnPuff(fixed_t x, fixed_t y, fixed_t z);
+
+// hexen
+
+mobj_t *P_SpawnMissileXYZ(fixed_t x, fixed_t y, fixed_t z,
+                          mobj_t * source, mobj_t * dest, mobjtype_t type);
+mobj_t *P_SpawnMissileAngleSpeed(mobj_t * source, mobjtype_t type,
+                                 angle_t angle, fixed_t momz, fixed_t speed);
+mobj_t *P_SPMAngleXYZ(mobj_t * source, fixed_t x, fixed_t y,
+                      fixed_t z, mobjtype_t type, angle_t angle);
+mobj_t *P_SpawnKoraxMissile(fixed_t x, fixed_t y, fixed_t z,
+                            mobj_t * source, mobj_t * dest, mobjtype_t type);
+void P_CreateTIDList(void);
+void P_RemoveMobjFromTIDList(mobj_t * mobj);
+void P_InsertMobjIntoTIDList(mobj_t * mobj, int tid);
+mobj_t *P_FindMobjFromTID(int tid, int *searchPosition);
+void P_BloodSplatter2(fixed_t x, fixed_t y, fixed_t z, mobj_t * originator);
 
 #endif

@@ -57,4 +57,11 @@ void P_ChickenPlayerThink(player_t * player);
 dboolean P_UndoPlayerChicken(player_t * player);
 void Heretic_P_MovePlayer(player_t * player);
 
+// hexen
+
+void ResetBlasted(mobj_t * mo);
+void P_TeleportOther(mobj_t * victim);
+dboolean P_UndoPlayerMorph(player_t * player);
+void P_MorphPlayerThink(player_t * player);
+
 #endif  /* __P_USER__ */

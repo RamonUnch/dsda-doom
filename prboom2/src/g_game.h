@@ -86,7 +86,7 @@ int G_ValidateMapName(const char *mapname, int *pEpi, int *pMap);
 extern dboolean democontinue;
 extern char democontinuename[];
 void G_CheckDemoContinue(void);
-void G_SetSpeed(void);
+void G_SetSpeed(dboolean force);
 
 //e6y
 #define RDH_SAFE 0x00000001
@@ -139,5 +139,11 @@ extern dboolean done_autoswitch;
 
 #define singleplayer (!demorecording && !demoplayback && !democontinue && !netgame)
 #define comperr(i) (default_comperr[i] && !demorecording && !demoplayback && !democontinue && !netgame)
+
+// hexen
+
+void G_TeleportNewMap(int map, int position);
+void G_Completed(int map, int position);
+void G_StartNewInit(void);
 
 #endif

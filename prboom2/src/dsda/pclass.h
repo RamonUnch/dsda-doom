@@ -1,5 +1,5 @@
 //
-// Copyright(C) 2020 by Ryan Krafnick
+// Copyright(C) 2021 by Ryan Krafnick
 //
 // This program is free software; you can redistribute it and/or
 // modify it under the terms of the GNU General Public License
@@ -12,15 +12,32 @@
 // GNU General Public License for more details.
 //
 // DESCRIPTION:
-//	DSDA Mobj Extension
+//	DSDA Player Class
 //
 
-#ifndef __DSDA_MOBJ_EXTENSION__
-#define __DSDA_MOBJ_EXTENSION__
+#ifndef __DSDA_PCLASS__
+#define __DSDA_PCLASS__
 
-typedef struct dsda_mobj_extension_s {
-  dboolean player_damaged_barrel;
-  dboolean spawned_by_icon;
-} dsda_mobj_extension_t;
+#include "m_fixed.h"
+#include "doomdef.h"
+
+typedef struct dsda_pclass_s {
+  int armor_increment[NUMARMOR];
+  int auto_armor_save;
+  int armor_max;
+
+  fixed_t forwardmove[2];
+  fixed_t sidemove[2];
+  fixed_t stroller_threshold;
+  fixed_t turbo_threshold;
+
+  int normal_state;
+  int run_state;
+  int fire_weapon_state;
+  int attack_state;
+  int attack_end_state;
+} dsda_pclass_t;
+
+extern dsda_pclass_t pclass[NUMCLASSES];
 
 #endif

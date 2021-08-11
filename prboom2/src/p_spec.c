@@ -122,8 +122,8 @@ static const animdef_t heretic_animdefs[] = {
 
 // heretic
 #define	MAXLINEANIMS		64*256
-static short numlinespecials;
-static line_t *linespeciallist[MAXLINEANIMS];
+short numlinespecials;
+line_t *linespeciallist[MAXLINEANIMS];
 
 //e6y
 void MarkAnimatedTextures(void)
@@ -182,6 +182,12 @@ void P_InitPicAnims (void)
   const animdef_t *animdefs; //jff 3/23/98 pointer to animation lump
   int         lump = -1;
   //  Init animation
+
+  if (hexen)
+  {
+    MarkAnimatedTextures();//e6y
+    return;
+  }
 
   if (heretic)
   {
@@ -460,18 +466,20 @@ fixed_t P_FindNextHighestFloor(sector_t *sec, int currentheight)
         // 27: overflow affects return address - crash with high probability;
         if (compatibility_level < dosdoom_compatibility && h >= MAX_ADJOINING_SECTORS)
         {
-          lprintf(LO_WARN, "P_FindNextHighestFloor: Overflow of heightlist[%d] array is detected.\n", MAX_ADJOINING_SECTORS);
-          lprintf(LO_WARN, " Sector %d, line %d, heightlist index %d: ", sec->iSectorID, sec->lines[i]->iLineID, h);
-
           if (h == MAX_ADJOINING_SECTORS + 1)
             height = other->floorheight;
 
-          if (h <= MAX_ADJOINING_SECTORS + 1)
-            lprintf(LO_WARN, "successfully emulated.\n");
-          else if (h <= MAX_ADJOINING_SECTORS + 6)
-            lprintf(LO_WARN, "cannot be emulated - unpredictable behaviour.\n");
-          else
-            lprintf(LO_WARN, "cannot be emulated - crash with high probability.\n");
+          // 20 & 21 are common and not "warning" worthy
+          if (h > MAX_ADJOINING_SECTORS + 1)
+          {
+            lprintf(LO_WARN, "P_FindNextHighestFloor: Overflow of heightlist[%d] array is detected.\n", MAX_ADJOINING_SECTORS);
+            lprintf(LO_WARN, " Sector %d, line %d, heightlist index %d: ", sec->iSectorID, sec->lines[i]->iLineID, h);
+
+            if (h <= MAX_ADJOINING_SECTORS + 6)
+              lprintf(LO_WARN, "cannot be emulated - unpredictable behaviour.\n");
+            else
+              lprintf(LO_WARN, "cannot be emulated - crash with high probability.\n");
+          }
         }
         heightlist[h++] = other->floorheight;
       }
@@ -1115,7 +1123,7 @@ dboolean P_CanUnlockGenDoor
 dboolean PUREFUNC P_SectorActive(special_e t, const sector_t *sec)
 {
   if (demo_compatibility)  // return whether any thinker is active
-    return sec->floordata != NULL || sec->ceilingdata != NULL || sec->lightingdata != NULL;
+    return sec->floordata != NULL || sec->ceilingdata != NULL;
   else
     switch (t)             // return whether thinker of same type is active
     {
@@ -1124,7 +1132,7 @@ dboolean PUREFUNC P_SectorActive(special_e t, const sector_t *sec)
       case ceiling_special:
         return sec->ceilingdata != NULL;
       case lighting_special:
-        return sec->lightingdata != NULL;
+        return false;
     }
   return true; // don't know which special, must be active, shouldn't be here
 }
@@ -2187,6 +2195,12 @@ void P_ShootSpecialLine
 ( mobj_t*       thing,
   line_t*       line )
 {
+  if (hexen)
+  {
+    P_ActivateLine(line, thing, 0, SPAC_IMPACT);
+    return;
+  }
+
   //jff 02/04/98 add check here for generalized linedef
   if (!demo_compatibility)
   {
@@ -2366,11 +2380,16 @@ void P_ShootSpecialLine
 //
 // Changed to ignore sector types the engine does not recognize
 //
+
+static void Heretic_P_PlayerInSpecialSector(player_t * player);
+static void Hexen_P_PlayerInSpecialSector(player_t * player);
+
 void P_PlayerInSpecialSector (player_t* player)
 {
   sector_t*   sector;
 
   if (heretic) return Heretic_P_PlayerInSpecialSector(player);
+  if (hexen) return Hexen_P_PlayerInSpecialSector(player);
 
   sector = player->mo->subsector->sector;
 
@@ -2459,13 +2478,13 @@ void P_PlayerInSpecialSector (player_t* player)
           P_DamageMobj(player->mo, NULL, NULL, 10000);
           break;
         case 2:
-          for (i = 0; i < MAXPLAYERS; i++)
+          for (i = 0; i < g_maxplayers; i++)
             if (playeringame[i])
               P_DamageMobj(players[i].mo, NULL, NULL, 10000);
           G_ExitLevel();
           break;
         case 3:
-          for (i = 0; i < MAXPLAYERS; i++)
+          for (i = 0; i < g_maxplayers; i++)
             if (playeringame[i])
               P_DamageMobj(players[i].mo, NULL, NULL, 10000);
           G_SecretExitLevel();
@@ -2545,46 +2564,51 @@ void P_UpdateSpecials (void)
   anim_t*     anim;
   int         pic;
   int         i;
-  // Downcount level timer, exit level if elapsed
-  if (levelTimer == true)
-  {
-    levelTimeCount--;
-    if (!levelTimeCount)
-      G_ExitLevel();
-  }
 
-  // Check frag counters, if frag limit reached, exit level // Ty 03/18/98
-  //  Seems like the total frags should be kept in a simple
-  //  array somewhere, but until they are...
-  if (levelFragLimit == true)  // we used -frags so compare count
+  // hexen_note: possibly not needed?
+  if (!hexen)
   {
-    int k,m,fragcount,exitflag=false;
-    for (k=0;k<MAXPLAYERS;k++)
+    // Downcount level timer, exit level if elapsed
+    if (levelTimer == true)
     {
-      if (!playeringame[k]) continue;
-      fragcount = 0;
-      for (m=0;m<MAXPLAYERS;m++)
-      {
-        if (!playeringame[m]) continue;
-          fragcount += (m!=k)?  players[k].frags[m] : -players[k].frags[m];
-      }
-      if (fragcount >= levelFragLimitCount) exitflag = true;
-      if (exitflag == true) break; // skip out of the loop--we're done
+      levelTimeCount--;
+      if (!levelTimeCount)
+        G_ExitLevel();
     }
-    if (exitflag == true)
-      G_ExitLevel();
-  }
 
-  // Animate flats and textures globally
-  for (anim = anims ; anim < lastanim ; anim++)
-  {
-    for (i=anim->basepic ; i<anim->basepic+anim->numpics ; i++)
+    // Check frag counters, if frag limit reached, exit level // Ty 03/18/98
+    //  Seems like the total frags should be kept in a simple
+    //  array somewhere, but until they are...
+    if (levelFragLimit == true)  // we used -frags so compare count
     {
-      pic = anim->basepic + ( (leveltime/anim->speed + i)%anim->numpics );
-      if (anim->istexture)
-        texturetranslation[i] = pic;
-      else
-        flattranslation[i] = pic;
+      int k,m,fragcount,exitflag=false;
+      for (k = 0; k < g_maxplayers; k++)
+      {
+        if (!playeringame[k]) continue;
+        fragcount = 0;
+        for (m = 0; m < g_maxplayers; m++)
+        {
+          if (!playeringame[m]) continue;
+            fragcount += (m!=k)?  players[k].frags[m] : -players[k].frags[m];
+        }
+        if (fragcount >= levelFragLimitCount) exitflag = true;
+        if (exitflag == true) break; // skip out of the loop--we're done
+      }
+      if (exitflag == true)
+        G_ExitLevel();
+    }
+
+    // Animate flats and textures globally
+    for (anim = anims ; anim < lastanim ; anim++)
+    {
+      for (i=anim->basepic ; i<anim->basepic+anim->numpics ; i++)
+      {
+        pic = anim->basepic + ( (leveltime/anim->speed + i)%anim->numpics );
+        if (anim->istexture)
+          texturetranslation[i] = pic;
+        else
+          flattranslation[i] = pic;
+      }
     }
   }
 
@@ -2632,6 +2656,7 @@ void P_UpdateSpecials (void)
               buttonlist[i].btexture;
             break;
         }
+        if (!hexen)
         {
           /* don't take the address of the switch's sound origin,
            * unless in a compatibility mode. */
@@ -2659,11 +2684,15 @@ void P_UpdateSpecials (void)
 //  scan for specials that spawn thinkers
 //
 
+static void Hexen_P_SpawnSpecials(void);
+
 // Parses command line parameters.
 void P_SpawnSpecials (void)
 {
   sector_t*   sector;
   int         i;
+
+  if (hexen) return Hexen_P_SpawnSpecials();
 
   // See if -timer needs to be used.
   levelTimer = false;
@@ -3814,17 +3843,26 @@ struct
 {
     const char *name;
     int type;
-} TerrainTypeDefs[] =
+} TerrainTypeDefs[2][6] =
 {
+  {
     { "FLTWAWA1", FLOOR_WATER },
     { "FLTFLWW1", FLOOR_WATER },
     { "FLTLAVA1", FLOOR_LAVA },
     { "FLATHUH1", FLOOR_LAVA },
     { "FLTSLUD1", FLOOR_SLUDGE },
     { "END", -1 }
+  },
+  {
+    { "X_005", FLOOR_WATER },
+    { "X_001", FLOOR_LAVA },
+    { "X_009", FLOOR_SLUDGE },
+    { "F_033", FLOOR_ICE },
+    { "END", -1 }
+  }
 };
 
-static mobj_t LavaInflictor;
+mobj_t LavaInflictor;
 
 void P_AddAmbientSfx(int sequence)
 {
@@ -3908,10 +3946,10 @@ void P_AmbientSound(void)
 
 void P_InitLava(void)
 {
-    if (!heretic) return;
+    if (!raven) return;
 
     memset(&LavaInflictor, 0, sizeof(mobj_t));
-    LavaInflictor.type = HERETIC_MT_PHOENIXFX2;
+    LavaInflictor.type = g_lava_type;
     LavaInflictor.flags2 = MF2_FIREDAMAGE | MF2_NODMGTHRUST;
 }
 
@@ -3921,17 +3959,17 @@ void P_InitTerrainTypes(void)
     int lump;
     int size;
 
-    if (!heretic) return;
+    if (!raven) return;
 
     size = (numflats + 1) * sizeof(int);
     TerrainTypes = Z_Malloc(size, PU_STATIC, 0);
     memset(TerrainTypes, 0, size);
-    for (i = 0; TerrainTypeDefs[i].type != -1; i++)
+    for (i = 0; TerrainTypeDefs[hexen][i].type != -1; i++)
     {
-        lump = (W_CheckNumForName)(TerrainTypeDefs[i].name, ns_flats);
+        lump = (W_CheckNumForName)(TerrainTypeDefs[hexen][i].name, ns_flats);
         if (lump != -1)
         {
-            TerrainTypes[lump - firstflat] = TerrainTypeDefs[i].type;
+            TerrainTypes[lump - firstflat] = TerrainTypeDefs[hexen][i].type;
         }
     }
 }
@@ -4177,7 +4215,7 @@ void Heretic_P_CrossSpecialLine(line_t * line, int side, mobj_t * thing)
 
 #include "p_user.h"
 
-void Heretic_P_PlayerInSpecialSector(player_t * player)
+static void Heretic_P_PlayerInSpecialSector(player_t * player)
 {
     sector_t *sector;
     static int pushTab[5] = {
@@ -4313,4 +4351,702 @@ void P_SpawnLineSpecials(void)
                 numlinespecials++;
                 break;
         }
+}
+
+// hexen
+
+#define MAX_TAGGED_LINES 64
+
+static struct
+{
+    line_t *line;
+    int lineTag;
+} TaggedLines[MAX_TAGGED_LINES];
+static int TaggedLineCount;
+
+void P_PlayerOnSpecialFlat(player_t * player, int floorType)
+{
+    if (player->mo->z != player->mo->floorz)
+    {                           // Player is not touching the floor
+        return;
+    }
+    switch (floorType)
+    {
+        case FLOOR_LAVA:
+            if (!(leveltime & 31))
+            {
+                P_DamageMobj(player->mo, &LavaInflictor, NULL, 10);
+                S_StartSound(player->mo, hexen_sfx_lava_sizzle);
+            }
+            break;
+        default:
+            break;
+    }
+}
+
+line_t *P_FindLine(int lineTag, int *searchPosition)
+{
+    int i;
+
+    for (i = *searchPosition + 1; i < TaggedLineCount; i++)
+    {
+        if (TaggedLines[i].lineTag == lineTag)
+        {
+            *searchPosition = i;
+            return TaggedLines[i].line;
+        }
+    }
+    *searchPosition = -1;
+    return NULL;
+}
+
+int P_FindSectorFromTag(int tag, int start)
+{
+    int i;
+
+    for (i = start + 1; i < numsectors; i++)
+    {
+        if (sectors[i].tag == tag)
+        {
+            return i;
+        }
+    }
+    return -1;
+}
+
+dboolean EV_SectorSoundChange(byte * args)
+{
+    int secNum;
+    dboolean rtn;
+
+    if (!args[0])
+    {
+        return false;
+    }
+    secNum = -1;
+    rtn = false;
+    while ((secNum = P_FindSectorFromTag(args[0], secNum)) >= 0)
+    {
+        sectors[secNum].seqType = args[1];
+        rtn = true;
+    }
+    return rtn;
+}
+
+char LockedBuffer[80];
+
+static dboolean CheckedLockedDoor(mobj_t * mo, byte lock)
+{
+    extern char *TextKeyMessages[11];
+
+    if (!mo->player)
+    {
+        return false;
+    }
+    if (!lock)
+    {
+        return true;
+    }
+    if (!mo->player->cards[lock - 1])
+    {
+        doom_snprintf(LockedBuffer, sizeof(LockedBuffer),
+                   "YOU NEED THE %s\n", TextKeyMessages[lock - 1]);
+        P_SetMessage(mo->player, LockedBuffer, true);
+        S_StartSound(mo, hexen_sfx_door_locked);
+        return false;
+    }
+    return true;
+}
+
+dboolean EV_LineSearchForPuzzleItem(line_t * line, byte * args, mobj_t * mo)
+{
+    player_t *player;
+    int i;
+    int type;
+    artitype_t arti;
+
+    if (!mo)
+        return false;
+    player = mo->player;
+    if (!player)
+        return false;
+
+    // Search player's inventory for puzzle items
+    for (i = 0; i < player->artifactCount; i++)
+    {
+        arti = player->inventory[i].type;
+        type = arti - hexen_arti_firstpuzzitem;
+        if (type < 0)
+            continue;
+        if (type == line->arg1)
+        {
+            // A puzzle item was found for the line
+            if (P_UseArtifact(player, arti))
+            {
+                // A puzzle item was found for the line
+                P_PlayerRemoveArtifact(player, i);
+                if (player == &players[consoleplayer])
+                {
+                    if (arti < hexen_arti_firstpuzzitem)
+                    {
+                        S_StartSound(NULL, hexen_sfx_artifact_use);
+                    }
+                    else
+                    {
+                        S_StartSound(NULL, hexen_sfx_puzzle_success);
+                    }
+                    ArtifactFlash = 4;
+                }
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+dboolean P_ActivateLine(line_t * line, mobj_t * mo, int side,
+                       int activationType)
+{
+    byte args[5];
+    int lineActivation;
+    dboolean repeat;
+    dboolean buttonSuccess;
+
+    lineActivation = GET_SPAC(line->flags);
+    if (lineActivation != activationType)
+    {
+        return false;
+    }
+    if (!mo->player && !(mo->flags & MF_MISSILE))
+    {
+        if (lineActivation != SPAC_MCROSS)
+        {                       // currently, monsters can only activate the MCROSS activation type
+            return false;
+        }
+        if (line->flags & ML_SECRET)
+            return false;       // never open secret doors
+    }
+    repeat = (line->flags & ML_REPEAT_SPECIAL) != 0;
+
+    // Construct args[] array to contain the arguments from the line, as we
+    // cannot rely on struct field ordering and layout.
+    args[0] = line->arg1;
+    args[1] = line->arg2;
+    args[2] = line->arg3;
+    args[3] = line->arg4;
+    args[4] = line->arg5;
+    buttonSuccess = P_ExecuteLineSpecial(line->special, args, line, side, mo);
+    if (!repeat && buttonSuccess)
+    {                           // clear the special on non-retriggerable lines
+        line->special = 0;
+    }
+    if ((lineActivation == SPAC_USE || lineActivation == SPAC_IMPACT)
+        && buttonSuccess)
+    {
+        P_ChangeSwitchTexture(line, repeat);
+    }
+    return true;
+}
+
+static void Hexen_P_PlayerInSpecialSector(player_t * player)
+{
+    sector_t *sector;
+    static int pushTab[3] = {
+        2048 * 5,
+        2048 * 10,
+        2048 * 25
+    };
+
+    sector = player->mo->subsector->sector;
+    if (player->mo->z != sector->floorheight)
+    {                           // Player is not touching the floor
+        return;
+    }
+    switch (sector->special)
+    {
+        case 9:                // SecretArea
+            player->secretcount++;
+            sector->special = 0;
+            break;
+
+        case 201:
+        case 202:
+        case 203:              // Scroll_North_xxx
+            P_Thrust(player, ANG90, pushTab[sector->special - 201]);
+            break;
+        case 204:
+        case 205:
+        case 206:              // Scroll_East_xxx
+            P_Thrust(player, 0, pushTab[sector->special - 204]);
+            break;
+        case 207:
+        case 208:
+        case 209:              // Scroll_South_xxx
+            P_Thrust(player, ANG270, pushTab[sector->special - 207]);
+            break;
+        case 210:
+        case 211:
+        case 212:              // Scroll_West_xxx
+            P_Thrust(player, ANG180, pushTab[sector->special - 210]);
+            break;
+        case 213:
+        case 214:
+        case 215:              // Scroll_NorthWest_xxx
+            P_Thrust(player, ANG90 + ANG45, pushTab[sector->special - 213]);
+            break;
+        case 216:
+        case 217:
+        case 218:              // Scroll_NorthEast_xxx
+            P_Thrust(player, ANG45, pushTab[sector->special - 216]);
+            break;
+        case 219:
+        case 220:
+        case 221:              // Scroll_SouthEast_xxx
+            P_Thrust(player, ANG270 + ANG45, pushTab[sector->special - 219]);
+            break;
+        case 222:
+        case 223:
+        case 224:              // Scroll_SouthWest_xxx
+            P_Thrust(player, ANG180 + ANG45, pushTab[sector->special - 222]);
+            break;
+
+        case 40:
+        case 41:
+        case 42:
+        case 43:
+        case 44:
+        case 45:
+        case 46:
+        case 47:
+        case 48:
+        case 49:
+        case 50:
+        case 51:
+            // Wind specials are handled in (P_mobj):P_XYMovement
+            break;
+
+        case 26:               // Stairs_Special1
+        case 27:               // Stairs_Special2
+            // Used in (P_floor):ProcessStairSector
+            break;
+
+        case 198:              // Lightning Special
+        case 199:              // Lightning Flash special
+        case 200:              // Sky2
+            // Used in (R_plane):R_Drawplanes
+            break;
+        default:
+            I_Error("P_PlayerInSpecialSector: "
+                    "unknown special %i", sector->special);
+    }
+}
+
+#include "hexen/a_action.h"
+#include "hexen/p_anim.h"
+#include "hexen/p_things.h"
+#include "hexen/p_acs.h"
+#include "hexen/po_man.h"
+
+dboolean P_ExecuteLineSpecial(int special, byte * args, line_t * line,
+                             int side, mobj_t * mo)
+{
+    dboolean buttonSuccess;
+
+    buttonSuccess = false;
+    switch (special)
+    {
+        case 1:                // Poly Start Line
+            break;
+        case 2:                // Poly Rotate Left
+            buttonSuccess = EV_RotatePoly(line, args, 1, false);
+            break;
+        case 3:                // Poly Rotate Right
+            buttonSuccess = EV_RotatePoly(line, args, -1, false);
+            break;
+        case 4:                // Poly Move
+            buttonSuccess = EV_MovePoly(line, args, false, false);
+            break;
+        case 5:                // Poly Explicit Line:  Only used in initialization
+            break;
+        case 6:                // Poly Move Times 8
+            buttonSuccess = EV_MovePoly(line, args, true, false);
+            break;
+        case 7:                // Poly Door Swing
+            buttonSuccess = EV_OpenPolyDoor(line, args, PODOOR_SWING);
+            break;
+        case 8:                // Poly Door Slide
+            buttonSuccess = EV_OpenPolyDoor(line, args, PODOOR_SLIDE);
+            break;
+        case 10:               // Door Close
+            buttonSuccess = Hexen_EV_DoDoor(line, args, DREV_CLOSE);
+            break;
+        case 11:               // Door Open
+            if (!args[0])
+            {
+                buttonSuccess = Hexen_EV_VerticalDoor(line, mo);
+            }
+            else
+            {
+                buttonSuccess = Hexen_EV_DoDoor(line, args, DREV_OPEN);
+            }
+            break;
+        case 12:               // Door Raise
+            if (!args[0])
+            {
+                buttonSuccess = Hexen_EV_VerticalDoor(line, mo);
+            }
+            else
+            {
+                buttonSuccess = Hexen_EV_DoDoor(line, args, DREV_NORMAL);
+            }
+            break;
+        case 13:               // Door Locked_Raise
+            if (CheckedLockedDoor(mo, args[3]))
+            {
+                if (!args[0])
+                {
+                    buttonSuccess = Hexen_EV_VerticalDoor(line, mo);
+                }
+                else
+                {
+                    buttonSuccess = Hexen_EV_DoDoor(line, args, DREV_NORMAL);
+                }
+            }
+            break;
+        case 20:               // Floor Lower by Value
+            buttonSuccess = Hexen_EV_DoFloor(line, args, FLEV_LOWERFLOORBYVALUE);
+            break;
+        case 21:               // Floor Lower to Lowest
+            buttonSuccess = Hexen_EV_DoFloor(line, args, FLEV_LOWERFLOORTOLOWEST);
+            break;
+        case 22:               // Floor Lower to Nearest
+            buttonSuccess = Hexen_EV_DoFloor(line, args, FLEV_LOWERFLOOR);
+            break;
+        case 23:               // Floor Raise by Value
+            buttonSuccess = Hexen_EV_DoFloor(line, args, FLEV_RAISEFLOORBYVALUE);
+            break;
+        case 24:               // Floor Raise to Highest
+            buttonSuccess = Hexen_EV_DoFloor(line, args, FLEV_RAISEFLOOR);
+            break;
+        case 25:               // Floor Raise to Nearest
+            buttonSuccess = Hexen_EV_DoFloor(line, args, FLEV_RAISEFLOORTONEAREST);
+            break;
+        case 26:               // Stairs Build Down Normal
+            buttonSuccess = Hexen_EV_BuildStairs(line, args, -1, STAIRS_NORMAL);
+            break;
+        case 27:               // Build Stairs Up Normal
+            buttonSuccess = Hexen_EV_BuildStairs(line, args, 1, STAIRS_NORMAL);
+            break;
+        case 28:               // Floor Raise and Crush
+            buttonSuccess = Hexen_EV_DoFloor(line, args, FLEV_RAISEFLOORCRUSH);
+            break;
+        case 29:               // Build Pillar (no crushing)
+            buttonSuccess = EV_BuildPillar(line, args, false);
+            break;
+        case 30:               // Open Pillar
+            buttonSuccess = EV_OpenPillar(line, args);
+            break;
+        case 31:               // Stairs Build Down Sync
+            buttonSuccess = Hexen_EV_BuildStairs(line, args, -1, STAIRS_SYNC);
+            break;
+        case 32:               // Build Stairs Up Sync
+            buttonSuccess = Hexen_EV_BuildStairs(line, args, 1, STAIRS_SYNC);
+            break;
+        case 35:               // Raise Floor by Value Times 8
+            buttonSuccess = Hexen_EV_DoFloor(line, args, FLEV_RAISEBYVALUETIMES8);
+            break;
+        case 36:               // Lower Floor by Value Times 8
+            buttonSuccess = Hexen_EV_DoFloor(line, args, FLEV_LOWERBYVALUETIMES8);
+            break;
+        case 40:               // Ceiling Lower by Value
+            buttonSuccess = Hexen_EV_DoCeiling(line, args, CLEV_LOWERBYVALUE);
+            break;
+        case 41:               // Ceiling Raise by Value
+            buttonSuccess = Hexen_EV_DoCeiling(line, args, CLEV_RAISEBYVALUE);
+            break;
+        case 42:               // Ceiling Crush and Raise
+            buttonSuccess = Hexen_EV_DoCeiling(line, args, CLEV_CRUSHANDRAISE);
+            break;
+        case 43:               // Ceiling Lower and Crush
+            buttonSuccess = Hexen_EV_DoCeiling(line, args, CLEV_LOWERANDCRUSH);
+            break;
+        case 44:               // Ceiling Crush Stop
+            buttonSuccess = Hexen_EV_CeilingCrushStop(line, args);
+            break;
+        case 45:               // Ceiling Crush Raise and Stay
+            buttonSuccess = Hexen_EV_DoCeiling(line, args, CLEV_CRUSHRAISEANDSTAY);
+            break;
+        case 46:               // Floor Crush Stop
+            buttonSuccess = EV_FloorCrushStop(line, args);
+            break;
+        case 60:               // Plat Perpetual Raise
+            buttonSuccess = Hexen_EV_DoPlat(line, args, PLAT_PERPETUALRAISE, 0);
+            break;
+        case 61:               // Plat Stop
+            Hexen_EV_StopPlat(line, args);
+            break;
+        case 62:               // Plat Down-Wait-Up-Stay
+            buttonSuccess = Hexen_EV_DoPlat(line, args, PLAT_DOWNWAITUPSTAY, 0);
+            break;
+        case 63:               // Plat Down-by-Value*8-Wait-Up-Stay
+            buttonSuccess = Hexen_EV_DoPlat(line, args, PLAT_DOWNBYVALUEWAITUPSTAY,
+                                      0);
+            break;
+        case 64:               // Plat Up-Wait-Down-Stay
+            buttonSuccess = Hexen_EV_DoPlat(line, args, PLAT_UPWAITDOWNSTAY, 0);
+            break;
+        case 65:               // Plat Up-by-Value*8-Wait-Down-Stay
+            buttonSuccess = Hexen_EV_DoPlat(line, args, PLAT_UPBYVALUEWAITDOWNSTAY,
+                                      0);
+            break;
+        case 66:               // Floor Lower Instant * 8
+            buttonSuccess = Hexen_EV_DoFloor(line, args, FLEV_LOWERTIMES8INSTANT);
+            break;
+        case 67:               // Floor Raise Instant * 8
+            buttonSuccess = Hexen_EV_DoFloor(line, args, FLEV_RAISETIMES8INSTANT);
+            break;
+        case 68:               // Floor Move to Value * 8
+            buttonSuccess = Hexen_EV_DoFloor(line, args, FLEV_MOVETOVALUETIMES8);
+            break;
+        case 69:               // Ceiling Move to Value * 8
+            buttonSuccess = Hexen_EV_DoCeiling(line, args, CLEV_MOVETOVALUETIMES8);
+            break;
+        case 70:               // Teleport
+            if (side == 0)
+            {                   // Only teleport when crossing the front side of a line
+                buttonSuccess = Hexen_EV_Teleport(args[0], mo, true);
+            }
+            break;
+        case 71:               // Teleport, no fog
+            if (side == 0)
+            {                   // Only teleport when crossing the front side of a line
+                buttonSuccess = Hexen_EV_Teleport(args[0], mo, false);
+            }
+            break;
+        case 72:               // Thrust Mobj
+            if (!side)          // Only thrust on side 0
+            {
+                P_ThrustMobj(mo, args[0] * (ANG90 / 64),
+                             args[1] << FRACBITS);
+                buttonSuccess = 1;
+            }
+            break;
+        case 73:               // Damage Mobj
+            if (args[0])
+            {
+                P_DamageMobj(mo, NULL, NULL, args[0]);
+            }
+            else
+            {                   // If arg1 is zero, then guarantee a kill
+                P_DamageMobj(mo, NULL, NULL, 10000);
+            }
+            buttonSuccess = 1;
+            break;
+        case 74:               // Teleport_NewMap
+            if (side == 0)
+            {                   // Only teleport when crossing the front side of a line
+                if (!(mo && mo->player && mo->player->playerstate == PST_DEAD)) // Players must be alive to teleport
+                {
+                    G_Completed(args[0], args[1]);
+                    buttonSuccess = true;
+                }
+            }
+            break;
+        case 75:               // Teleport_EndGame
+            if (side == 0)
+            {                   // Only teleport when crossing the front side of a line
+                if (!(mo && mo->player && mo->player->playerstate == PST_DEAD)) // Players must be alive to teleport
+                {
+                    buttonSuccess = true;
+                    if (deathmatch)
+                    {           // Winning in deathmatch just goes back to map 1
+                        G_Completed(1, 0);
+                    }
+                    else
+                    {           // Passing -1, -1 to G_Completed() starts the Finale
+                        G_Completed(-1, -1);
+                    }
+                }
+            }
+            break;
+        case 80:               // ACS_Execute
+            buttonSuccess =
+                P_StartACS(args[0], args[1], &args[2], mo, line, side);
+            break;
+        case 81:               // ACS_Suspend
+            buttonSuccess = P_SuspendACS(args[0], args[1]);
+            break;
+        case 82:               // ACS_Terminate
+            buttonSuccess = P_TerminateACS(args[0], args[1]);
+            break;
+        case 83:               // ACS_LockedExecute
+            buttonSuccess = P_StartLockedACS(line, args, mo, side);
+            break;
+        case 90:               // Poly Rotate Left Override
+            buttonSuccess = EV_RotatePoly(line, args, 1, true);
+            break;
+        case 91:               // Poly Rotate Right Override
+            buttonSuccess = EV_RotatePoly(line, args, -1, true);
+            break;
+        case 92:               // Poly Move Override
+            buttonSuccess = EV_MovePoly(line, args, false, true);
+            break;
+        case 93:               // Poly Move Times 8 Override
+            buttonSuccess = EV_MovePoly(line, args, true, true);
+            break;
+        case 94:               // Build Pillar Crush
+            buttonSuccess = EV_BuildPillar(line, args, true);
+            break;
+        case 95:               // Lower Floor and Ceiling
+            buttonSuccess = EV_DoFloorAndCeiling(line, args, false);
+            break;
+        case 96:               // Raise Floor and Ceiling
+            buttonSuccess = EV_DoFloorAndCeiling(line, args, true);
+            break;
+        case 109:              // Force Lightning
+            buttonSuccess = true;
+            P_ForceLightning();
+            break;
+        case 110:              // Light Raise by Value
+            buttonSuccess = EV_SpawnLight(line, args, LITE_RAISEBYVALUE);
+            break;
+        case 111:              // Light Lower by Value
+            buttonSuccess = EV_SpawnLight(line, args, LITE_LOWERBYVALUE);
+            break;
+        case 112:              // Light Change to Value
+            buttonSuccess = EV_SpawnLight(line, args, LITE_CHANGETOVALUE);
+            break;
+        case 113:              // Light Fade
+            buttonSuccess = EV_SpawnLight(line, args, LITE_FADE);
+            break;
+        case 114:              // Light Glow
+            buttonSuccess = EV_SpawnLight(line, args, LITE_GLOW);
+            break;
+        case 115:              // Light Flicker
+            buttonSuccess = EV_SpawnLight(line, args, LITE_FLICKER);
+            break;
+        case 116:              // Light Strobe
+            buttonSuccess = EV_SpawnLight(line, args, LITE_STROBE);
+            break;
+        case 120:              // Quake Tremor
+            buttonSuccess = A_LocalQuake(args, mo);
+            break;
+        case 129:              // UsePuzzleItem
+            buttonSuccess = EV_LineSearchForPuzzleItem(line, args, mo);
+            break;
+        case 130:              // Thing_Activate
+            buttonSuccess = EV_ThingActivate(args[0]);
+            break;
+        case 131:              // Thing_Deactivate
+            buttonSuccess = EV_ThingDeactivate(args[0]);
+            break;
+        case 132:              // Thing_Remove
+            buttonSuccess = EV_ThingRemove(args[0]);
+            break;
+        case 133:              // Thing_Destroy
+            buttonSuccess = EV_ThingDestroy(args[0]);
+            break;
+        case 134:              // Thing_Projectile
+            buttonSuccess = EV_ThingProjectile(args, 0);
+            break;
+        case 135:              // Thing_Spawn
+            buttonSuccess = EV_ThingSpawn(args, 1);
+            break;
+        case 136:              // Thing_ProjectileGravity
+            buttonSuccess = EV_ThingProjectile(args, 1);
+            break;
+        case 137:              // Thing_SpawnNoFog
+            buttonSuccess = EV_ThingSpawn(args, 0);
+            break;
+        case 138:              // Floor_Waggle
+            buttonSuccess = EV_StartFloorWaggle(args[0], args[1],
+                                                args[2], args[3], args[4]);
+            break;
+        case 140:              // Sector_SoundChange
+            buttonSuccess = EV_SectorSoundChange(args);
+            break;
+
+            // Line specials only processed during level initialization
+            // 100: Scroll_Texture_Left
+            // 101: Scroll_Texture_Right
+            // 102: Scroll_Texture_Up
+            // 103: Scroll_Texture_Down
+            // 121: Line_SetIdentification
+
+            // Inert Line specials
+        default:
+            break;
+    }
+    return buttonSuccess;
+}
+
+static void Hexen_P_SpawnSpecials(void)
+{
+    sector_t *sector;
+    int i;
+
+    //
+    //      Init special SECTORs
+    //
+    sector = sectors;
+    for (i = 0; i < numsectors; i++, sector++)
+    {
+        if (!sector->special)
+            continue;
+        switch (sector->special)
+        {
+            case 1:            // Phased light
+                // Hardcoded base, use sector->lightlevel as the index
+                P_SpawnPhasedLight(sector, 80, -1);
+                break;
+            case 2:            // Phased light sequence start
+                P_SpawnLightSequence(sector, 1);
+                break;
+                // Specials 3 & 4 are used by the phased light sequences
+        }
+    }
+
+
+    //
+    //      Init line EFFECTs
+    //
+    numlinespecials = 0;
+    TaggedLineCount = 0;
+    for (i = 0; i < numlines; i++)
+    {
+        switch (lines[i].special)
+        {
+            case 100:          // Scroll_Texture_Left
+            case 101:          // Scroll_Texture_Right
+            case 102:          // Scroll_Texture_Up
+            case 103:          // Scroll_Texture_Down
+                linespeciallist[numlinespecials] = &lines[i];
+                numlinespecials++;
+                break;
+            case 121:          // Line_SetIdentification
+                if (lines[i].arg1)
+                {
+                    if (TaggedLineCount == MAX_TAGGED_LINES)
+                    {
+                        I_Error("P_SpawnSpecials: MAX_TAGGED_LINES "
+                                "(%d) exceeded.", MAX_TAGGED_LINES);
+                    }
+                    TaggedLines[TaggedLineCount].line = &lines[i];
+                    TaggedLines[TaggedLineCount++].lineTag = lines[i].arg1;
+                }
+                lines[i].special = 0;
+                break;
+        }
+    }
+
+    //
+    //      Init other misc stuff
+    //
+    P_RemoveAllActiveCeilings();
+    P_RemoveAllActivePlats();
+    for (i = 0; i < MAXBUTTONS; i++)
+        memset(&buttonlist[i], 0, sizeof(button_t));
+
+    // Initialize flat and texture animations
+    P_InitFTAnims();
 }

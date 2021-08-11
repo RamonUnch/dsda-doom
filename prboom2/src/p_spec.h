@@ -62,8 +62,7 @@
 // p_switch
 
 // 4 players, 4 buttons each at once, max.
-// killough 2/14/98: redefine in terms of MAXPLAYERS
-#define MAXBUTTONS    (MAXPLAYERS*4)
+#define MAXBUTTONS  16
 
 // 1 second, in ticks.
 #define BUTTONTIME  TICRATE
@@ -389,6 +388,12 @@ typedef enum
   genPerpetual,
   toggleUpDn,   //jff 3/14/98 added to support instant toggle type
 
+  // hexen - can probably be merged
+  PLAT_PERPETUALRAISE,
+  PLAT_DOWNWAITUPSTAY,
+  PLAT_DOWNBYVALUEWAITUPSTAY,
+  PLAT_UPWAITDOWNSTAY,
+  PLAT_UPBYVALUEWAITDOWNSTAY,
 } plattype_e;
 
 // p_doors
@@ -420,7 +425,14 @@ typedef enum
   vld_close30ThenOpen,
   vld_close,
   vld_open,
-  vld_raiseIn5Mins
+  vld_raiseIn5Mins,
+
+  // hexen - can probably be merged
+  DREV_NORMAL,
+  DREV_CLOSE30THENOPEN,
+  DREV_CLOSE,
+  DREV_OPEN,
+  DREV_RAISEIN5MINS,
 } vldoor_e;
 
 // p_ceilng
@@ -446,6 +458,15 @@ typedef enum
   genCrusher,
   genSilentCrusher,
 
+  // hexen - can probably be merged
+  CLEV_LOWERTOFLOOR,
+  CLEV_RAISETOHIGHEST,
+  CLEV_LOWERANDCRUSH,
+  CLEV_CRUSHANDRAISE,
+  CLEV_LOWERBYVALUE,
+  CLEV_RAISEBYVALUE,
+  CLEV_CRUSHRAISEANDSTAY,
+  CLEV_MOVETOVALUETIMES8,
 } ceiling_e;
 
 // p_floor
@@ -505,6 +526,21 @@ typedef enum
   //new types for stair builders
   buildStair,
   genBuildStair,
+
+  // hexen - can probably be merged
+  FLEV_LOWERFLOOR,            // lower floor to highest surrounding floor
+  FLEV_LOWERFLOORTOLOWEST,    // lower floor to lowest surrounding floor
+  FLEV_LOWERFLOORBYVALUE,
+  FLEV_RAISEFLOOR,            // raise floor to lowest surrounding CEILING
+  FLEV_RAISEFLOORTONEAREST,   // raise floor to next highest surrounding floor
+  FLEV_RAISEFLOORBYVALUE,
+  FLEV_RAISEFLOORCRUSH,
+  FLEV_RAISEBUILDSTEP,        // One step of a staircase
+  FLEV_RAISEBYVALUETIMES8,
+  FLEV_LOWERBYVALUETIMES8,
+  FLEV_LOWERTIMES8INSTANT,
+  FLEV_RAISETIMES8INSTANT,
+  FLEV_MOVETOVALUETIMES8,
 } floor_e;
 
 typedef enum
@@ -641,7 +677,7 @@ typedef struct
   int count;
   plat_e status;
   plat_e oldstatus;
-  dboolean crush;
+  int crush;
   int tag;
   plattype_e type;
 
@@ -692,7 +728,7 @@ typedef struct
   fixed_t topheight;
   fixed_t speed;
   fixed_t oldspeed;
-  dboolean crush;
+  int crush;
 
   //jff 02/04/98 add these to support ceiling changers
   int newspecial;
@@ -719,7 +755,7 @@ typedef struct
 {
   thinker_t thinker;
   floor_e type;
-  dboolean crush;
+  int crush;
   sector_t* sector;
   int direction;
   int newspecial;
@@ -728,6 +764,15 @@ typedef struct
   fixed_t floordestheight;
   fixed_t speed;
 
+  // hexen
+  int delayCount;
+  int delayTotal;
+  fixed_t stairsDelayHeight;
+  fixed_t stairsDelayHeightDelta;
+  fixed_t resetHeight;
+  short resetDelay;
+  short resetDelayCount;
+  byte textureChange;
 } floormove_t;
 
 typedef struct
@@ -1186,7 +1231,6 @@ mobj_t* P_GetPushThing(int);                                // phares 3/23/98
 void P_InitTerrainTypes(void);
 void P_InitLava(void);
 void Heretic_P_CrossSpecialLine(line_t * line, int side, mobj_t * thing);
-void Heretic_P_PlayerInSpecialSector(player_t * player);
 void P_SpawnLineSpecials(void);
 
 extern int *TerrainTypes;
@@ -1194,9 +1238,126 @@ extern int *TerrainTypes;
 void P_InitAmbientSound(void);
 void P_AmbientSound(void);
 void P_AddAmbientSfx(int sequence);
-dboolean P_Teleport(mobj_t * thing, fixed_t x, fixed_t y, angle_t angle);
+dboolean P_Teleport(mobj_t * thing, fixed_t x, fixed_t y, angle_t angle, dboolean useFog);
 dboolean Heretic_EV_Teleport(line_t * line, int side, mobj_t * thing);
 dboolean Heretic_P_UseSpecialLine(mobj_t * thing, line_t * line, int side, dboolean bossaction);
 void Heretic_EV_VerticalDoor(line_t * line, mobj_t * thing);
+
+// hexen
+
+// p_lights
+
+typedef enum
+{
+    LITE_RAISEBYVALUE,
+    LITE_LOWERBYVALUE,
+    LITE_CHANGETOVALUE,
+    LITE_FADE,
+    LITE_GLOW,
+    LITE_FLICKER,
+    LITE_STROBE
+} lighttype_t;
+
+typedef struct
+{
+    thinker_t thinker;
+    sector_t *sector;
+    lighttype_t type;
+    int value1;
+    int value2;
+    int tics1;
+    int tics2;
+    int count;
+} light_t;
+
+typedef struct
+{
+    thinker_t thinker;
+    sector_t *sector;
+    int index;
+    int base;
+} phase_t;
+
+#define LIGHT_SEQUENCE_START    2
+#define LIGHT_SEQUENCE          3
+#define LIGHT_SEQUENCE_ALT      4
+
+void T_Phase(phase_t * phase);
+void T_Light(light_t * light);
+void P_SpawnPhasedLight(sector_t * sector, int base, int index);
+void P_SpawnLightSequence(sector_t * sector, int indexStep);
+dboolean EV_SpawnLight(line_t * line, byte * arg, lighttype_t type);
+
+// p_ceilng
+
+int Hexen_EV_CeilingCrushStop(line_t * line, byte * args);
+int Hexen_EV_DoCeiling(line_t * line, byte * arg, ceiling_e type);
+
+// p_telept
+
+dboolean Hexen_EV_Teleport(int tid, mobj_t * thing, dboolean fog);
+
+// p_doors
+
+int Hexen_EV_DoDoor(line_t * line, byte * args, vldoor_e type);
+dboolean Hexen_EV_VerticalDoor(line_t * line, mobj_t * thing);
+
+// p_floor
+
+typedef struct
+{
+  thinker_t thinker;
+  sector_t *sector;
+  int ceilingSpeed;
+  int floorSpeed;
+  int floordest;
+  int ceilingdest;
+  int direction;
+  int crush;
+} pillar_t;
+
+typedef struct
+{
+  thinker_t thinker;
+  sector_t *sector;
+  fixed_t originalHeight;
+  fixed_t accumulator;
+  fixed_t accDelta;
+  fixed_t targetScale;
+  fixed_t scale;
+  fixed_t scaleDelta;
+  int ticker;
+  int state;
+} floorWaggle_t;
+
+typedef enum
+{
+  STAIRS_NORMAL,
+  STAIRS_SYNC,
+  STAIRS_PHASED
+} stairs_e;
+
+int Hexen_EV_DoFloor(line_t * line, byte * args, floor_e floortype);
+int EV_DoFloorAndCeiling(line_t * line, byte * args, dboolean raise);
+int Hexen_EV_BuildStairs(line_t * line, byte * args, int direction, stairs_e stairsType);
+void T_BuildPillar(pillar_t * pillar);
+int EV_BuildPillar(line_t * line, byte * args, dboolean crush);
+int EV_OpenPillar(line_t * line, byte * args);
+int EV_FloorCrushStop(line_t * line, byte * args);
+void T_FloorWaggle(floorWaggle_t * waggle);
+dboolean EV_StartFloorWaggle(int tag, int height, int speed, int offset, int timer);
+
+// p_plats
+
+int Hexen_EV_DoPlat(line_t * line, byte * args, plattype_e type, int amount);
+void Hexen_EV_StopPlat(line_t * line, byte * args);
+
+//
+
+dboolean P_ActivateLine(line_t * line, mobj_t * mo, int side, int activationType);
+dboolean P_ExecuteLineSpecial(int special, byte * args, line_t * line, int side, mobj_t * mo);
+void P_PlayerOnSpecialFlat(player_t * player, int floorType);
+line_t *P_FindLine(int lineTag, int *searchPosition);
+int P_FindSectorFromTag(int tag, int start);
 
 #endif

@@ -44,6 +44,9 @@
 
 #include "p_inter.h"
 #include "p_enemy.h"
+#include "p_spec.h"
+#include "p_pspr.h"
+#include "p_user.h"
 #include "hu_tracers.h"
 
 #ifdef __GNUG__
@@ -55,6 +58,8 @@
 
 #include "heretic/def.h"
 #include "heretic/sb_bar.h"
+
+#include "hexen/p_acs.h"
 
 // Ty 03/07/98 - add deh externals
 // Maximums and such were hardcoded values.  Need to externalize those for
@@ -285,9 +290,13 @@ dboolean P_GiveBody(player_t * player, int num)
     int max;
 
     max = maxhealth;
-    if (heretic && player->chickenTics)
+    if (player->chickenTics)
     {
         max = MAXCHICKENHEALTH;
+    }
+    if (player->morphTics)
+    {
+        max = MAXMORPHHEALTH;
     }
     if (player->health >= max)
     {
@@ -311,10 +320,10 @@ dboolean P_GiveBody(player_t * player, int num)
 static dboolean P_GiveArmor(player_t *player, int armortype)
 {
   int hits = armortype*100;
-  if (player->armorpoints >= hits)
+  if (player->armorpoints[ARMOR_ARMOR] >= hits)
     return false;   // don't pick up
   player->armortype = armortype;
-  player->armorpoints = hits;
+  player->armorpoints[ARMOR_ARMOR] = hits;
   return true;
 }
 
@@ -346,32 +355,51 @@ dboolean P_GivePower(player_t *player, int power)
   static const int tics[NUMPOWERS] = {
     INVULNTICS, 1 /* strength */, INVISTICS,
     IRONTICS, 1 /* allmap */, INFRATICS,
-    WPNLEV2TICS, FLIGHTTICS, 1 /* shield */, 1 /* health2 */
+    WPNLEV2TICS, FLIGHTTICS, 1 /* shield */, 1 /* health2 */,
+    SPEEDTICS, MAULATORTICS
    };
 
-  if (heretic && tics[power] > 1 && power != pw_ironfeet && player->powers[power] > BLINKTHRESHOLD) return false;
+  if (
+    raven &&
+    tics[power] > 1 &&
+    power != pw_ironfeet && power != pw_minotaur &&
+    player->powers[power] > BLINKTHRESHOLD
+  ) return false;
 
   switch (power)
-    {
-      case pw_invisibility:
-        player->mo->flags |= MF_SHADOW;
-        break;
-      case pw_allmap:
-        if (player->powers[pw_allmap])
-          return false;
-        break;
-      case pw_strength:
-        P_GiveBody(player,100);
-        break;
-      case pw_flight:
-        player->mo->flags2 |= MF2_FLY;
-        player->mo->flags |= MF_NOGRAVITY;
-        if (player->mo->z <= player->mo->floorz)
+  {
+    case pw_invulnerability:
+      if (hexen)
+      {
+        player->mo->flags2 |= MF2_INVULNERABLE;
+        if (player->pclass == PCLASS_MAGE)
         {
-            player->flyheight = 10;     // thrust the player in the air a bit
+            player->mo->flags2 |= MF2_REFLECTIVE;
         }
-        break;
-    }
+      }
+      break;
+    case pw_invisibility:
+      player->mo->flags |= MF_SHADOW;
+      break;
+    case pw_allmap:
+      if (player->powers[pw_allmap])
+        return false;
+      break;
+    case pw_strength:
+      P_GiveBody(player,100);
+      break;
+    case pw_flight:
+      player->mo->flags2 |= MF2_FLY;
+      player->mo->flags |= MF_NOGRAVITY;
+      if (player->mo->z <= player->mo->floorz)
+      {
+          player->flyheight = 10;     // thrust the player in the air a bit
+      }
+      break;
+  }
+
+  if (hexen && player->powers[power])
+    return false;
 
   // Unless player has infinite duration cheat, set duration (killough)
 
@@ -384,6 +412,9 @@ dboolean P_GivePower(player_t *player, int power)
 // P_TouchSpecialThing
 //
 
+static void Heretic_P_TouchSpecialThing(mobj_t * special, mobj_t * toucher);
+static void Hexen_P_TouchSpecialThing(mobj_t * special, mobj_t * toucher);
+
 void P_TouchSpecialThing(mobj_t *special, mobj_t *toucher)
 {
   player_t *player;
@@ -392,6 +423,7 @@ void P_TouchSpecialThing(mobj_t *special, mobj_t *toucher)
   fixed_t  delta = special->z - toucher->z;
 
   if (heretic) return Heretic_P_TouchSpecialThing(special, toucher);
+  if (hexen) return Hexen_P_TouchSpecialThing(special, toucher);
 
   if (delta > toucher->height || delta < -8*FRACUNIT)
     return;        // out of reach
@@ -430,7 +462,7 @@ void P_TouchSpecialThing(mobj_t *special, mobj_t *toucher)
       break;
 
     case SPR_BON2:
-      player->armorpoints++;          // can go over 100%
+      player->armorpoints[ARMOR_ARMOR]++;          // can go over 100%
       // e6y
       // Doom 1.2 does not do check of armor points on overflow.
       // If you set the "IDKFA Armor" to MAX_INT (DWORD at 0x00064B5A -> FFFFFF7F)
@@ -438,8 +470,8 @@ void P_TouchSpecialThing(mobj_t *special, mobj_t *toucher)
       // and you will die after reception of any damage since this moment.
       // It happens because the taken health damage depends from armor points
       // if they are present and becomes equal to very large value in this case
-      if (player->armorpoints > max_armor && compatibility_level != doom_12_compatibility)
-        player->armorpoints = max_armor;
+      if (player->armorpoints[ARMOR_ARMOR] > max_armor && compatibility_level != doom_12_compatibility)
+        player->armorpoints[ARMOR_ARMOR] = max_armor;
       // e6y
       // We always give armor type 1 for the armor bonuses;
       // dehacked only affects the GreenArmor.
@@ -727,6 +759,9 @@ void P_TouchSpecialThing(mobj_t *special, mobj_t *toucher)
 //
 // KillMobj
 //
+
+static mobj_t *ActiveMinotaur(player_t * master);
+
 // killough 11/98: make static
 static void P_KillMobj(mobj_t *source, mobj_t *target)
 {
@@ -760,6 +795,22 @@ static void P_KillMobj(mobj_t *source, mobj_t *target)
     totallive--;
 
   dsda_WatchDeath(target);
+
+  // hexen
+  if ((target->flags & MF_COUNTKILL || target->type == HEXEN_MT_ZBELL)
+      && target->special)
+  {                           // Initiate monster death actions
+      if (target->type == HEXEN_MT_SORCBOSS)
+      {
+          byte dummyArgs[3] = {0, 0, 0};
+          P_StartACS(target->special, 0, dummyArgs, target, NULL, 0);
+      }
+      else
+      {
+          P_ExecuteLineSpecial(target->special, target->args,
+                               NULL, 0, target);
+      }
+  }
 
   if (source && source->player)
   {
@@ -802,7 +853,7 @@ static void P_KillMobj(mobj_t *source, mobj_t *target)
             else
             {
               unsigned int player;
-              for (player = 0; player<MAXPLAYERS; player++)
+              for (player = 0; player < g_maxplayers; player++)
               {
                 if (playeringame[player])
                 {
@@ -829,14 +880,14 @@ static void P_KillMobj(mobj_t *source, mobj_t *target)
             //  and do it uniformly between the active players
             unsigned int activeplayers = 0, player, i;
 
-            for (player = 0; player<MAXPLAYERS; player++)
+            for (player = 0; player < g_maxplayers; player++)
               if (playeringame[player])
                 activeplayers++;
 
             if (activeplayers) {
               player = P_Random(pr_friends) % activeplayers;
 
-              for (i=0; i<MAXPLAYERS; i++)
+              for (i = 0; i < g_maxplayers; i++)
                 if (playeringame[i])
                   if (!player--)
                   {
@@ -866,23 +917,185 @@ static void P_KillMobj(mobj_t *source, mobj_t *target)
     // heretic
     if (target->flags2 & MF2_FIREDAMAGE)
     {                       // Player flame death
-        P_SetMobjState(target, HERETIC_S_PLAY_FDTH1);
-        return;
+      switch (target->player->pclass)
+      {
+        case PCLASS_NULL: // heretic
+          P_SetMobjState(target, HERETIC_S_PLAY_FDTH1);
+          return;
+        case PCLASS_FIGHTER:
+          S_StartSound(target, hexen_sfx_player_fighter_burn_death);
+          P_SetMobjState(target, HEXEN_S_PLAY_F_FDTH1);
+          return;
+        case PCLASS_CLERIC:
+          S_StartSound(target, hexen_sfx_player_cleric_burn_death);
+          P_SetMobjState(target, HEXEN_S_PLAY_C_FDTH1);
+          return;
+        case PCLASS_MAGE:
+          S_StartSound(target, hexen_sfx_player_mage_burn_death);
+          P_SetMobjState(target, HEXEN_S_PLAY_M_FDTH1);
+          return;
+        default:
+          break;
+      }
+    }
+
+    // hexen
+    if (target->flags2 & MF2_ICEDAMAGE)
+    {                       // Player ice death
+      target->flags &= ~(7 << MF_TRANSSHIFT);     //no translation
+      target->flags |= MF_ICECORPSE;
+      switch (target->player->pclass)
+      {
+        case PCLASS_FIGHTER:
+          P_SetMobjState(target, HEXEN_S_FPLAY_ICE);
+          return;
+        case PCLASS_CLERIC:
+          P_SetMobjState(target, HEXEN_S_CPLAY_ICE);
+          return;
+        case PCLASS_MAGE:
+          P_SetMobjState(target, HEXEN_S_MPLAY_ICE);
+          return;
+        case PCLASS_PIG:
+          P_SetMobjState(target, HEXEN_S_PIG_ICE);
+          return;
+        default:
+            break;
+      }
     }
 
     if (target->player == &players[consoleplayer] && (automapmode & am_active))
       AM_Stop();    // don't die in auto map; switch view prior to dying
   }
 
-  xdeath_limit = heretic ? (target->info->spawnhealth >> 1) : target->info->spawnhealth;
-  if (target->health < -xdeath_limit && target->info->xdeathstate)
-    P_SetMobjState (target, target->info->xdeathstate);
+  if (hexen)
+  {
+    if (target->flags2 & MF2_FIREDAMAGE)
+    {
+      if (target->type == HEXEN_MT_FIGHTER_BOSS
+          || target->type == HEXEN_MT_CLERIC_BOSS
+          || target->type == HEXEN_MT_MAGE_BOSS)
+      {
+        switch (target->type)
+        {
+          case HEXEN_MT_FIGHTER_BOSS:
+            S_StartSound(target, hexen_sfx_player_fighter_burn_death);
+            P_SetMobjState(target, HEXEN_S_PLAY_F_FDTH1);
+            return;
+          case HEXEN_MT_CLERIC_BOSS:
+            S_StartSound(target, hexen_sfx_player_cleric_burn_death);
+            P_SetMobjState(target, HEXEN_S_PLAY_C_FDTH1);
+            return;
+          case HEXEN_MT_MAGE_BOSS:
+            S_StartSound(target, hexen_sfx_player_mage_burn_death);
+            P_SetMobjState(target, HEXEN_S_PLAY_M_FDTH1);
+            return;
+          default:
+            break;
+        }
+      }
+      else if (target->type == HEXEN_MT_TREEDESTRUCTIBLE)
+      {
+        P_SetMobjState(target, HEXEN_S_ZTREEDES_X1);
+        target->height = 24 * FRACUNIT;
+        S_StartSound(target, hexen_sfx_tree_explode);
+        return;
+      }
+    }
+    if (target->flags2 & MF2_ICEDAMAGE)
+    {
+      target->flags |= MF_ICECORPSE;
+      switch (target->type)
+      {
+        case HEXEN_MT_BISHOP:
+          P_SetMobjState(target, HEXEN_S_BISHOP_ICE);
+          return;
+        case HEXEN_MT_CENTAUR:
+        case HEXEN_MT_CENTAURLEADER:
+          P_SetMobjState(target, HEXEN_S_CENTAUR_ICE);
+          return;
+        case HEXEN_MT_DEMON:
+        case HEXEN_MT_DEMON2:
+          P_SetMobjState(target, HEXEN_S_DEMON_ICE);
+          return;
+        case HEXEN_MT_SERPENT:
+        case HEXEN_MT_SERPENTLEADER:
+          P_SetMobjState(target, HEXEN_S_SERPENT_ICE);
+          return;
+        case HEXEN_MT_WRAITH:
+        case HEXEN_MT_WRAITHB:
+          P_SetMobjState(target, HEXEN_S_WRAITH_ICE);
+          return;
+        case HEXEN_MT_ETTIN:
+          P_SetMobjState(target, HEXEN_S_ETTIN_ICE1);
+          return;
+        case HEXEN_MT_FIREDEMON:
+          P_SetMobjState(target, HEXEN_S_FIRED_ICE1);
+          return;
+        case HEXEN_MT_FIGHTER_BOSS:
+          P_SetMobjState(target, HEXEN_S_FIGHTER_ICE);
+          return;
+        case HEXEN_MT_CLERIC_BOSS:
+          P_SetMobjState(target, HEXEN_S_CLERIC_ICE);
+          return;
+        case HEXEN_MT_MAGE_BOSS:
+          P_SetMobjState(target, HEXEN_S_MAGE_ICE);
+          return;
+        case HEXEN_MT_PIG:
+          P_SetMobjState(target, HEXEN_S_PIG_ICE);
+          return;
+        default:
+          target->flags &= ~MF_ICECORPSE;
+          break;
+      }
+    }
+
+    if (target->type == HEXEN_MT_MINOTAUR)
+    {
+      mobj_t *master = target->special1.m;
+      if (master->health > 0)
+      {
+        if (!ActiveMinotaur(master->player))
+        {
+          master->player->powers[pw_minotaur] = 0;
+        }
+      }
+    }
+    else if (target->type == HEXEN_MT_TREEDESTRUCTIBLE)
+    {
+      target->height = 24 * FRACUNIT;
+    }
+    if (target->health < -(target->info->spawnhealth >> 1)
+        && target->info->xdeathstate)
+    {                           // Extreme death
+      P_SetMobjState(target, target->info->xdeathstate);
+    }
+    else
+    {                           // Normal death
+      if ((target->type == HEXEN_MT_FIREDEMON) &&
+          (target->z <= target->floorz + 2 * FRACUNIT) &&
+          (target->info->xdeathstate))
+      {
+        // This is to fix the imps' staying in fall state
+        P_SetMobjState(target, target->info->xdeathstate);
+      }
+      else
+      {
+        P_SetMobjState(target, target->info->deathstate);
+      }
+    }
+  }
   else
-    P_SetMobjState (target, target->info->deathstate);
+  {
+    xdeath_limit = heretic ? (target->info->spawnhealth >> 1) : target->info->spawnhealth;
+    if (target->health < -xdeath_limit && target->info->xdeathstate)
+      P_SetMobjState (target, target->info->xdeathstate);
+    else
+      P_SetMobjState (target, target->info->deathstate);
+  }
 
   target->tics -= P_Random(pr_killtics)&3;
 
-  if (heretic) return;
+  if (raven) return;
 
   if (target->tics < 1)
     target->tics = 1;
@@ -933,6 +1146,8 @@ static dboolean P_InfightingImmune(mobj_t *target, mobj_t *source)
     mobjinfo[target->type].infighting_group == mobjinfo[source->type].infighting_group;
 }
 
+static dboolean P_MorphMonster(mobj_t * actor);
+
 void P_DamageMobj(mobj_t *target,mobj_t *inflictor, mobj_t *source, int damage)
 {
   player_t *player;
@@ -943,7 +1158,54 @@ void P_DamageMobj(mobj_t *target,mobj_t *inflictor, mobj_t *source, int damage)
     return; // shouldn't happen...
 
   if (target->health <= 0)
+  {
+    // hexen
+    if (inflictor && inflictor->flags2 & MF2_ICEDAMAGE)
+    {
+        return;
+    }
+    else if (target->flags & MF_ICECORPSE)  // frozen
+    {
+        target->tics = 1;
+        target->momx = target->momy = 0;
+    }
     return;
+  }
+
+  // hexen has a different order of checks
+  if (hexen)
+  {
+    if ((target->flags2 & MF2_INVULNERABLE) && damage < 10000)
+    {                           // mobj is invulnerable
+      if (target->player)
+        return;             // for player, no exceptions
+      if (inflictor)
+      {
+        switch (inflictor->type)
+        {
+              // These inflictors aren't foiled by invulnerability
+          case HEXEN_MT_HOLY_FX:
+          case HEXEN_MT_POISONCLOUD:
+          case HEXEN_MT_FIREBOMB:
+            break;
+          default:
+            return;
+        }
+      }
+      else
+      {
+        return;
+      }
+    }
+    if (target->player)
+    {
+      if (damage < 1000 && ((target->player->cheats & CF_GODMODE)
+                            || target->player->powers[pw_invulnerability]))
+      {
+        return;
+      }
+    }
+  }
 
   if (target->flags & MF_SKULLFLY)
   {
@@ -951,12 +1213,18 @@ void P_DamageMobj(mobj_t *target,mobj_t *inflictor, mobj_t *source, int damage)
     target->momx = target->momy = target->momz = 0;
   }
 
+  if (target->flags2 & MF2_DORMANT)
+  {
+    // Invulnerable, and won't wake up
+    return;
+  }
+
   player = target->player;
   if (player && gameskill == sk_baby)
     damage >>= 1;   // take half damage in trainer mode
 
   // Special damage types
-  if (heretic && inflictor)
+  if (raven && inflictor)
     switch (inflictor->type)
     {
       case HERETIC_MT_EGGFX:
@@ -1031,6 +1299,96 @@ void P_DamageMobj(mobj_t *target,mobj_t *inflictor, mobj_t *source, int damage)
           }
         }
         break;
+      case HEXEN_MT_EGGFX:
+        if (player)
+        {
+          P_MorphPlayer(player);
+        }
+        else
+        {
+          P_MorphMonster(target);
+        }
+        return;         // Always return
+      case HEXEN_MT_TELOTHER_FX1:
+      case HEXEN_MT_TELOTHER_FX2:
+      case HEXEN_MT_TELOTHER_FX3:
+      case HEXEN_MT_TELOTHER_FX4:
+      case HEXEN_MT_TELOTHER_FX5:
+        if ((target->flags & MF_COUNTKILL) &&
+            (target->type != HEXEN_MT_SERPENT) &&
+            (target->type != HEXEN_MT_SERPENTLEADER) &&
+            (!(target->flags2 & MF2_BOSS)))
+        {
+          P_TeleportOther(target);
+        }
+        return;
+      case HEXEN_MT_MINOTAUR:
+        if (inflictor->flags & MF_SKULLFLY)
+        {               // Slam only when in charge mode
+          P_MinotaurSlam(inflictor, target);
+          return;
+        }
+        break;
+      case HEXEN_MT_BISH_FX:
+        // Bishops are just too nasty
+        damage >>= 1;
+        break;
+      case HEXEN_MT_SHARDFX1:
+        switch (inflictor->special2.i)
+        {
+          case 3:
+            damage <<= 3;
+            break;
+          case 2:
+            damage <<= 2;
+            break;
+          case 1:
+            damage <<= 1;
+            break;
+          default:
+            break;
+        }
+        break;
+      case HEXEN_MT_CSTAFF_MISSILE:
+        // Cleric Serpent Staff does poison damage
+        if (target->player)
+        {
+          P_PoisonPlayer(target->player, source, 20);
+          damage >>= 1;
+        }
+        break;
+      case HEXEN_MT_ICEGUY_FX2:
+        damage >>= 1;
+        break;
+      case HEXEN_MT_POISONDART:
+        if (target->player)
+        {
+          P_PoisonPlayer(target->player, source, 20);
+          damage >>= 1;
+        }
+        break;
+      case HEXEN_MT_POISONCLOUD:
+        if (target->player)
+        {
+          if (target->player->poisoncount < 4)
+          {
+            P_PoisonDamage(target->player, source, 15 + (P_Random(pr_hexen) & 15), false);  // Don't play painsound
+            P_PoisonPlayer(target->player, source, 50);
+            S_StartSound(target, hexen_sfx_player_poisoncough);
+          }
+          return;
+        }
+        else if (!(target->flags & MF_COUNTKILL))
+        {               // only damage monsters/players with the poison cloud
+          return;
+        }
+        break;
+      case HEXEN_MT_FSWORD_MISSILE:
+        if (target->player)
+        {
+          damage -= damage >> 2;
+        }
+        break;
       default:
         break;
     }
@@ -1041,11 +1399,11 @@ void P_DamageMobj(mobj_t *target,mobj_t *inflictor, mobj_t *source, int damage)
 
   if (
     inflictor &&
-    !(target->flags & MF_NOCLIP) &&
+    !(target->flags & MF_NOCLIP) && // hexen_note: not done in hexen, does it matter?
     !(
       source &&
       source->player &&
-      weaponinfo[source->player->readyweapon].flags & WPF_NOTHRUST
+      (hexen || weaponinfo[source->player->readyweapon].flags & WPF_NOTHRUST)
     ) &&
     !(inflictor->flags2 & MF2_NODMGTHRUST)
   )
@@ -1093,38 +1451,88 @@ void P_DamageMobj(mobj_t *target,mobj_t *inflictor, mobj_t *source, int damage)
   if (player)
   {
     // end of game hell hack
-    if (!heretic && target->subsector->sector->special == 11 && damage >= target->health)
+    if (!raven && target->subsector->sector->special == 11 && damage >= target->health)
       damage = target->health - 1;
 
     // Below certain threshold,
     // ignore damage in GOD mode, or with INVUL power.
     // killough 3/26/98: make god mode 100% god mode in non-compat mode
 
-    if ((damage < 1000 || (!comp[comp_god] && (player->cheats&CF_GODMODE))) &&
-        (player->cheats&CF_GODMODE || player->powers[pw_invulnerability]))
+    if (
+      !hexen &&
+      (damage < 1000 || (!comp[comp_god] && (player->cheats & CF_GODMODE))) &&
+      (player->cheats & CF_GODMODE || player->powers[pw_invulnerability])
+    )
       return;
 
-    if (player->armortype)
+    if (hexen)
     {
+      int i;
       int saved;
-
-      if (heretic)
-        saved = player->armortype == 1 ? (damage >> 1) : (damage >> 1) + (damage >> 2);
-      else
-        saved = player->armortype == 1 ? damage / 3 : damage / 2;
-
-      if (player->armorpoints <= saved)
-      {
-        // armor is used up
-        saved = player->armorpoints;
-        player->armortype = 0;
+      fixed_t savedPercent = pclass[player->pclass].auto_armor_save
+                             + player->armorpoints[ARMOR_ARMOR]
+                             + player->armorpoints[ARMOR_SHIELD]
+                             + player->armorpoints[ARMOR_HELMET]
+                             + player->armorpoints[ARMOR_AMULET];
+      if (savedPercent)
+      {                       // armor absorbed some damage
+        if (savedPercent > 100 * FRACUNIT)
+        {
+          savedPercent = 100 * FRACUNIT;
+        }
+        for (i = 0; i < NUMARMOR; i++)
+        {
+          if (player->armorpoints[i])
+          {
+            player->armorpoints[i] -= FixedDiv(
+              FixedMul(damage << FRACBITS, pclass[player->pclass].armor_increment[i]),
+              300 * FRACUNIT
+            );
+            if (player->armorpoints[i] < 2 * FRACUNIT)
+            {
+              player->armorpoints[i] = 0;
+            }
+          }
+        }
+        saved = FixedDiv(
+          FixedMul(damage << FRACBITS, savedPercent),
+          100 * FRACUNIT
+        );
+        if (saved > savedPercent * 2)
+        {
+          saved = savedPercent * 2;
+        }
+        damage -= saved >> FRACBITS;
       }
-      player->armorpoints -= saved;
-      damage -= saved;
+    }
+    else
+    {
+      if (player->armortype)
+      {
+        int saved;
+
+        if (heretic)
+          saved = player->armortype == 1 ? (damage >> 1) : (damage >> 1) + (damage >> 2);
+        else
+          saved = player->armortype == 1 ? damage / 3 : damage / 2;
+
+        if (player->armorpoints[ARMOR_ARMOR] <= saved)
+        {
+          // armor is used up
+          saved = player->armorpoints[ARMOR_ARMOR];
+          player->armortype = 0;
+        }
+        player->armorpoints[ARMOR_ARMOR] -= saved;
+        damage -= saved;
+      }
     }
 
-    if (heretic && damage >= player->health
-        && ((gameskill == sk_baby) || deathmatch) && !player->chickenTics)
+    if (
+      raven &&
+      damage >= player->health &&
+      (gameskill == sk_baby || deathmatch) &&
+      !player->chickenTics && !player->morphTics
+    )
     {                       // Try to use some inventory health
       P_AutoUseHealth(player, damage - player->health + 1);
     }
@@ -1139,9 +1547,9 @@ void P_DamageMobj(mobj_t *target,mobj_t *inflictor, mobj_t *source, int damage)
     if (player->damagecount > 100)
       player->damagecount = 100;  // teleport stomp does 10k points...
 
-    if (heretic && player == &players[consoleplayer])
+    if (raven && player == &players[consoleplayer])
     {
-      SB_PaletteFlash();
+      SB_PaletteFlash(false);
     }
   }
 
@@ -1170,6 +1578,45 @@ void P_DamageMobj(mobj_t *target,mobj_t *inflictor, mobj_t *source, int damage)
         {
           target->flags2 |= MF2_FIREDAMAGE;
         }
+      }
+    }
+    else if (hexen)
+    {
+      if (inflictor)
+      {                       // check for special fire damage or ice damage deaths
+        if (inflictor->flags2 & MF2_FIREDAMAGE)
+        {
+          if (player && !player->morphTics)
+          {               // Check for flame death
+            if (target->health > -50 && damage > 25)
+            {
+              target->flags2 |= MF2_FIREDAMAGE;
+            }
+          }
+          else
+          {
+            target->flags2 |= MF2_FIREDAMAGE;
+          }
+        }
+        else if (inflictor->flags2 & MF2_ICEDAMAGE)
+        {
+          target->flags2 |= MF2_ICEDAMAGE;
+        }
+      }
+      if (source && (source->type == HEXEN_MT_MINOTAUR))
+      {                       // Minotaur's kills go to his master
+        mobj_t *master = source->special1.m;
+        // Make sure still alive and not a pointer to fighter head
+        if (master->player && (master->player->mo == master))
+        {
+          source = master;
+        }
+      }
+      if (source && (source->player) &&
+          (source->player->readyweapon == wp_fourth))
+      {
+        // Always extreme death from fourth weapon
+        target->health = -5000;
       }
     }
 
@@ -1204,12 +1651,52 @@ void P_DamageMobj(mobj_t *target,mobj_t *inflictor, mobj_t *source, int damage)
   if (P_Random (pr_painchance) < target->info->painchance &&
       !(target->flags & MF_SKULLFLY)) //killough 11/98: see below
   {
-    if (mbf_features)
-      justhit = true;
+    if (inflictor && (inflictor->type >= HEXEN_MT_LIGHTNING_FLOOR
+                      && inflictor->type <= HEXEN_MT_LIGHTNING_ZAP))
+    {
+      if (P_Random(pr_hexen) < 96)
+      {
+        target->flags |= MF_JUSTHIT;    // fight back!
+        P_SetMobjState(target, target->info->painstate);
+      }
+      else
+      {                   // "electrocute" the target
+        target->frame |= FF_FULLBRIGHT;
+        if (target->flags & MF_COUNTKILL && P_Random(pr_hexen) < 128
+            && !S_GetSoundPlayingInfo(target, hexen_sfx_puppybeat))
+        {
+          if ((target->type == HEXEN_MT_CENTAUR) ||
+              (target->type == HEXEN_MT_CENTAURLEADER) ||
+              (target->type == HEXEN_MT_ETTIN))
+          {
+            S_StartSound(target, hexen_sfx_puppybeat);
+          }
+        }
+      }
+    }
     else
-      target->flags |= MF_JUSTHIT;    // fight back!
+    {
+      if (mbf_features)
+        justhit = true;
+      else
+        target->flags |= MF_JUSTHIT;    // fight back!
 
-    P_SetMobjState(target, target->info->painstate);
+      P_SetMobjState(target, target->info->painstate);
+
+      if (inflictor && inflictor->type == HEXEN_MT_POISONCLOUD)
+      {
+        if (target->flags & MF_COUNTKILL && P_Random(pr_hexen) < 128
+            && !S_GetSoundPlayingInfo(target, hexen_sfx_puppybeat))
+        {
+          if ((target->type == HEXEN_MT_CENTAUR) ||
+              (target->type == HEXEN_MT_CENTAURLEADER) ||
+              (target->type == HEXEN_MT_ETTIN))
+          {
+            S_StartSound(target, hexen_sfx_puppybeat);
+          }
+        }
+      }
+    }
   }
 
   target->reactiontime = 0;           // we're awake now...
@@ -1223,9 +1710,13 @@ void P_DamageMobj(mobj_t *target,mobj_t *inflictor, mobj_t *source, int damage)
     (!target->threshold || target->flags2 & MF2_NOTHRESHOLD) &&
     ((source->flags ^ target->flags) & MF_FRIEND || monster_infighting || !mbf_features) &&
     !(
-      heretic && (
+      raven && (
         source->flags2 & MF2_BOSS ||
-        (target->type == HERETIC_MT_SORCERER2 && source->type == HERETIC_MT_WIZARD)
+        (target->type == HERETIC_MT_SORCERER2 && source->type == HERETIC_MT_WIZARD) ||
+        target->type == HEXEN_MT_BISHOP ||
+        target->type == HEXEN_MT_MINOTAUR ||
+        (target->type == HEXEN_MT_CENTAUR && source->type == HEXEN_MT_CENTAURLEADER) ||
+        (target->type == HEXEN_MT_CENTAURLEADER && source->type == HEXEN_MT_CENTAUR)
       )
     ) &&
     !P_InfightingImmune(target, source)
@@ -1274,7 +1765,7 @@ void A_RestoreArtifact(mobj_t * arti)
 {
     arti->flags |= MF_SPECIAL;
     P_SetMobjState(arti, arti->info->spawnstate);
-    S_StartSound(arti, heretic_sfx_respawn);
+    S_StartSound(arti, g_sfx_respawn);
 }
 
 void A_RestoreSpecialThing1(mobj_t * thing)
@@ -1284,7 +1775,7 @@ void A_RestoreSpecialThing1(mobj_t * thing)
         P_RepositionMace(thing);
     }
     thing->flags2 &= ~MF2_DONTDRAW;
-    S_StartSound(thing, heretic_sfx_respawn);
+    S_StartSound(thing, g_sfx_respawn);
 }
 
 void A_RestoreSpecialThing2(mobj_t * thing)
@@ -1298,9 +1789,10 @@ void A_RestoreSpecialThing2(mobj_t * thing)
 void P_SetMessage(player_t * player, const char *message, dboolean ultmsg)
 {
     player->message = message;
+    player->yellowMessage = false;
 }
 
-void Heretic_P_TouchSpecialThing(mobj_t * special, mobj_t * toucher)
+static void Heretic_P_TouchSpecialThing(mobj_t * special, mobj_t * toucher)
 {
     int i;
     player_t *player;
@@ -1327,21 +1819,21 @@ void Heretic_P_TouchSpecialThing(mobj_t * special, mobj_t * toucher)
             {
                 return;
             }
-            P_SetMessage(player, DEH_String(HERETIC_TXT_ITEMHEALTH), false);
+            P_SetMessage(player, HERETIC_TXT_ITEMHEALTH, false);
             break;
         case HERETIC_SPR_SHLD:         // Item_Shield1
             if (!P_GiveArmor(player, 1))
             {
                 return;
             }
-            P_SetMessage(player, DEH_String(HERETIC_TXT_ITEMSHIELD1), false);
+            P_SetMessage(player, HERETIC_TXT_ITEMSHIELD1, false);
             break;
         case HERETIC_SPR_SHD2:         // Item_Shield2
             if (!P_GiveArmor(player, 2))
             {
                 return;
             }
-            P_SetMessage(player, DEH_String(HERETIC_TXT_ITEMSHIELD2), false);
+            P_SetMessage(player, HERETIC_TXT_ITEMSHIELD2, false);
             break;
         case HERETIC_SPR_BAGH:         // Item_BagOfHolding
             if (!player->backpack)
@@ -1357,21 +1849,21 @@ void Heretic_P_TouchSpecialThing(mobj_t * special, mobj_t * toucher)
             P_GiveAmmo(player, am_crossbow, AMMO_CBOW_WIMPY);
             P_GiveAmmo(player, am_skullrod, AMMO_SKRD_WIMPY);
             P_GiveAmmo(player, am_phoenixrod, AMMO_PHRD_WIMPY);
-            P_SetMessage(player, DEH_String(HERETIC_TXT_ITEMBAGOFHOLDING), false);
+            P_SetMessage(player, HERETIC_TXT_ITEMBAGOFHOLDING, false);
             break;
         case HERETIC_SPR_SPMP:         // Item_SuperMap
             if (!P_GivePower(player, pw_allmap))
             {
                 return;
             }
-            P_SetMessage(player, DEH_String(HERETIC_TXT_ITEMSUPERMAP), false);
+            P_SetMessage(player, HERETIC_TXT_ITEMSUPERMAP, false);
             break;
 
             // Keys
         case HERETIC_SPR_BKYY:         // Key_Blue
             if (!player->cards[key_blue])
             {
-                P_SetMessage(player, DEH_String(HERETIC_TXT_GOTBLUEKEY), false);
+                P_SetMessage(player, HERETIC_TXT_GOTBLUEKEY, false);
             }
             P_GiveCard(player, key_blue);
             sound = heretic_sfx_keyup;
@@ -1383,7 +1875,7 @@ void Heretic_P_TouchSpecialThing(mobj_t * special, mobj_t * toucher)
         case HERETIC_SPR_CKYY:         // Key_Yellow
             if (!player->cards[key_yellow])
             {
-                P_SetMessage(player, DEH_String(HERETIC_TXT_GOTYELLOWKEY), false);
+                P_SetMessage(player, HERETIC_TXT_GOTYELLOWKEY, false);
             }
             sound = heretic_sfx_keyup;
             P_GiveCard(player, key_yellow);
@@ -1395,7 +1887,7 @@ void Heretic_P_TouchSpecialThing(mobj_t * special, mobj_t * toucher)
         case HERETIC_SPR_AKYY:         // Key_Green
             if (!player->cards[key_green])
             {
-                P_SetMessage(player, DEH_String(HERETIC_TXT_GOTGREENKEY), false);
+                P_SetMessage(player, HERETIC_TXT_GOTGREENKEY, false);
             }
             sound = heretic_sfx_keyup;
             P_GiveCard(player, key_green);
@@ -1409,70 +1901,70 @@ void Heretic_P_TouchSpecialThing(mobj_t * special, mobj_t * toucher)
         case HERETIC_SPR_PTN2:         // Arti_HealingPotion
             if (P_GiveArtifact(player, arti_health, special))
             {
-                P_SetMessage(player, DEH_String(HERETIC_TXT_ARTIHEALTH), false);
+                P_SetMessage(player, HERETIC_TXT_ARTIHEALTH, false);
                 P_SetDormantArtifact(special);
             }
             return;
         case HERETIC_SPR_SOAR:         // Arti_Fly
             if (P_GiveArtifact(player, arti_fly, special))
             {
-                P_SetMessage(player, DEH_String(HERETIC_TXT_ARTIFLY), false);
+                P_SetMessage(player, HERETIC_TXT_ARTIFLY, false);
                 P_SetDormantArtifact(special);
             }
             return;
         case HERETIC_SPR_INVU:         // Arti_Invulnerability
             if (P_GiveArtifact(player, arti_invulnerability, special))
             {
-                P_SetMessage(player, DEH_String(HERETIC_TXT_ARTIINVULNERABILITY), false);
+                P_SetMessage(player, HERETIC_TXT_ARTIINVULNERABILITY, false);
                 P_SetDormantArtifact(special);
             }
             return;
         case HERETIC_SPR_PWBK:         // Arti_TomeOfPower
             if (P_GiveArtifact(player, arti_tomeofpower, special))
             {
-                P_SetMessage(player, DEH_String(HERETIC_TXT_ARTITOMEOFPOWER), false);
+                P_SetMessage(player, HERETIC_TXT_ARTITOMEOFPOWER, false);
                 P_SetDormantArtifact(special);
             }
             return;
         case HERETIC_SPR_INVS:         // Arti_Invisibility
             if (P_GiveArtifact(player, arti_invisibility, special))
             {
-                P_SetMessage(player, DEH_String(HERETIC_TXT_ARTIINVISIBILITY), false);
+                P_SetMessage(player, HERETIC_TXT_ARTIINVISIBILITY, false);
                 P_SetDormantArtifact(special);
             }
             return;
         case HERETIC_SPR_EGGC:         // Arti_Egg
             if (P_GiveArtifact(player, arti_egg, special))
             {
-                P_SetMessage(player, DEH_String(HERETIC_TXT_ARTIEGG), false);
+                P_SetMessage(player, HERETIC_TXT_ARTIEGG, false);
                 P_SetDormantArtifact(special);
             }
             return;
         case HERETIC_SPR_SPHL:         // Arti_SuperHealth
             if (P_GiveArtifact(player, arti_superhealth, special))
             {
-                P_SetMessage(player, DEH_String(HERETIC_TXT_ARTISUPERHEALTH), false);
+                P_SetMessage(player, HERETIC_TXT_ARTISUPERHEALTH, false);
                 P_SetDormantArtifact(special);
             }
             return;
         case HERETIC_SPR_TRCH:         // Arti_Torch
             if (P_GiveArtifact(player, arti_torch, special))
             {
-                P_SetMessage(player, DEH_String(HERETIC_TXT_ARTITORCH), false);
+                P_SetMessage(player, HERETIC_TXT_ARTITORCH, false);
                 P_SetDormantArtifact(special);
             }
             return;
         case HERETIC_SPR_FBMB:         // Arti_FireBomb
             if (P_GiveArtifact(player, arti_firebomb, special))
             {
-                P_SetMessage(player, DEH_String(HERETIC_TXT_ARTIFIREBOMB), false);
+                P_SetMessage(player, HERETIC_TXT_ARTIFIREBOMB, false);
                 P_SetDormantArtifact(special);
             }
             return;
         case HERETIC_SPR_ATLP:         // Arti_Teleport
             if (P_GiveArtifact(player, arti_teleport, special))
             {
-                P_SetMessage(player, DEH_String(HERETIC_TXT_ARTITELEPORT), false);
+                P_SetMessage(player, HERETIC_TXT_ARTITELEPORT, false);
                 P_SetDormantArtifact(special);
             }
             return;
@@ -1483,84 +1975,84 @@ void Heretic_P_TouchSpecialThing(mobj_t * special, mobj_t * toucher)
             {
                 return;
             }
-            P_SetMessage(player, DEH_String(HERETIC_TXT_AMMOGOLDWAND1), false);
+            P_SetMessage(player, HERETIC_TXT_AMMOGOLDWAND1, false);
             break;
         case HERETIC_SPR_AMG2:         // Ammo_GoldWandHefty
             if (!P_GiveAmmo(player, am_goldwand, special->health))
             {
                 return;
             }
-            P_SetMessage(player, DEH_String(HERETIC_TXT_AMMOGOLDWAND2), false);
+            P_SetMessage(player, HERETIC_TXT_AMMOGOLDWAND2, false);
             break;
         case HERETIC_SPR_AMM1:         // Ammo_MaceWimpy
             if (!P_GiveAmmo(player, am_mace, special->health))
             {
                 return;
             }
-            P_SetMessage(player, DEH_String(HERETIC_TXT_AMMOMACE1), false);
+            P_SetMessage(player, HERETIC_TXT_AMMOMACE1, false);
             break;
         case HERETIC_SPR_AMM2:         // Ammo_MaceHefty
             if (!P_GiveAmmo(player, am_mace, special->health))
             {
                 return;
             }
-            P_SetMessage(player, DEH_String(HERETIC_TXT_AMMOMACE2), false);
+            P_SetMessage(player, HERETIC_TXT_AMMOMACE2, false);
             break;
         case HERETIC_SPR_AMC1:         // Ammo_CrossbowWimpy
             if (!P_GiveAmmo(player, am_crossbow, special->health))
             {
                 return;
             }
-            P_SetMessage(player, DEH_String(HERETIC_TXT_AMMOCROSSBOW1), false);
+            P_SetMessage(player, HERETIC_TXT_AMMOCROSSBOW1, false);
             break;
         case HERETIC_SPR_AMC2:         // Ammo_CrossbowHefty
             if (!P_GiveAmmo(player, am_crossbow, special->health))
             {
                 return;
             }
-            P_SetMessage(player, DEH_String(HERETIC_TXT_AMMOCROSSBOW2), false);
+            P_SetMessage(player, HERETIC_TXT_AMMOCROSSBOW2, false);
             break;
         case HERETIC_SPR_AMB1:         // Ammo_BlasterWimpy
             if (!P_GiveAmmo(player, am_blaster, special->health))
             {
                 return;
             }
-            P_SetMessage(player, DEH_String(HERETIC_TXT_AMMOBLASTER1), false);
+            P_SetMessage(player, HERETIC_TXT_AMMOBLASTER1, false);
             break;
         case HERETIC_SPR_AMB2:         // Ammo_BlasterHefty
             if (!P_GiveAmmo(player, am_blaster, special->health))
             {
                 return;
             }
-            P_SetMessage(player, DEH_String(HERETIC_TXT_AMMOBLASTER2), false);
+            P_SetMessage(player, HERETIC_TXT_AMMOBLASTER2, false);
             break;
         case HERETIC_SPR_AMS1:         // Ammo_SkullRodWimpy
             if (!P_GiveAmmo(player, am_skullrod, special->health))
             {
                 return;
             }
-            P_SetMessage(player, DEH_String(HERETIC_TXT_AMMOSKULLROD1), false);
+            P_SetMessage(player, HERETIC_TXT_AMMOSKULLROD1, false);
             break;
         case HERETIC_SPR_AMS2:         // Ammo_SkullRodHefty
             if (!P_GiveAmmo(player, am_skullrod, special->health))
             {
                 return;
             }
-            P_SetMessage(player, DEH_String(HERETIC_TXT_AMMOSKULLROD2), false);
+            P_SetMessage(player, HERETIC_TXT_AMMOSKULLROD2, false);
             break;
         case HERETIC_SPR_AMP1:         // Ammo_PhoenixRodWimpy
             if (!P_GiveAmmo(player, am_phoenixrod, special->health))
             {
                 return;
             }
-            P_SetMessage(player, DEH_String(HERETIC_TXT_AMMOPHOENIXROD1), false);
+            P_SetMessage(player, HERETIC_TXT_AMMOPHOENIXROD1, false);
             break;
         case HERETIC_SPR_AMP2:         // Ammo_PhoenixRodHefty
             if (!P_GiveAmmo(player, am_phoenixrod, special->health))
             {
                 return;
             }
-            P_SetMessage(player, DEH_String(HERETIC_TXT_AMMOPHOENIXROD2), false);
+            P_SetMessage(player, HERETIC_TXT_AMMOPHOENIXROD2, false);
             break;
 
             // Weapons
@@ -1569,7 +2061,7 @@ void Heretic_P_TouchSpecialThing(mobj_t * special, mobj_t * toucher)
             {
                 return;
             }
-            P_SetMessage(player, DEH_String(HERETIC_TXT_WPNMACE), false);
+            P_SetMessage(player, HERETIC_TXT_WPNMACE, false);
             sound = heretic_sfx_wpnup;
             break;
         case HERETIC_SPR_WBOW:         // Weapon_Crossbow
@@ -1577,7 +2069,7 @@ void Heretic_P_TouchSpecialThing(mobj_t * special, mobj_t * toucher)
             {
                 return;
             }
-            P_SetMessage(player, DEH_String(HERETIC_TXT_WPNCROSSBOW), false);
+            P_SetMessage(player, HERETIC_TXT_WPNCROSSBOW, false);
             sound = heretic_sfx_wpnup;
             break;
         case HERETIC_SPR_WBLS:         // Weapon_Blaster
@@ -1585,7 +2077,7 @@ void Heretic_P_TouchSpecialThing(mobj_t * special, mobj_t * toucher)
             {
                 return;
             }
-            P_SetMessage(player, DEH_String(HERETIC_TXT_WPNBLASTER), false);
+            P_SetMessage(player, HERETIC_TXT_WPNBLASTER, false);
             sound = heretic_sfx_wpnup;
             break;
         case HERETIC_SPR_WSKL:         // Weapon_SkullRod
@@ -1593,7 +2085,7 @@ void Heretic_P_TouchSpecialThing(mobj_t * special, mobj_t * toucher)
             {
                 return;
             }
-            P_SetMessage(player, DEH_String(HERETIC_TXT_WPNSKULLROD), false);
+            P_SetMessage(player, HERETIC_TXT_WPNSKULLROD, false);
             sound = heretic_sfx_wpnup;
             break;
         case HERETIC_SPR_WPHX:         // Weapon_PhoenixRod
@@ -1601,7 +2093,7 @@ void Heretic_P_TouchSpecialThing(mobj_t * special, mobj_t * toucher)
             {
                 return;
             }
-            P_SetMessage(player, DEH_String(HERETIC_TXT_WPNPHOENIXROD), false);
+            P_SetMessage(player, HERETIC_TXT_WPNPHOENIXROD, false);
             sound = heretic_sfx_wpnup;
             break;
         case HERETIC_SPR_WGNT:         // Weapon_Gauntlets
@@ -1609,7 +2101,7 @@ void Heretic_P_TouchSpecialThing(mobj_t * special, mobj_t * toucher)
             {
                 return;
             }
-            P_SetMessage(player, DEH_String(HERETIC_TXT_WPNGAUNTLETS), false);
+            P_SetMessage(player, HERETIC_TXT_WPNGAUNTLETS, false);
             sound = heretic_sfx_wpnup;
             break;
         default:
@@ -1631,14 +2123,16 @@ void Heretic_P_TouchSpecialThing(mobj_t * special, mobj_t * toucher)
     if (player == &players[consoleplayer])
     {
         S_StartSound(NULL, sound);
-        SB_PaletteFlash();
+        SB_PaletteFlash(false);
     }
 }
 
 dboolean P_GiveArtifact(player_t * player, artitype_t arti, mobj_t * mo)
 {
     int i;
+    dboolean slidePointer;
 
+    slidePointer = false;
     i = 0;
     while (player->inventory[i].type != arti && i < player->inventorySlotNum)
     {
@@ -1646,13 +2140,37 @@ dboolean P_GiveArtifact(player_t * player, artitype_t arti, mobj_t * mo)
     }
     if (i == player->inventorySlotNum)
     {
+        if (hexen && arti < hexen_arti_firstpuzzitem)
+        {
+            i = 0;
+            while (player->inventory[i].type < hexen_arti_firstpuzzitem
+                   && i < player->inventorySlotNum)
+            {
+                i++;
+            }
+            if (i != player->inventorySlotNum)
+            {
+                int j;
+                for (j = player->inventorySlotNum; j > i; j--)
+                {
+                    player->inventory[j].count =
+                        player->inventory[j - 1].count;
+                    player->inventory[j].type = player->inventory[j - 1].type;
+                    slidePointer = true;
+                }
+            }
+        }
         player->inventory[i].count = 1;
         player->inventory[i].type = arti;
         player->inventorySlotNum++;
     }
     else
     {
-        if (player->inventory[i].count >= 16)
+        if (hexen && arti >= hexen_arti_firstpuzzitem && netgame && !deathmatch)
+        {                       // Can't carry more than 1 puzzle item in coop netplay
+            return false;
+        }
+        if (player->inventory[i].count >= g_arti_limit)
         {                       // Player already has 16 of this item
             return (false);
         }
@@ -1661,6 +2179,15 @@ dboolean P_GiveArtifact(player_t * player, artitype_t arti, mobj_t * mo)
     if (player->artifactCount == 0)
     {
         player->readyArtifact = arti;
+    }
+    else if (player == &players[consoleplayer] && slidePointer && i <= inv_ptr)
+    {
+        inv_ptr++;
+        curpos++;
+        if (curpos > 6)
+        {
+            curpos = 6;
+        }
     }
     player->artifactCount++;
     if (mo && (mo->flags & MF_COUNTITEM))
@@ -1752,7 +2279,7 @@ void P_HideSpecialThing(mobj_t * thing)
 {
     thing->flags &= ~MF_SPECIAL;
     thing->flags2 |= MF2_DONTDRAW;
-    P_SetMobjState(thing, HERETIC_S_HIDESPECIAL1);
+    P_SetMobjState(thing, g_hide_state);
 }
 
 void P_MinotaurSlam(mobj_t * source, mobj_t * target)
@@ -1765,11 +2292,19 @@ void P_MinotaurSlam(mobj_t * source, mobj_t * target)
     thrust = 16 * FRACUNIT + (P_Random(pr_heretic) << 10);
     target->momx += FixedMul(thrust, finecosine[angle]);
     target->momy += FixedMul(thrust, finesine[angle]);
-    P_DamageMobj(target, NULL, NULL, HITDICE(6));
+    if (hexen)
+    {
+        P_DamageMobj(target, NULL, source, HITDICE(4));
+    }
+    else
+    {
+        P_DamageMobj(target, NULL, NULL, HITDICE(6));
+    }
     if (target->player)
     {
         target->reactiontime = 14 + (P_Random(pr_heretic) & 7);
     }
+    source->args[0] = 0;        // Stop charging
 }
 
 void P_TouchWhirlwind(mobj_t * target)
@@ -1839,7 +2374,7 @@ dboolean P_ChickenMorphPlayer(player_t * player)
     chicken->player = player;
     player->health = chicken->health = MAXCHICKENHEALTH;
     player->mo = chicken;
-    player->armorpoints = player->armortype = 0;
+    player->armorpoints[ARMOR_ARMOR] = player->armortype = 0;
     player->powers[pw_invisibility] = 0;
     player->powers[pw_weaponlevel2] = 0;
     if (oldFlags2 & MF2_FLY)
@@ -1918,24 +2453,19 @@ void P_AutoUseHealth(player_t * player, int saveHealth)
 {
     int i;
     int count;
-    int normalCount;
-    int normalSlot;
-    int superCount;
-    int superSlot;
-
-    normalCount = 0;
-    superCount = 0;
-    normalSlot = 0;
-    superSlot = 0;
+    int normalCount = 0;
+    int normalSlot = 0;
+    int superCount = 0;
+    int superSlot = 0;
 
     for (i = 0; i < player->inventorySlotNum; i++)
     {
-        if (player->inventory[i].type == arti_health)
+        if (player->inventory[i].type == g_arti_health)
         {
             normalSlot = i;
             normalCount = player->inventory[i].count;
         }
-        else if (player->inventory[i].type == arti_superhealth)
+        else if (player->inventory[i].type == g_arti_superhealth)
         {
             superSlot = i;
             superCount = player->inventory[i].count;
@@ -1977,4 +2507,1046 @@ void P_AutoUseHealth(player_t * player, int saveHealth)
         }
     }
     player->mo->health = player->health;
+}
+
+// hexen
+
+#define TXT_MANA_1    "BLUE MANA"
+#define TXT_MANA_2    "GREEN MANA"
+#define TXT_MANA_BOTH "COMBINED MANA"
+
+#define TXT_KEY_STEEL   "STEEL KEY"
+#define TXT_KEY_CAVE    "CAVE KEY"
+#define TXT_KEY_AXE     "AXE KEY"
+#define TXT_KEY_FIRE    "FIRE KEY"
+#define TXT_KEY_EMERALD "EMERALD KEY"
+#define TXT_KEY_DUNGEON "DUNGEON KEY"
+#define TXT_KEY_SILVER  "SILVER KEY"
+#define TXT_KEY_RUSTED  "RUSTED KEY"
+#define TXT_KEY_HORN    "HORN KEY"
+#define TXT_KEY_SWAMP   "SWAMP KEY"
+#define TXT_KEY_CASTLE  "CASTLE KEY"
+
+#define TXT_ARTIINVULNERABILITY "ICON OF THE DEFENDER"
+#define TXT_ARTIHEALTH          "QUARTZ FLASK"
+#define TXT_ARTISUPERHEALTH     "MYSTIC URN"
+#define TXT_ARTIHEALINGRADIUS   "MYSTIC AMBIT INCANT"
+#define TXT_ARTISUMMON          "DARK SERVANT"
+#define TXT_ARTITORCH           "TORCH"
+#define TXT_ARTIEGG             "PORKALATOR"
+#define TXT_ARTIFLY             "WINGS OF WRATH"
+#define TXT_ARTIBLASTRADIUS     "DISC OF REPULSION"
+#define TXT_ARTIPOISONBAG       "FLECHETTE"
+#define TXT_ARTITELEPORTOTHER   "BANISHMENT DEVICE"
+#define TXT_ARTISPEED           "BOOTS OF SPEED"
+#define TXT_ARTIBOOSTMANA       "KRATER OF MIGHT"
+#define TXT_ARTIBOOSTARMOR      "DRAGONSKIN BRACERS"
+#define TXT_ARTITELEPORT        "CHAOS DEVICE"
+
+#define TXT_ITEMHEALTH        "CRYSTAL VIAL"
+#define TXT_ITEMBAGOFHOLDING "BAG OF HOLDING"
+#define TXT_ITEMSHIELD1      "SILVER SHIELD"
+#define TXT_ITEMSHIELD2      "ENCHANTED SHIELD"
+#define TXT_ITEMSUPERMAP     "MAP SCROLL"
+
+#define TXT_ARMOR1 "MESH ARMOR"
+#define TXT_ARMOR2 "FALCON SHIELD"
+#define TXT_ARMOR3 "PLATINUM HELMET"
+#define TXT_ARMOR4 "AMULET OF WARDING"
+
+#define TXT_WEAPON_F2 "TIMON'S AXE"
+#define TXT_WEAPON_F3 "HAMMER OF RETRIBUTION"
+#define TXT_WEAPON_F4 "QUIETUS ASSEMBLED"
+#define TXT_WEAPON_C2 "SERPENT STAFF"
+#define TXT_WEAPON_C3 "FIRESTORM"
+#define TXT_WEAPON_C4 "WRAITHVERGE ASSEMBLED"
+#define TXT_WEAPON_M2 "FROST SHARDS"
+#define TXT_WEAPON_M3 "ARC OF DEATH"
+#define TXT_WEAPON_M4 "BLOODSCOURGE ASSEMBLED"
+
+#define TXT_QUIETUS_PIECE      "SEGMENT OF QUIETUS"
+#define TXT_WRAITHVERGE_PIECE  "SEGMENT OF WRAITHVERGE"
+#define TXT_BLOODSCOURGE_PIECE "SEGMENT OF BLOODSCOURGE"
+
+const char *TextKeyMessages[] = {
+    TXT_KEY_STEEL,
+    TXT_KEY_CAVE,
+    TXT_KEY_AXE,
+    TXT_KEY_FIRE,
+    TXT_KEY_EMERALD,
+    TXT_KEY_DUNGEON,
+    TXT_KEY_SILVER,
+    TXT_KEY_RUSTED,
+    TXT_KEY_HORN,
+    TXT_KEY_SWAMP,
+    TXT_KEY_CASTLE
+};
+
+void P_FallingDamage(player_t * player)
+{
+    int damage;
+    int mom;
+    int dist;
+
+    mom = abs(player->mo->momz);
+    dist = FixedMul(mom, 16 * FRACUNIT / 23);
+
+    if (mom >= 63 * FRACUNIT)
+    {                           // automatic death
+        P_DamageMobj(player->mo, NULL, NULL, 10000);
+        return;
+    }
+    damage = ((FixedMul(dist, dist) / 10) >> FRACBITS) - 24;
+    if (player->mo->momz > -39 * FRACUNIT && damage > player->mo->health
+        && player->mo->health != 1)
+    {                           // No-death threshold
+        damage = player->mo->health - 1;
+    }
+    S_StartSound(player->mo, hexen_sfx_player_land);
+    P_DamageMobj(player->mo, NULL, NULL, damage);
+}
+
+void P_PoisonDamage(player_t * player, mobj_t * source, int damage,
+                    dboolean playPainSound)
+{
+    mobj_t *target;
+    mobj_t *inflictor;
+
+    target = player->mo;
+    inflictor = source;
+    if (target->health <= 0)
+    {
+        return;
+    }
+    if (target->flags2 & MF2_INVULNERABLE && damage < 10000)
+    {                           // mobj is invulnerable
+        return;
+    }
+    if (gameskill == sk_baby)
+    {
+        // Take half damage in trainer mode
+        damage >>= 1;
+    }
+    if (damage < 1000 && ((player->cheats & CF_GODMODE)
+                          || player->powers[pw_invulnerability]))
+    {
+        return;
+    }
+    if (damage >= player->health
+        && ((gameskill == sk_baby) || deathmatch) && !player->morphTics)
+    {                           // Try to use some inventory health
+        P_AutoUseHealth(player, damage - player->health + 1);
+    }
+    player->health -= damage;   // mirror mobj health here for Dave
+    if (player->health < 0)
+    {
+        player->health = 0;
+    }
+    player->attacker = source;
+
+    //
+    // do the damage
+    //
+    target->health -= damage;
+    if (target->health <= 0)
+    {                           // Death
+        target->special1.i = damage;
+        if (inflictor && !player->morphTics)
+        {                       // Check for flame death
+            if ((inflictor->flags2 & MF2_FIREDAMAGE)
+                && (target->health > -50) && (damage > 25))
+            {
+                target->flags2 |= MF2_FIREDAMAGE;
+            }
+            if (inflictor->flags2 & MF2_ICEDAMAGE)
+            {
+                target->flags2 |= MF2_ICEDAMAGE;
+            }
+        }
+        P_KillMobj(source, target);
+        return;
+    }
+    if (!(leveltime & 63) && playPainSound)
+    {
+        P_SetMobjState(target, target->info->painstate);
+    }
+}
+
+dboolean P_GiveMana(player_t * player, manatype_t mana, int count)
+{
+    int prevMana;
+
+    if (mana == MANA_NONE || mana == MANA_BOTH)
+    {
+        return (false);
+    }
+    if ((unsigned int) mana > NUMMANA)
+    {
+        I_Error("P_GiveMana: bad type %i", mana);
+    }
+    if (player->ammo[mana] == MAX_MANA)
+    {
+        return (false);
+    }
+    if (gameskill == sk_baby || gameskill == sk_nightmare)
+    {                           // extra mana in baby mode and nightmare mode
+        count += count >> 1;
+    }
+    prevMana = player->ammo[mana];
+
+    player->ammo[mana] += count;
+    if (player->ammo[mana] > MAX_MANA)
+    {
+        player->ammo[mana] = MAX_MANA;
+    }
+    if (player->pclass == PCLASS_FIGHTER && player->readyweapon == wp_second
+        && mana == MANA_1 && prevMana <= 0)
+    {
+        P_SetPsprite(player, ps_weapon, HEXEN_S_FAXEREADY_G);
+    }
+    return (true);
+}
+
+dboolean Hexen_P_GiveArmor(player_t * player, armortype_t armortype, int amount)
+{
+    int hits;
+    int totalArmor;
+
+    if (amount == -1)
+    {
+        hits = pclass[player->pclass].armor_increment[armortype];
+        if (player->armorpoints[armortype] >= hits)
+        {
+            return false;
+        }
+        else
+        {
+            player->armorpoints[armortype] = hits;
+        }
+    }
+    else
+    {
+        hits = amount * 5 * FRACUNIT;
+        totalArmor = player->armorpoints[ARMOR_ARMOR]
+            + player->armorpoints[ARMOR_SHIELD]
+            + player->armorpoints[ARMOR_HELMET]
+            + player->armorpoints[ARMOR_AMULET]
+            + pclass[player->pclass].auto_armor_save;
+        if (totalArmor < pclass[player->pclass].armor_max)
+        {
+            player->armorpoints[armortype] += hits;
+        }
+        else
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+void P_SetYellowMessage(player_t * player, const char *message, dboolean ultmsg)
+{
+    player->message = message;
+    player->yellowMessage = true;
+}
+
+static void TryPickupWeapon(player_t * player, pclass_t weaponClass,
+                            weapontype_t weaponType, mobj_t * weapon,
+                            const char *message)
+{
+    dboolean remove;
+    dboolean gaveMana;
+    dboolean gaveWeapon;
+
+    remove = true;
+    if (player->pclass != weaponClass)
+    {                           // Wrong class, but try to pick up for mana
+        if (netgame && !deathmatch)
+        {                       // Can't pick up weapons for other classes in coop netplay
+            return;
+        }
+        if (weaponType == wp_second)
+        {
+            if (!P_GiveMana(player, MANA_1, 25))
+            {
+                return;
+            }
+        }
+        else
+        {
+            if (!P_GiveMana(player, MANA_2, 25))
+            {
+                return;
+            }
+        }
+    }
+    else if (netgame && !deathmatch)
+    {                           // Cooperative net-game
+        if (player->weaponowned[weaponType])
+        {
+            return;
+        }
+        player->weaponowned[weaponType] = true;
+        if (weaponType == wp_second)
+        {
+            P_GiveMana(player, MANA_1, 25);
+        }
+        else
+        {
+            P_GiveMana(player, MANA_2, 25);
+        }
+        player->pendingweapon = weaponType;
+        remove = false;
+    }
+    else
+    {                           // Deathmatch or single player game
+        if (weaponType == wp_second)
+        {
+            gaveMana = P_GiveMana(player, MANA_1, 25);
+        }
+        else
+        {
+            gaveMana = P_GiveMana(player, MANA_2, 25);
+        }
+        if (player->weaponowned[weaponType])
+        {
+            gaveWeapon = false;
+        }
+        else
+        {
+            gaveWeapon = true;
+            player->weaponowned[weaponType] = true;
+            if (weaponType > player->readyweapon)
+            {                   // Only switch to more powerful weapons
+                player->pendingweapon = weaponType;
+            }
+        }
+        if (!(gaveWeapon || gaveMana))
+        {                       // Player didn't need the weapon or any mana
+            return;
+        }
+    }
+
+    P_SetMessage(player, message, false);
+    if (weapon->special)
+    {
+        P_ExecuteLineSpecial(weapon->special, weapon->args,
+                             NULL, 0, player->mo);
+        weapon->special = 0;
+    }
+
+    if (remove)
+    {
+        if (deathmatch && !(weapon->flags & MF_DROPPED))
+        {
+            P_HideSpecialThing(weapon);
+        }
+        else
+        {
+            P_RemoveMobj(weapon);
+        }
+    }
+
+    player->bonuscount += BONUSADD;
+    if (player == &players[consoleplayer])
+    {
+        S_StartSound(NULL, hexen_sfx_pickup_weapon);
+        SB_PaletteFlash(false);
+    }
+}
+
+static void TryPickupWeaponPiece(player_t * player, pclass_t matchClass,
+                                 int pieceValue, mobj_t * pieceMobj)
+{
+    dboolean remove;
+    dboolean checkAssembled;
+    dboolean gaveWeapon;
+    int gaveMana;
+    static const char *fourthWeaponText[] = {
+        0,
+        TXT_WEAPON_F4,
+        TXT_WEAPON_C4,
+        TXT_WEAPON_M4
+    };
+    static const char *weaponPieceText[] = {
+        0,
+        TXT_QUIETUS_PIECE,
+        TXT_WRAITHVERGE_PIECE,
+        TXT_BLOODSCOURGE_PIECE
+    };
+    static int pieceValueTrans[] = {
+        0,                      // 0: never
+        WPIECE1 | WPIECE2 | WPIECE3,    // WPIECE1 (1)
+        WPIECE2 | WPIECE3,      // WPIECE2 (2)
+        0,                      // 3: never
+        WPIECE3                 // WPIECE3 (4)
+    };
+
+    remove = true;
+    checkAssembled = true;
+    gaveWeapon = false;
+    if (player->pclass != matchClass)
+    {                           // Wrong class, but try to pick up for mana
+        if (netgame && !deathmatch)
+        {                       // Can't pick up wrong-class weapons in coop netplay
+            return;
+        }
+        checkAssembled = false;
+        gaveMana = P_GiveMana(player, MANA_1, 20) +
+            P_GiveMana(player, MANA_2, 20);
+        if (!gaveMana)
+        {                       // Didn't need the mana, so don't pick it up
+            return;
+        }
+    }
+    else if (netgame && !deathmatch)
+    {                           // Cooperative net-game
+        if (player->pieces & pieceValue)
+        {                       // Already has the piece
+            return;
+        }
+        pieceValue = pieceValueTrans[pieceValue];
+        P_GiveMana(player, MANA_1, 20);
+        P_GiveMana(player, MANA_2, 20);
+        remove = false;
+    }
+    else
+    {                           // Deathmatch or single player game
+        gaveMana = P_GiveMana(player, MANA_1, 20) +
+            P_GiveMana(player, MANA_2, 20);
+        if (player->pieces & pieceValue)
+        {                       // Already has the piece, check if mana needed
+            if (!gaveMana)
+            {                   // Didn't need the mana, so don't pick it up
+                return;
+            }
+            checkAssembled = false;
+        }
+    }
+
+    // Pick up the weapon piece
+    if (pieceMobj->special)
+    {
+        P_ExecuteLineSpecial(pieceMobj->special, pieceMobj->args,
+                             NULL, 0, player->mo);
+        pieceMobj->special = 0;
+    }
+    if (remove)
+    {
+        if (deathmatch && !(pieceMobj->flags & MF_DROPPED))
+        {
+            P_HideSpecialThing(pieceMobj);
+        }
+        else
+        {
+            P_RemoveMobj(pieceMobj);
+        }
+    }
+    player->bonuscount += BONUSADD;
+    if (player == &players[consoleplayer])
+    {
+      SB_PaletteFlash(false);
+    }
+
+    // Check if fourth weapon assembled
+    if (checkAssembled)
+    {
+        player->pieces |= pieceValue;
+        if (player->pieces == (WPIECE1 | WPIECE2 | WPIECE3))
+        {
+            gaveWeapon = true;
+            player->weaponowned[wp_fourth] = true;
+            player->pendingweapon = wp_fourth;
+        }
+    }
+
+    if (gaveWeapon)
+    {
+        P_SetMessage(player, fourthWeaponText[matchClass], false);
+        // Play the build-sound full volume for all players
+        S_StartSound(NULL, hexen_sfx_weapon_build);
+    }
+    else
+    {
+        P_SetMessage(player, weaponPieceText[matchClass], false);
+        if (player == &players[consoleplayer])
+        {
+            S_StartSound(NULL, hexen_sfx_pickup_weapon);
+        }
+    }
+}
+
+int P_GiveKey(player_t * player, card_t key)
+{
+    if (player->cards[key])
+    {
+        return false;
+    }
+    player->bonuscount += BONUSADD;
+    player->cards[key] = true;
+
+    if (player == &players[consoleplayer])
+      playerkeys |= 1 << key;
+
+    return true;
+}
+
+static void SetDormantArtifact(mobj_t * arti)
+{
+    arti->flags &= ~MF_SPECIAL;
+    if (deathmatch && !(arti->flags & MF_DROPPED))
+    {
+        if (arti->type == HEXEN_MT_ARTIINVULNERABILITY)
+        {
+            P_SetMobjState(arti, HEXEN_S_DORMANTARTI3_1);
+        }
+        else if (arti->type == HEXEN_MT_SUMMONMAULATOR || arti->type == HEXEN_MT_ARTIFLY)
+        {
+            P_SetMobjState(arti, HEXEN_S_DORMANTARTI2_1);
+        }
+        else
+        {
+            P_SetMobjState(arti, HEXEN_S_DORMANTARTI1_1);
+        }
+    }
+    else
+    {                           // Don't respawn
+        P_SetMobjState(arti, HEXEN_S_DEADARTI1);
+    }
+}
+
+static void TryPickupArtifact(player_t * player, artitype_t artifactType, mobj_t * artifact)
+{
+    static const char *artifactMessages[HEXEN_NUMARTIFACTS] = {
+        NULL,
+        TXT_ARTIINVULNERABILITY,
+        TXT_ARTIHEALTH,
+        TXT_ARTISUPERHEALTH,
+        TXT_ARTIHEALINGRADIUS,
+        TXT_ARTISUMMON,
+        TXT_ARTITORCH,
+        TXT_ARTIEGG,
+        TXT_ARTIFLY,
+        TXT_ARTIBLASTRADIUS,
+        TXT_ARTIPOISONBAG,
+        TXT_ARTITELEPORTOTHER,
+        TXT_ARTISPEED,
+        TXT_ARTIBOOSTMANA,
+        TXT_ARTIBOOSTARMOR,
+        TXT_ARTITELEPORT,
+        TXT_ARTIPUZZSKULL,
+        TXT_ARTIPUZZGEMBIG,
+        TXT_ARTIPUZZGEMRED,
+        TXT_ARTIPUZZGEMGREEN1,
+        TXT_ARTIPUZZGEMGREEN2,
+        TXT_ARTIPUZZGEMBLUE1,
+        TXT_ARTIPUZZGEMBLUE2,
+        TXT_ARTIPUZZBOOK1,
+        TXT_ARTIPUZZBOOK2,
+        TXT_ARTIPUZZSKULL2,
+        TXT_ARTIPUZZFWEAPON,
+        TXT_ARTIPUZZCWEAPON,
+        TXT_ARTIPUZZMWEAPON,
+        TXT_ARTIPUZZGEAR,       // All gear pickups use the same text
+        TXT_ARTIPUZZGEAR,
+        TXT_ARTIPUZZGEAR,
+        TXT_ARTIPUZZGEAR
+    };
+
+    if (gamemode == shareware)
+    {
+        artifactMessages[hexen_arti_blastradius] = TXT_ARTITELEPORT;
+        artifactMessages[hexen_arti_teleport] = TXT_ARTIBLASTRADIUS;
+    }
+
+    if (P_GiveArtifact(player, artifactType, artifact))
+    {
+        if (artifact->special)
+        {
+            P_ExecuteLineSpecial(artifact->special, artifact->args,
+                                 NULL, 0, NULL);
+            artifact->special = 0;
+        }
+        player->bonuscount += BONUSADD;
+        if (artifactType < hexen_arti_firstpuzzitem)
+        {
+            SetDormantArtifact(artifact);
+            S_StartSound(artifact, hexen_sfx_pickup_artifact);
+            P_SetMessage(player, artifactMessages[artifactType], false);
+        }
+        else
+        {                       // Puzzle item
+            S_StartSound(NULL, hexen_sfx_pickup_item);
+            P_SetMessage(player, artifactMessages[artifactType], true);
+            if (!netgame || deathmatch)
+            {                   // Remove puzzle items if not cooperative netplay
+                P_RemoveMobj(artifact);
+            }
+        }
+    }
+}
+
+static void Hexen_P_TouchSpecialThing(mobj_t * special, mobj_t * toucher)
+{
+    player_t *player;
+    fixed_t delta;
+    int sound;
+    dboolean respawn;
+
+    delta = special->z - toucher->z;
+    if (delta > toucher->height || delta < -32 * FRACUNIT)
+    {                           // Out of reach
+        return;
+    }
+    if (toucher->health <= 0)
+    {                           // Toucher is dead
+        return;
+    }
+    sound = hexen_sfx_pickup_item;
+    player = toucher->player;
+    respawn = true;
+    switch (special->sprite)
+    {
+            // Items
+        case HEXEN_SPR_PTN1:         // Item_HealingPotion
+            if (!P_GiveBody(player, 10))
+            {
+                return;
+            }
+            P_SetMessage(player, TXT_ITEMHEALTH, false);
+            break;
+        case HEXEN_SPR_ARM1:
+            if (!Hexen_P_GiveArmor(player, ARMOR_ARMOR, -1))
+            {
+                return;
+            }
+            P_SetMessage(player, TXT_ARMOR1, false);
+            break;
+        case HEXEN_SPR_ARM2:
+            if (!Hexen_P_GiveArmor(player, ARMOR_SHIELD, -1))
+            {
+                return;
+            }
+            P_SetMessage(player, TXT_ARMOR2, false);
+            break;
+        case HEXEN_SPR_ARM3:
+            if (!Hexen_P_GiveArmor(player, ARMOR_HELMET, -1))
+            {
+                return;
+            }
+            P_SetMessage(player, TXT_ARMOR3, false);
+            break;
+        case HEXEN_SPR_ARM4:
+            if (!Hexen_P_GiveArmor(player, ARMOR_AMULET, -1))
+            {
+                return;
+            }
+            P_SetMessage(player, TXT_ARMOR4, false);
+            break;
+
+            // Keys
+        case HEXEN_SPR_KEY1:
+        case HEXEN_SPR_KEY2:
+        case HEXEN_SPR_KEY3:
+        case HEXEN_SPR_KEY4:
+        case HEXEN_SPR_KEY5:
+        case HEXEN_SPR_KEY6:
+        case HEXEN_SPR_KEY7:
+        case HEXEN_SPR_KEY8:
+        case HEXEN_SPR_KEY9:
+        case HEXEN_SPR_KEYA:
+        case HEXEN_SPR_KEYB:
+            if (!P_GiveKey(player, special->sprite - HEXEN_SPR_KEY1))
+            {
+                return;
+            }
+            P_SetMessage(player, TextKeyMessages[special->sprite - HEXEN_SPR_KEY1],
+                         true);
+            sound = hexen_sfx_pickup_key;
+
+            // Check and process the special now in case the key doesn't
+            // get removed for coop netplay
+            if (special->special)
+            {
+                P_ExecuteLineSpecial(special->special, special->args,
+                                     NULL, 0, toucher);
+                special->special = 0;
+            }
+
+            if (!netgame)
+            {                   // Only remove keys in single player game
+                break;
+            }
+            player->bonuscount += BONUSADD;
+            if (player == &players[consoleplayer])
+            {
+                S_StartSound(NULL, sound);
+                SB_PaletteFlash(false);
+            }
+            return;
+
+            // Artifacts
+        case HEXEN_SPR_PTN2:
+            TryPickupArtifact(player, hexen_arti_health, special);
+            return;
+        case HEXEN_SPR_SOAR:
+            TryPickupArtifact(player, hexen_arti_fly, special);
+            return;
+        case HEXEN_SPR_INVU:
+            TryPickupArtifact(player, hexen_arti_invulnerability, special);
+            return;
+        case HEXEN_SPR_SUMN:
+            TryPickupArtifact(player, hexen_arti_summon, special);
+            return;
+        case HEXEN_SPR_PORK:
+            TryPickupArtifact(player, hexen_arti_egg, special);
+            return;
+        case HEXEN_SPR_SPHL:
+            TryPickupArtifact(player, hexen_arti_superhealth, special);
+            return;
+        case HEXEN_SPR_HRAD:
+            TryPickupArtifact(player, hexen_arti_healingradius, special);
+            return;
+        case HEXEN_SPR_TRCH:
+            TryPickupArtifact(player, hexen_arti_torch, special);
+            return;
+        case HEXEN_SPR_ATLP:
+            TryPickupArtifact(player, hexen_arti_teleport, special);
+            return;
+        case HEXEN_SPR_TELO:
+            TryPickupArtifact(player, hexen_arti_teleportother, special);
+            return;
+        case HEXEN_SPR_PSBG:
+            TryPickupArtifact(player, hexen_arti_poisonbag, special);
+            return;
+        case HEXEN_SPR_SPED:
+            TryPickupArtifact(player, hexen_arti_speed, special);
+            return;
+        case HEXEN_SPR_BMAN:
+            TryPickupArtifact(player, hexen_arti_boostmana, special);
+            return;
+        case HEXEN_SPR_BRAC:
+            TryPickupArtifact(player, hexen_arti_boostarmor, special);
+            return;
+        case HEXEN_SPR_BLST:
+            TryPickupArtifact(player, hexen_arti_blastradius, special);
+            return;
+
+            // Puzzle artifacts
+        case HEXEN_SPR_ASKU:
+            TryPickupArtifact(player, hexen_arti_puzzskull, special);
+            return;
+        case HEXEN_SPR_ABGM:
+            TryPickupArtifact(player, hexen_arti_puzzgembig, special);
+            return;
+        case HEXEN_SPR_AGMR:
+            TryPickupArtifact(player, hexen_arti_puzzgemred, special);
+            return;
+        case HEXEN_SPR_AGMG:
+            TryPickupArtifact(player, hexen_arti_puzzgemgreen1, special);
+            return;
+        case HEXEN_SPR_AGG2:
+            TryPickupArtifact(player, hexen_arti_puzzgemgreen2, special);
+            return;
+        case HEXEN_SPR_AGMB:
+            TryPickupArtifact(player, hexen_arti_puzzgemblue1, special);
+            return;
+        case HEXEN_SPR_AGB2:
+            TryPickupArtifact(player, hexen_arti_puzzgemblue2, special);
+            return;
+        case HEXEN_SPR_ABK1:
+            TryPickupArtifact(player, hexen_arti_puzzbook1, special);
+            return;
+        case HEXEN_SPR_ABK2:
+            TryPickupArtifact(player, hexen_arti_puzzbook2, special);
+            return;
+        case HEXEN_SPR_ASK2:
+            TryPickupArtifact(player, hexen_arti_puzzskull2, special);
+            return;
+        case HEXEN_SPR_AFWP:
+            TryPickupArtifact(player, hexen_arti_puzzfweapon, special);
+            return;
+        case HEXEN_SPR_ACWP:
+            TryPickupArtifact(player, hexen_arti_puzzcweapon, special);
+            return;
+        case HEXEN_SPR_AMWP:
+            TryPickupArtifact(player, hexen_arti_puzzmweapon, special);
+            return;
+        case HEXEN_SPR_AGER:
+            TryPickupArtifact(player, hexen_arti_puzzgear1, special);
+            return;
+        case HEXEN_SPR_AGR2:
+            TryPickupArtifact(player, hexen_arti_puzzgear2, special);
+            return;
+        case HEXEN_SPR_AGR3:
+            TryPickupArtifact(player, hexen_arti_puzzgear3, special);
+            return;
+        case HEXEN_SPR_AGR4:
+            TryPickupArtifact(player, hexen_arti_puzzgear4, special);
+            return;
+
+            // Mana
+        case HEXEN_SPR_MAN1:
+            if (!P_GiveMana(player, MANA_1, 15))
+            {
+                return;
+            }
+            P_SetMessage(player, TXT_MANA_1, false);
+            break;
+        case HEXEN_SPR_MAN2:
+            if (!P_GiveMana(player, MANA_2, 15))
+            {
+                return;
+            }
+            P_SetMessage(player, TXT_MANA_2, false);
+            break;
+        case HEXEN_SPR_MAN3:         // Double Mana Dodecahedron
+            if (!P_GiveMana(player, MANA_1, 20))
+            {
+                if (!P_GiveMana(player, MANA_2, 20))
+                {
+                    return;
+                }
+            }
+            else
+            {
+                P_GiveMana(player, MANA_2, 20);
+            }
+            P_SetMessage(player, TXT_MANA_BOTH, false);
+            break;
+
+            // 2nd and 3rd Mage Weapons
+        case HEXEN_SPR_WMCS:         // Frost Shards
+            TryPickupWeapon(player, PCLASS_MAGE, wp_second,
+                            special, TXT_WEAPON_M2);
+            return;
+        case HEXEN_SPR_WMLG:         // Arc of Death
+            TryPickupWeapon(player, PCLASS_MAGE, wp_third,
+                            special, TXT_WEAPON_M3);
+            return;
+
+            // 2nd and 3rd Fighter Weapons
+        case HEXEN_SPR_WFAX:         // Timon's Axe
+            TryPickupWeapon(player, PCLASS_FIGHTER, wp_second,
+                            special, TXT_WEAPON_F2);
+            return;
+        case HEXEN_SPR_WFHM:         // Hammer of Retribution
+            TryPickupWeapon(player, PCLASS_FIGHTER, wp_third,
+                            special, TXT_WEAPON_F3);
+            return;
+
+            // 2nd and 3rd Cleric Weapons
+        case HEXEN_SPR_WCSS:         // Serpent Staff
+            TryPickupWeapon(player, PCLASS_CLERIC, wp_second,
+                            special, TXT_WEAPON_C2);
+            return;
+        case HEXEN_SPR_WCFM:         // Firestorm
+            TryPickupWeapon(player, PCLASS_CLERIC, wp_third,
+                            special, TXT_WEAPON_C3);
+            return;
+
+            // Fourth Weapon Pieces
+        case HEXEN_SPR_WFR1:
+            TryPickupWeaponPiece(player, PCLASS_FIGHTER, WPIECE1, special);
+            return;
+        case HEXEN_SPR_WFR2:
+            TryPickupWeaponPiece(player, PCLASS_FIGHTER, WPIECE2, special);
+            return;
+        case HEXEN_SPR_WFR3:
+            TryPickupWeaponPiece(player, PCLASS_FIGHTER, WPIECE3, special);
+            return;
+        case HEXEN_SPR_WCH1:
+            TryPickupWeaponPiece(player, PCLASS_CLERIC, WPIECE1, special);
+            return;
+        case HEXEN_SPR_WCH2:
+            TryPickupWeaponPiece(player, PCLASS_CLERIC, WPIECE2, special);
+            return;
+        case HEXEN_SPR_WCH3:
+            TryPickupWeaponPiece(player, PCLASS_CLERIC, WPIECE3, special);
+            return;
+        case HEXEN_SPR_WMS1:
+            TryPickupWeaponPiece(player, PCLASS_MAGE, WPIECE1, special);
+            return;
+        case HEXEN_SPR_WMS2:
+            TryPickupWeaponPiece(player, PCLASS_MAGE, WPIECE2, special);
+            return;
+        case HEXEN_SPR_WMS3:
+            TryPickupWeaponPiece(player, PCLASS_MAGE, WPIECE3, special);
+            return;
+
+        default:
+            I_Error("P_SpecialThing: Unknown gettable thing");
+    }
+    if (special->special)
+    {
+        P_ExecuteLineSpecial(special->special, special->args, NULL,
+                             0, toucher);
+        special->special = 0;
+    }
+    if (deathmatch && respawn && !(special->flags & MF_DROPPED))
+    {
+        P_HideSpecialThing(special);
+    }
+    else
+    {
+        P_RemoveMobj(special);
+    }
+    player->bonuscount += BONUSADD;
+    if (player == &players[consoleplayer])
+    {
+        S_StartSound(NULL, sound);
+        SB_PaletteFlash(false);
+    }
+}
+
+// Search thinker list for minotaur
+static mobj_t *ActiveMinotaur(player_t * master)
+{
+    mobj_t *mo;
+    player_t *plr;
+    thinker_t *think;
+    unsigned int *starttime;
+
+    for (think = thinkercap.next; think != &thinkercap; think = think->next)
+    {
+        if (think->function != P_MobjThinker)
+            continue;
+        mo = (mobj_t *) think;
+        if (mo->type != HEXEN_MT_MINOTAUR)
+            continue;
+        if (mo->health <= 0)
+            continue;
+        if (!(mo->flags & MF_COUNTKILL))
+            continue;           // for morphed minotaurs
+        if (mo->flags & MF_CORPSE)
+            continue;
+        starttime = (unsigned int *) mo->args;
+        if ((leveltime - *starttime) >= MAULATORTICS)
+            continue;
+        plr = mo->special1.m->player;
+        if (plr == master)
+            return (mo);
+    }
+    return (NULL);
+}
+
+dboolean P_MorphPlayer(player_t * player)
+{
+    mobj_t *pmo;
+    mobj_t *fog;
+    mobj_t *beastMo;
+    fixed_t x;
+    fixed_t y;
+    fixed_t z;
+    angle_t angle;
+    int oldFlags2;
+
+    if (player->powers[pw_invulnerability])
+    {                           // Immune when invulnerable
+        return (false);
+    }
+    if (player->morphTics)
+    {                           // Player is already a beast
+        return false;
+    }
+    pmo = player->mo;
+    x = pmo->x;
+    y = pmo->y;
+    z = pmo->z;
+    angle = pmo->angle;
+    oldFlags2 = pmo->flags2;
+    P_SetMobjState(pmo, HEXEN_S_FREETARGMOBJ);
+    fog = P_SpawnMobj(x, y, z + TELEFOGHEIGHT, HEXEN_MT_TFOG);
+    S_StartSound(fog, hexen_sfx_teleport);
+    beastMo = P_SpawnMobj(x, y, z, HEXEN_MT_PIGPLAYER);
+    beastMo->special1.i = player->readyweapon;
+    beastMo->angle = angle;
+    beastMo->player = player;
+    player->health = beastMo->health = MAXMORPHHEALTH;
+    player->mo = beastMo;
+    memset(&player->armorpoints[0], 0, NUMARMOR * sizeof(int));
+    player->pclass = PCLASS_PIG;
+    if (oldFlags2 & MF2_FLY)
+    {
+        beastMo->flags2 |= MF2_FLY;
+    }
+    player->morphTics = MORPHTICS;
+    P_ActivateMorphWeapon(player);
+    return (true);
+}
+
+static dboolean P_MorphMonster(mobj_t * actor)
+{
+    mobj_t *master, *monster, *fog;
+    mobjtype_t moType;
+    fixed_t x;
+    fixed_t y;
+    fixed_t z;
+    mobj_t oldMonster;
+
+    if (actor->player)
+        return (false);
+    if (!(actor->flags & MF_COUNTKILL))
+        return false;
+    if (actor->flags2 & MF2_BOSS)
+        return false;
+    moType = actor->type;
+    switch (moType)
+    {
+        case HEXEN_MT_PIG:
+            return (false);
+        case HEXEN_MT_FIGHTER_BOSS:
+        case HEXEN_MT_CLERIC_BOSS:
+        case HEXEN_MT_MAGE_BOSS:
+            return (false);
+        default:
+            break;
+    }
+
+    oldMonster = *actor;
+    x = oldMonster.x;
+    y = oldMonster.y;
+    z = oldMonster.z;
+    P_RemoveMobjFromTIDList(actor);
+    P_SetMobjState(actor, HEXEN_S_FREETARGMOBJ);
+    fog = P_SpawnMobj(x, y, z + TELEFOGHEIGHT, HEXEN_MT_TFOG);
+    S_StartSound(fog, hexen_sfx_teleport);
+    monster = P_SpawnMobj(x, y, z, HEXEN_MT_PIG);
+    monster->special2.i = moType;
+    monster->special1.i = MORPHTICS + P_Random(pr_hexen);
+    monster->flags |= (oldMonster.flags & MF_SHADOW);
+    P_SetTarget(&monster->target, oldMonster.target);
+    monster->angle = oldMonster.angle;
+    monster->tid = oldMonster.tid;
+    monster->special = oldMonster.special;
+    P_InsertMobjIntoTIDList(monster, oldMonster.tid);
+    memcpy(monster->args, oldMonster.args, 5);
+
+    // check for turning off minotaur power for active icon
+    if (moType == HEXEN_MT_MINOTAUR)
+    {
+        master = oldMonster.special1.m;
+        if (master->health > 0)
+        {
+            if (!ActiveMinotaur(master->player))
+            {
+                master->player->powers[pw_minotaur] = 0;
+            }
+        }
+    }
+    return (true);
+}
+
+void P_PoisonPlayer(player_t * player, mobj_t * poisoner, int poison)
+{
+    if ((player->cheats & CF_GODMODE) || player->powers[pw_invulnerability])
+    {
+        return;
+    }
+    player->poisoncount += poison;
+    player->poisoner = poisoner;
+    if (player->poisoncount > 100)
+    {
+        player->poisoncount = 100;
+    }
 }

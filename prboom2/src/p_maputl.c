@@ -187,6 +187,8 @@ sector_t *openbacksector;  // made global
 
 void P_LineOpening(const line_t *linedef)
 {
+  extern int tmfloorpic;
+
   if (linedef->sidenum[1] == NO_INDEX)      // single sided line
     {
       openrange = 0;
@@ -205,11 +207,13 @@ void P_LineOpening(const line_t *linedef)
     {
       openbottom = openfrontsector->floorheight;
       lowfloor = openbacksector->floorheight;
+      tmfloorpic = openfrontsector->floorpic;
     }
   else
     {
       openbottom = openbacksector->floorheight;
       lowfloor = openfrontsector->floorheight;
+      tmfloorpic = openbacksector->floorpic;
     }
   openrange = opentop - openbottom;
 }
@@ -370,6 +374,41 @@ dboolean P_BlockLinesIterator(int x, int y, dboolean func(line_t*))
   if (x<0 || y<0 || x>=bmapwidth || y>=bmapheight)
     return true;
   offset = y*bmapwidth+x;
+
+  if (hexen)
+  {
+    int i;
+    seg_t **tempSeg;
+    polyblock_t *polyLink;
+    extern polyblock_t **PolyBlockMap;
+
+    polyLink = PolyBlockMap[offset];
+    while (polyLink)
+    {
+      if (polyLink->polyobj)
+      {
+        if (polyLink->polyobj->validcount != validcount)
+        {
+          polyLink->polyobj->validcount = validcount;
+          tempSeg = polyLink->polyobj->segs;
+          for (i = 0; i < polyLink->polyobj->numsegs; i++, tempSeg++)
+          {
+            if ((*tempSeg)->linedef->validcount == validcount)
+            {
+              continue;
+            }
+            (*tempSeg)->linedef->validcount = validcount;
+            if (!func((*tempSeg)->linedef))
+            {
+              return false;
+            }
+          }
+        }
+      }
+      polyLink = polyLink->next;
+    }
+  }
+
   offset = *(blockmap+offset);
   list = blockmaplump+offset;     // original was reading         // phares
                                   // delmiting 0 as linedef 0     // phares
@@ -393,6 +432,83 @@ dboolean P_BlockLinesIterator(int x, int y, dboolean func(line_t*))
       if (ld->validcount == validcount)
         continue;       // line has already been checked
       ld->validcount = validcount;
+      if (!func(ld))
+        return false;
+    }
+  return true;  // everything was checked
+}
+
+// MBF's P_SetThingPosition code injects an increment to validcount
+// There is a bug in P_CheckPosition where the validcount is not
+// incremented at the correct time. The bug is exposed in MBF.
+// Under most cases, this is irrelevant, but sometimes it matters.
+// Ripper projectiles in mbf21, heretic, and hexen require decoupling.
+dboolean P_BlockLinesIterator2(int x, int y, dboolean func(line_t*))
+{
+  int        offset;
+  const int  *list;   // killough 3/1/98: for removal of blockmap limit
+
+  if (x<0 || y<0 || x>=bmapwidth || y>=bmapheight)
+    return true;
+  offset = y*bmapwidth+x;
+
+  if (hexen)
+  {
+    int i;
+    seg_t **tempSeg;
+    polyblock_t *polyLink;
+    extern polyblock_t **PolyBlockMap;
+
+    polyLink = PolyBlockMap[offset];
+    while (polyLink)
+    {
+      if (polyLink->polyobj)
+      {
+        if (polyLink->polyobj->validcount2 != validcount2)
+        {
+          polyLink->polyobj->validcount2 = validcount2;
+          tempSeg = polyLink->polyobj->segs;
+          for (i = 0; i < polyLink->polyobj->numsegs; i++, tempSeg++)
+          {
+            if ((*tempSeg)->linedef->validcount2 == validcount2)
+            {
+              continue;
+            }
+            (*tempSeg)->linedef->validcount2 = validcount2;
+            if (!func((*tempSeg)->linedef))
+            {
+              return false;
+            }
+          }
+        }
+      }
+      polyLink = polyLink->next;
+    }
+  }
+
+  offset = *(blockmap+offset);
+  list = blockmaplump+offset;     // original was reading         // phares
+                                  // delmiting 0 as linedef 0     // phares
+
+  // killough 1/31/98: for compatibility we need to use the old method.
+  // Most demos go out of sync, and maybe other problems happen, if we
+  // don't consider linedef 0. For safety this should be qualified.
+
+  // killough 2/22/98: demo_compatibility check
+  // In mbf21, skip if all blocklists start w/ 0 (fixes btsx e2 map 20)
+  if ((!demo_compatibility && !mbf21) || (mbf21 && skipblstart))
+    list++;     // skip 0 starting delimiter                      // phares
+  for ( ; *list != -1 ; list++)                                   // phares
+    {
+      line_t *ld;
+#ifdef RANGECHECK
+      if(*list < 0 || *list >= numlines)
+        I_Error("P_BlockLinesIterator2: index >= numlines");
+#endif
+      ld = &lines[*list];
+      if (ld->validcount2 == validcount2)
+        continue;       // line has already been checked
+      ld->validcount2 = validcount2;
       if (!func(ld))
         return false;
     }
@@ -730,9 +846,13 @@ dboolean P_PathTraverse(fixed_t x1, fixed_t y1, fixed_t x2, fixed_t y2,
 // [XA] adapted from Hexen -- used by P_RoughTargetSearch
 //
 
+static mobj_t *Hexen_RoughBlockCheck(mobj_t * mo, int index);
+
 static mobj_t *RoughBlockCheck(mobj_t *mo, int index, angle_t fov)
 {
   mobj_t *link;
+
+  if (hexen) return Hexen_RoughBlockCheck(mo, index);
 
   link = blocklinks[index];
   while (link)
@@ -934,27 +1054,176 @@ extern fixed_t bulletslope;
 
 intercepts_overrun_t intercepts_overrun[] =
 {
-  {4,   NULL,                          false},
-  {4,   NULL, /* &earlyout, */         false},
-  {4,   NULL, /* &intercept_p, */      false},
-  {4,   &lowfloor,                     false},
-  {4,   &openbottom,                   false},
-  {4,   &opentop,                      false},
-  {4,   &openrange,                    false},
-  {4,   NULL,                          false},
-  {120, NULL, /* &activeplats, */      false},
-  {8,   NULL,                          false},
-  {4,   &bulletslope,                  false},
-  {4,   NULL, /* &swingx, */           false},
-  {4,   NULL, /* &swingy, */           false},
-  {4,   NULL,                          false},
-  {40,  &playerstarts,                 true},
-  {4,   NULL, /* &blocklinks, */       false},
-  {4,   &bmapwidth,                    false},
-  {4,   NULL, /* &blockmap, */         false},
-  {4,   &bmaporgx,                     false},
-  {4,   &bmaporgy,                     false},
-  {4,   NULL, /* &blockmaplump, */     false},
-  {4,   &bmapheight,                   false},
-  {0,   NULL,                          false},
+  {4,   NULL,                          NULL},
+  {4,   NULL, /* &earlyout, */         NULL},
+  {4,   NULL, /* &intercept_p, */      NULL},
+  {4,   &lowfloor,                     NULL},
+  {4,   &openbottom,                   NULL},
+  {4,   &opentop,                      NULL},
+  {4,   &openrange,                    NULL},
+  {4,   NULL,                          NULL},
+  {120, NULL, /* &activeplats, */      NULL},
+  {8,   NULL,                          NULL},
+  {4,   &bulletslope,                  NULL},
+  {4,   NULL, /* &swingx, */           NULL},
+  {4,   NULL, /* &swingy, */           NULL},
+  {4,   NULL,                          NULL},
+  {4,  &playerstarts[0][0].x,       &playerstarts[0][0].y},
+  {4,  &playerstarts[0][0].angle,   &playerstarts[0][0].type},
+  {4,  &playerstarts[0][0].options, &playerstarts[0][1].x},
+  {4,  &playerstarts[0][1].y,       &playerstarts[0][1].angle},
+  {4,  &playerstarts[0][1].type,    &playerstarts[0][1].options},
+  {4,  &playerstarts[0][2].x,       &playerstarts[0][2].y},
+  {4,  &playerstarts[0][2].angle,   &playerstarts[0][2].type},
+  {4,  &playerstarts[0][2].options, &playerstarts[0][3].x},
+  {4,  &playerstarts[0][3].y,       &playerstarts[0][3].angle},
+  {4,  &playerstarts[0][3].type,    &playerstarts[0][3].options},
+  {4,   NULL, /* &blocklinks, */       NULL},
+  {4,   &bmapwidth,                    NULL},
+  {4,   NULL, /* &blockmap, */         NULL},
+  {4,   &bmaporgx,                     NULL},
+  {4,   &bmaporgy,                     NULL},
+  {4,   NULL, /* &blockmaplump, */     NULL},
+  {4,   &bmapheight,                   NULL},
+  {0,   NULL,                          NULL},
 };
+
+// hexen
+
+static mobj_t *Hexen_RoughBlockCheck(mobj_t * mo, int index)
+{
+    mobj_t *link;
+    mobj_t *master;
+    angle_t angle;
+
+    link = blocklinks[index];
+    while (link)
+    {
+        if (mo->player)         // Minotaur looking around player
+        {
+            if ((link->flags & MF_COUNTKILL) ||
+                (link->player && (link != mo)))
+            {
+                if (!(link->flags & MF_SHOOTABLE))
+                {
+                    link = link->bnext;
+                    continue;
+                }
+                if (link->flags2 & MF2_DORMANT)
+                {
+                    link = link->bnext;
+                    continue;
+                }
+                if ((link->type == HEXEN_MT_MINOTAUR) &&
+                    (link->special1.m == mo))
+                {
+                    link = link->bnext;
+                    continue;
+                }
+                if (netgame && !deathmatch && link->player)
+                {
+                    link = link->bnext;
+                    continue;
+                }
+                if (P_CheckSight(mo, link))
+                {
+                    return link;
+                }
+            }
+            link = link->bnext;
+        }
+        else if (mo->type == HEXEN_MT_MINOTAUR)       // looking around minotaur
+        {
+            master = mo->special1.m;
+            if ((link->flags & MF_COUNTKILL) ||
+                (link->player && (link != master)))
+            {
+                if (!(link->flags & MF_SHOOTABLE))
+                {
+                    link = link->bnext;
+                    continue;
+                }
+                if (link->flags2 & MF2_DORMANT)
+                {
+                    link = link->bnext;
+                    continue;
+                }
+                if ((link->type == HEXEN_MT_MINOTAUR) &&
+                    (link->special1.m == mo->special1.m))
+                {
+                    link = link->bnext;
+                    continue;
+                }
+                if (netgame && !deathmatch && link->player)
+                {
+                    link = link->bnext;
+                    continue;
+                }
+                if (P_CheckSight(mo, link))
+                {
+                    return link;
+                }
+            }
+            link = link->bnext;
+        }
+        else if (mo->type == HEXEN_MT_MSTAFF_FX2)     // bloodscourge
+        {
+            if ((link->flags & MF_COUNTKILL ||
+                 (link->player && link != mo->target))
+                && !(link->flags2 & MF2_DORMANT))
+            {
+                if (!(link->flags & MF_SHOOTABLE))
+                {
+                    link = link->bnext;
+                    continue;
+                }
+                if (netgame && !deathmatch && link->player)
+                {
+                    link = link->bnext;
+                    continue;
+                }
+                else if (P_CheckSight(mo, link))
+                {
+                    master = mo->target;
+                    angle = R_PointToAngle2(master->x, master->y,
+                                            link->x, link->y) - master->angle;
+                    angle >>= 24;
+                    if (angle > 226 || angle < 30)
+                    {
+                        return link;
+                    }
+                }
+            }
+            link = link->bnext;
+        }
+        else                    // spirits
+        {
+            if ((link->flags & MF_COUNTKILL ||
+                 (link->player && link != mo->target))
+                && !(link->flags2 & MF2_DORMANT))
+            {
+                if (!(link->flags & MF_SHOOTABLE))
+                {
+                    link = link->bnext;
+                    continue;
+                }
+                if (netgame && !deathmatch && link->player)
+                {
+                    link = link->bnext;
+                    continue;
+                }
+                if (link == mo->target)
+                {
+                    link = link->bnext;
+                    continue;
+                }
+                else if (P_CheckSight(mo, link))
+                {
+                    return link;
+                }
+            }
+            link = link->bnext;
+        }
+    }
+    return NULL;
+}

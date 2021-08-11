@@ -59,7 +59,8 @@ enum {
   ML_NODES,             // BSP nodes
   ML_SECTORS,           // Sectors, from editing
   ML_REJECT,            // LUT, sector-sector visibility
-  ML_BLOCKMAP           // LUT, motion clipping, walls/grid element
+  ML_BLOCKMAP,          // LUT, motion clipping, walls/grid element
+  ML_BEHAVIOR
 };
 
 #ifdef _MSC_VER // proff: This is the same as __attribute__ ((packed)) in GNUC
@@ -86,6 +87,19 @@ typedef struct {
 // A LineDef, as used for editing, and as input to the BSP builder.
 
 typedef struct {
+    unsigned short v1;
+    unsigned short v2;
+    unsigned short flags;
+    byte special;
+    byte arg1;
+    byte arg2;
+    byte arg3;
+    byte arg4;
+    byte arg5;
+    unsigned short sidenum[2];
+} PACKEDATTR hexen_maplinedef_t;
+
+typedef struct {
   unsigned short v1;
   unsigned short v2;
   unsigned short flags;
@@ -95,7 +109,7 @@ typedef struct {
   // use the unsigned value and special case the -1
   // sidenum[1] will be -1 (NO_INDEX) if one sided
   unsigned short sidenum[2];
-} PACKEDATTR maplinedef_t;
+} PACKEDATTR doom_maplinedef_t;
 
 #define NO_INDEX ((unsigned short)-1)
 
@@ -254,13 +268,45 @@ typedef struct {
 
 // Thing definition, position, orientation and type,
 // plus skill/visibility flags and attributes.
+
+typedef struct {
+  short tid;
+  short x;
+  short y;
+  short height;
+  short angle;
+  short type;
+  short options;
+  byte special;
+  byte arg1;
+  byte arg2;
+  byte arg3;
+  byte arg4;
+  byte arg5;
+} PACKEDATTR mapthing_t;
+
 typedef struct {
   short x;
   short y;
   short angle;
   short type;
   short options;
-} PACKEDATTR mapthing_t;
+} PACKEDATTR doom_mapthing_t;
+
+// hexen
+
+#define ML_REPEAT_SPECIAL	0x0200  // special is repeatable
+#define ML_SPAC_SHIFT		10
+#define ML_SPAC_MASK		0x1c00
+#define GET_SPAC(flags) ((flags&ML_SPAC_MASK)>>ML_SPAC_SHIFT)
+
+// Special activation types
+#define SPAC_CROSS		0       // when player crosses line
+#define SPAC_USE		1       // when player uses line
+#define SPAC_MCROSS		2       // when monster crosses line
+#define SPAC_IMPACT		3       // when projectile hits line
+#define SPAC_PUSH		4       // when player/monster pushes line
+#define SPAC_PCROSS		5       // when projectile crosses line
 
 #ifdef _MSC_VER
 #pragma pack(pop)

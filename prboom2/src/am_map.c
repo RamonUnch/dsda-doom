@@ -113,6 +113,31 @@ static int heretic_mapcolor_hair = 5 * 8;
 static int heretic_mapcolor_sngl = 4 * 8;
 static int heretic_mapcolor_plyr[4] = { 220, 144, 150, 197 };
 
+static int hexen_mapcolor_back = 13 * 8 - 1;
+static int hexen_mapcolor_grid = 5 * 8;
+static int hexen_mapcolor_wall = 12 * 8;
+static int hexen_mapcolor_fchg = 14 * 8;
+static int hexen_mapcolor_cchg = 10 * 8;
+static int hexen_mapcolor_clsd;
+static int hexen_mapcolor_rkey;
+static int hexen_mapcolor_bkey;
+static int hexen_mapcolor_ykey;
+static int hexen_mapcolor_rdor = 198;
+static int hexen_mapcolor_bdor = 198;
+static int hexen_mapcolor_ydor = 198;
+static int hexen_mapcolor_tele = 157;
+static int hexen_mapcolor_secr;
+static int hexen_mapcolor_exit = 177;
+static int hexen_mapcolor_unsn = 5 * 8 + 3;
+static int hexen_mapcolor_flat;
+static int hexen_mapcolor_sprt = 33 * 8;
+static int hexen_mapcolor_item = 33 * 8;
+static int hexen_mapcolor_frnd = 33 * 8;
+static int hexen_mapcolor_enemy = 33 * 8;
+static int hexen_mapcolor_hair = 5 * 8;
+static int hexen_mapcolor_sngl = 4 * 8;
+static int hexen_mapcolor_plyr[8] = { 157, 177, 137, 198, 215, 32, 106, 234 };
+
 static int* mapcolor_back_p;
 static int* mapcolor_grid_p;
 static int* mapcolor_wall_p;
@@ -166,6 +191,33 @@ static void AM_SetColors(void)
     mapcolor_hair_p = &heretic_mapcolor_hair;
     mapcolor_sngl_p = &heretic_mapcolor_sngl;
     mapcolor_plyr_p = heretic_mapcolor_plyr;
+  }
+  else if (hexen)
+  {
+    mapcolor_back_p = &hexen_mapcolor_back;
+    mapcolor_grid_p = &hexen_mapcolor_grid;
+    mapcolor_wall_p = &hexen_mapcolor_wall;
+    mapcolor_fchg_p = &hexen_mapcolor_fchg;
+    mapcolor_cchg_p = &hexen_mapcolor_cchg;
+    mapcolor_clsd_p = &hexen_mapcolor_clsd;
+    mapcolor_rkey_p = &hexen_mapcolor_rkey;
+    mapcolor_bkey_p = &hexen_mapcolor_bkey;
+    mapcolor_ykey_p = &hexen_mapcolor_ykey;
+    mapcolor_rdor_p = &hexen_mapcolor_rdor;
+    mapcolor_bdor_p = &hexen_mapcolor_bdor;
+    mapcolor_ydor_p = &hexen_mapcolor_ydor;
+    mapcolor_tele_p = &hexen_mapcolor_tele;
+    mapcolor_secr_p = &hexen_mapcolor_secr;
+    mapcolor_exit_p = &hexen_mapcolor_exit;
+    mapcolor_unsn_p = &hexen_mapcolor_unsn;
+    mapcolor_flat_p = &hexen_mapcolor_flat;
+    mapcolor_sprt_p = &hexen_mapcolor_sprt;
+    mapcolor_item_p = &hexen_mapcolor_item;
+    mapcolor_frnd_p = &hexen_mapcolor_frnd;
+    mapcolor_enemy_p = &hexen_mapcolor_enemy;
+    mapcolor_hair_p = &hexen_mapcolor_hair;
+    mapcolor_sngl_p = &hexen_mapcolor_sngl;
+    mapcolor_plyr_p = hexen_mapcolor_plyr;
   }
   else
   {
@@ -258,13 +310,29 @@ typedef struct
     mpoint_t a, b;
 } mline_t;
 
+#define R ((8*PLAYERRADIUS)/7)
+mline_t hexen_player_arrow[] = {
+  { { -R+R/4, 0 }, { 0, 0} }, // center line.
+  { { -R+R/4, R/8 }, { R, 0} }, // blade
+  { { -R+R/4, -R/8 }, { R, 0 } },
+  { { -R+R/4, -R/4 }, { -R+R/4, R/4 } }, // crosspiece
+  { { -R+R/8, -R/4 }, { -R+R/8, R/4 } },
+  { { -R+R/8, -R/4 }, { -R+R/4, -R/4} }, //crosspiece connectors
+  { { -R+R/8, R/4 }, { -R+R/4, R/4} },
+  { { -R-R/4, R/8 }, { -R-R/4, -R/8 } }, //pommel
+  { { -R-R/4, R/8 }, { -R+R/8, R/8 } },
+  { { -R-R/4, -R/8}, { -R+R/8, -R/8 } }
+};
+#undef R
+#define HEXEN_NUMPLYRLINES (sizeof(hexen_player_arrow)/sizeof(mline_t))
+
 //
 // The vector graphics for the automap.
 //  A line drawing of the player pointing right,
 //   starting from the middle.
 //
 #define R ((8*PLAYERRADIUS)/7)
-mline_t player_arrow[] =
+mline_t doom_player_arrow[] =
 {
   { { -R+R/8, 0 }, { R, 0 } }, // -----
   { { R, 0 }, { R-R/2, R/4 } },  // ----->
@@ -275,7 +343,10 @@ mline_t player_arrow[] =
   { { -R+3*R/8, 0 }, { -R+R/8, -R/4 } }
 };
 #undef R
-#define NUMPLYRLINES (sizeof(player_arrow)/sizeof(mline_t))
+#define NUMPLYRLINES (sizeof(doom_player_arrow)/sizeof(mline_t))
+
+static int numplyrlines;
+static mline_t *player_arrow;
 
 #define R ((8*PLAYERRADIUS)/7)
 mline_t cheat_player_arrow[] =
@@ -671,6 +742,17 @@ static void AM_initVariables(void)
   int pnum;
   static event_t st_notify = { ev_keyup, AM_MSGENTERED, 0, 0 };
 
+  if (hexen)
+  {
+    numplyrlines = HEXEN_NUMPLYRLINES;
+    player_arrow = hexen_player_arrow;
+  }
+  else
+  {
+    numplyrlines = NUMPLYRLINES;
+    player_arrow = doom_player_arrow;
+  }
+
   automapmode |= am_active;
 
   m_paninc.x = m_paninc.y = 0;
@@ -682,9 +764,9 @@ static void AM_initVariables(void)
 
   // find player to center on initially
   if (!playeringame[pnum = consoleplayer])
-  for (pnum=0;pnum<MAXPLAYERS;pnum++)
-    if (playeringame[pnum])
-  break;
+    for (pnum = 0; pnum < g_maxplayers; pnum++)
+      if (playeringame[pnum])
+        break;
 
   plr = &players[pnum];
   m_x = (plr->mo->x >> FRACTOMAPBITS) - m_w/2;//e6y
@@ -967,7 +1049,7 @@ dboolean AM_Responder
     /* Ty 03/27/98 - *not* externalized
      * cph 2001/11/20 - use doom_printf so we don't have our own buffer */
     doom_printf("%s %d", s_AMSTR_MARKEDSPOT, markpointnum);
-    if (!heretic) AM_addMark();
+    if (!raven) AM_addMark();
 
     return true;
   }
@@ -1344,7 +1426,7 @@ static void AM_drawMline
   if (AM_clipMline(ml, &fl))
   {
     // draws it on frame buffer using fb coords
-    if (!heretic && map_use_multisamling)
+    if (!raven && map_use_multisamling)
       V_DrawLineWu(&fl, color);
     else
       V_DrawLine(&fl, color);
@@ -1463,6 +1545,14 @@ static int AM_DoorColor(int type)
 {
   if (heretic && type > 34) return -1;
 
+  if (hexen)
+  {
+    if (type == 13 || type == 83)
+      return 2;
+
+    return -1;
+  }
+
   if (GenLockedBase <= type && type< GenDoorBase)
   {
     type -= GenLockedBase;
@@ -1579,12 +1669,18 @@ static void AM_drawWalls(void)
         (
           (*mapcolor_exit_p) &&
           (
-            lines[i].special==11 ||
-            lines[i].special==52 ||
-            lines[i].special==197 ||
-            lines[i].special==51  ||
-            lines[i].special==124 ||
-            lines[i].special==198
+            (hexen && (lines[i].special == 74 || lines[i].special == 75)) ||
+            (
+              !hexen &&
+              (
+                lines[i].special==11 ||
+                lines[i].special==52 ||
+                lines[i].special==197 ||
+                lines[i].special==51  ||
+                lines[i].special==124 ||
+                lines[i].special==198
+              )
+            )
           )
         ) {
           AM_drawMline(&l, (*mapcolor_exit_p)); /* exit line */
@@ -1617,14 +1713,20 @@ static void AM_drawWalls(void)
         // jff 1/10/98 add color change for all teleporter types
         if
         (
-            (*mapcolor_tele_p) && !(lines[i].flags & ML_SECRET) &&
+          (*mapcolor_tele_p) && !(lines[i].flags & ML_SECRET) &&
+          (
+            (hexen && (lines[i].special == 70 || lines[i].special == 71)) ||
             (
-              lines[i].special == 39 ||
+              !hexen &&
               (
-                !heretic &&
-                (lines[i].special == 97 || lines[i].special == 125 || lines[i].special == 126)
+                lines[i].special == 39 ||
+                (
+                  !heretic &&
+                  (lines[i].special == 97 || lines[i].special == 125 || lines[i].special == 126)
+                )
               )
             )
+          )
         )
         { // teleporters
           AM_drawMline(&l, (*mapcolor_tele_p));
@@ -1807,7 +1909,7 @@ static void AM_drawPlayers(void)
   fixed_t scale;
 
 #if defined(HAVE_LIBSDL2_IMAGE) && defined(GL_DOOM)
-  if (V_GetMode() == VID_MODEGL)
+  if (V_IsOpenGLMode())
   {
     if (map_things_appearance == map_things_appearance_icon)
       return;
@@ -1831,11 +1933,11 @@ static void AM_drawPlayers(void)
     if (ddt_cheating)
       AM_drawLineCharacter(cheat_player_arrow, NUMCHEATPLYRLINES, scale, viewangle, (*mapcolor_sngl_p), pt.x, pt.y);
     else
-      AM_drawLineCharacter(player_arrow, NUMPLYRLINES, scale, viewangle, (*mapcolor_sngl_p), pt.x, pt.y);
+      AM_drawLineCharacter(player_arrow, numplyrlines, scale, viewangle, (*mapcolor_sngl_p), pt.x, pt.y);
     return;
   }
 
-  for (i=0;i<MAXPLAYERS;i++) {
+  for (i = 0; i < g_maxplayers; i++) {
     player_t* p = &players[i];
 
     if ( (deathmatch && !demoplayback) && p != plr)
@@ -1850,7 +1952,7 @@ static void AM_drawPlayers(void)
       else
         AM_SetMPointFloatValue(&pt);
 
-      AM_drawLineCharacter (player_arrow, NUMPLYRLINES, scale, angle,
+      AM_drawLineCharacter (player_arrow, numplyrlines, scale, angle,
           p->powers[pw_invisibility] ? 246 /* *close* to black */
           : mapcolor_plyr_p[i], //jff 1/6/98 use default color
           pt.x, pt.y);
@@ -2040,7 +2142,7 @@ static void AM_DrawNiceThings(void)
   gld_ClearNiceThings();
 
   // draw players
-  for (i = 0; i < MAXPLAYERS; i++)
+  for (i = 0; i < g_maxplayers; i++)
   {
     if ((deathmatch && !demoplayback) && &players[i] != plr)
       continue;
@@ -2143,7 +2245,7 @@ static void AM_drawThings(void)
   mobj_t* t;
 
 #if defined(HAVE_LIBSDL2_IMAGE) && defined(GL_DOOM)
-  if (V_GetMode() == VID_MODEGL)
+  if (V_IsOpenGLMode())
   {
     if (map_things_appearance == map_things_appearance_icon)
     {
@@ -2279,7 +2381,7 @@ static void AM_drawMarks(void)
   char namebuf[16] = "AMMNUM0";
 
 #if defined(HAVE_LIBSDL2_IMAGE) && defined(GL_DOOM)
-  if (V_GetMode() == VID_MODEGL)
+  if (V_IsOpenGLMode())
   {
     if (map_things_appearance == map_things_appearance_icon)
       return;
@@ -2309,7 +2411,7 @@ static void AM_drawMarks(void)
         p.fy = CYMTOF_F(p.fy) - (float)markpoints[i].h * SCREENHEIGHT / 200.0f / 2.0f;
       }
 
-      if (V_GetMode() == VID_MODEGL ?
+      if (V_IsOpenGLMode() ?
           p.y < f_y + f_h && p.y + markpoints[i].h * SCREENHEIGHT / 200 >= f_y :
           p.y < f_y + f_h && p.y >= f_y)
       {
@@ -2420,7 +2522,7 @@ void M_ChangeMapGridSize(void)
 void M_ChangeMapTextured(void)
 {
 #ifdef GL_DOOM
-  if (V_GetMode() == VID_MODEGL)
+  if (V_IsOpenGLMode())
   {
     gld_ProcessTexturedMap();
   }
@@ -2429,7 +2531,7 @@ void M_ChangeMapTextured(void)
 
 void M_ChangeMapMultisamling(void)
 {
-  if (!heretic && map_use_multisamling && V_GetMode() != VID_MODEGL)
+  if (!raven && map_use_multisamling && V_IsSoftwareMode())
   {
     V_InitFlexTranTable();
   }
@@ -2444,7 +2546,7 @@ void M_ChangeMapMultisamling(void)
 void AM_drawSubsectors(void)
 {
 #ifdef GL_DOOM
-  if (V_GetMode() == VID_MODEGL)
+  if (V_IsOpenGLMode())
   {
     gld_MapDrawSubsectors(plr, f_x, f_y, m_x, m_y, f_w, f_h, scale_mtof);
   }
@@ -2485,7 +2587,7 @@ static void AM_setFrameVariables(void)
     am_frame.bbox[BOXTOP] = m_y2;
   }
 
-  am_frame.precise = (V_GetMode() == VID_MODEGL);
+  am_frame.precise = (V_IsOpenGLMode());
 }
 
 //
@@ -2516,7 +2618,7 @@ void AM_Drawer (void)
   AM_setFrameVariables();
 
 #ifdef GL_DOOM
-  if (V_GetMode() == VID_MODEGL)
+  if (V_IsOpenGLMode())
   {
     // do not use multisampling in automap mode if map_use_multisamling 0
     gld_MultisamplingSet();
@@ -2539,7 +2641,7 @@ void AM_Drawer (void)
   AM_drawCrosshair((*mapcolor_hair_p));   //jff 1/7/98 default crosshair color
 
 #if defined(GL_DOOM)
-  if (V_GetMode() == VID_MODEGL)
+  if (V_IsOpenGLMode())
   {
     gld_DrawMapLines();
     M_ArrayClear(&map_lines);

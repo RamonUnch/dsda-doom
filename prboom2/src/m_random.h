@@ -35,6 +35,7 @@
 #ifndef __M_RANDOM__
 #define __M_RANDOM__
 
+#include "m_fixed.h"
 #include "doomtype.h"
 
 // killough 1/19/98: rewritten to use to use a better random number generator
@@ -125,6 +126,7 @@ typedef enum {
   pr_defect,                  // #62  // Start new entries -- add new entries below
   pr_heretic,                 // #63
   pr_mbf21,                   // #64
+  pr_hexen,                   // #65
 
   // End of new entries
   NUMPRCLASS               // MUST be last item in list

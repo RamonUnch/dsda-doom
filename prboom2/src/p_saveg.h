@@ -38,6 +38,8 @@
 #pragma interface
 #endif
 
+#include "doomtype.h"
+
 /* Persistent storage/archiving.
  * These are the load / save game routines. */
 void P_ArchivePlayers(void);
@@ -62,5 +64,18 @@ void P_TrueUnArchiveThinkers(void);
 extern byte *save_p;
 void CheckSaveGame(size_t,const char*, int);              /* killough */
 #define CheckSaveGame(a) (CheckSaveGame)(a, __FILE__, __LINE__)
+
+// hexen
+
+void P_ArchiveACS(void);
+void P_UnArchiveACS(void);
+void P_ArchivePolyobjs(void);
+void P_UnArchivePolyobjs(void);
+void P_ArchiveScripts(void);
+void P_UnArchiveScripts(void);
+void P_ArchiveSounds(void);
+void P_UnArchiveSounds(void);
+void P_ArchiveMisc(void);
+void P_UnArchiveMisc(void);
 
 #endif

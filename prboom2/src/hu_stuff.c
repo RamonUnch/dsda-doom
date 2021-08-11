@@ -51,6 +51,7 @@
 #include "m_misc.h"
 #include "r_main.h"
 #include "lprintf.h"
+#include "p_setup.h"
 #include "e6y.h" //e6y
 #include "dsda.h"
 #include "dsda/hud.h"
@@ -129,7 +130,7 @@ const char* player_names[] =
 };
 
 //jff 3/17/98 translate player colmap to text color ranges
-int plyrcoltran[MAXPLAYERS]={CR_GREEN,CR_GRAY,CR_BROWN,CR_RED};
+int plyrcoltran[MAX_MAXPLAYERS]={CR_GREEN,CR_GRAY,CR_BROWN,CR_RED,CR_GREEN,CR_GRAY,CR_BROWN,CR_RED};
 
 char chat_char;                 // remove later.
 static player_t*  plr;
@@ -145,7 +146,7 @@ patchnum_t hu_font_hud[HU_FONTSIZE];
 static hu_textline_t  w_title;
 static hu_stext_t     w_message;
 static hu_itext_t     w_chat;
-static hu_itext_t     w_inputbuffer[MAXPLAYERS];
+static hu_itext_t     w_inputbuffer[MAX_MAXPLAYERS];
 static hu_textline_t  w_coordx; //jff 2/16/98 new coord widget for automap
 static hu_textline_t  w_coordy; //jff 3/3/98 split coord widgets automap
 static hu_textline_t  w_coordz; //jff 3/3/98 split coord widgets automap
@@ -179,13 +180,14 @@ static hu_textline_t  w_ammo_icon;
 static hu_textline_t  w_keys_icon;
 
 static dboolean    always_off = false;
-static char       chat_dest[MAXPLAYERS];
+static char       chat_dest[MAX_MAXPLAYERS];
 dboolean           chat_on;
 static dboolean    message_on;
 static dboolean    message_list; //2/26/98 enable showing list of messages
 dboolean           message_dontfuckwithme;
 static dboolean    message_nottobefuckedwith;
 static int        message_counter;
+static int        yellow_message;
 extern int        showMessages;
 static dboolean    headsupactive = false;
 
@@ -236,7 +238,7 @@ extern int map_level_stat;
 //
 const char* shiftxform;
 
-static custom_message_t custom_message[MAXPLAYERS];
+static custom_message_t custom_message[MAX_MAXPLAYERS];
 static custom_message_t *custom_message_p;
 void HU_init_crosshair(void);
 
@@ -300,6 +302,10 @@ static const char* HU_Title(void)
       {
         return LevelNames[(gameepisode - 1) * 9 + gamemap - 1];
       }
+    }
+    else if (hexen)
+    {
+      return P_GetMapName(gamemap);
     }
     else
     {
@@ -371,13 +377,13 @@ void HU_Init(void)
   {
     if ('0'<=j && j<='9')
     {
-      if (heretic)
+      if (raven)
         sprintf(buffer, "FONTA%.2d",j - 32);
       else
         sprintf(buffer, "STCFN%.3d",j);
       R_SetPatchNum(&hu_font[i], buffer);
 
-      if (!heretic)
+      if (!raven)
       {
         sprintf(buffer, "STTNUM%.1d",j-48);
         R_SetPatchNum(&hu_font_hud[i], buffer);
@@ -385,19 +391,19 @@ void HU_Init(void)
     }
     else if ('A'<=j && j<='Z')
     {
-      if (heretic)
+      if (raven)
         sprintf(buffer, "FONTA%.2d",j - 32);
       else
         sprintf(buffer, "STCFN%.3d",j);
       R_SetPatchNum(&hu_font[i], buffer);
     }
-    else if (!heretic && j < 97)
+    else if (!raven && j < 97)
     {
       sprintf(buffer, "STCFN%.3d",j);
       R_SetPatchNum(&hu_font[i], buffer);
       //jff 2/23/98 make all font chars defined, useful or not
     }
-    else if (heretic && j < 91)
+    else if (raven && j < 91)
     {
       sprintf(buffer, "FONTA%.2d", j - 32);
       R_SetPatchNum(&hu_font[i], buffer);
@@ -415,7 +421,7 @@ void HU_Init(void)
     }
   }
 
-  if (!heretic)
+  if (!raven)
   {
     // these patches require cm to rgb translation
     for (i = 33; i < 96; i++)
@@ -438,7 +444,7 @@ void HU_Init(void)
     R_SetPatchNum(&hu_msgbg[i], buffer);
   }
 
-  if (!heretic)
+  if (!raven)
   {
     // CPhipps - load patches for keys and double keys
     for (i=0; i<6; i++) {
@@ -507,6 +513,7 @@ void HU_Start(void)
   message_on = false;
   message_dontfuckwithme = false;
   message_nottobefuckedwith = false;
+  yellow_message = false;
   chat_on = false;
 
   // create the message widget
@@ -529,8 +536,8 @@ void HU_Start(void)
   HUlib_initTextLine
   (
     &w_title,
-    heretic ? 20 : HU_TITLEX,
-    heretic ? 145 : HU_TITLEY,
+    raven ? 20 : HU_TITLEX,
+    raven ? heretic ? 145 : 144 : HU_TITLEY,
     hu_font,
     HU_FONTSTART,
     hudcolor_titl,
@@ -781,7 +788,7 @@ void HU_Start(void)
     &message_list
   );
 
-  if (gamemapinfo != NULL)
+  if (gamemapinfo && gamemapinfo->levelname)
   {
 	  if (gamemapinfo->label)
 		  s = gamemapinfo->label;
@@ -796,7 +803,6 @@ void HU_Start(void)
 		  HUlib_addCharToTextLine(&w_title, ' ');
 	  }
 	  s = gamemapinfo->levelname;
-	  if (!s) s = "Unnamed";
   }
   else
   {
@@ -981,7 +987,7 @@ void HU_Start(void)
   );
 
   // create the inputbuffer widgets, one per player
-  for (i=0 ; i<MAXPLAYERS ; i++)
+  for (i=0 ; i<MAX_MAXPLAYERS ; i++)
     HUlib_initIText
     (
       &w_inputbuffer[i],
@@ -999,7 +1005,7 @@ void HU_Start(void)
   // now allow the heads-up display to run
   headsupactive = true;
 
-  if (!heretic) HU_LoadHUDDefs();
+  if (!raven) HU_LoadHUDDefs();
 
   HU_MoveHud(true);
 
@@ -1245,7 +1251,7 @@ void HU_MoveHud(int force)
   static int ohud_num = -1;
 
   //jff 3/4/98 move displays around on F5 changing hud_distributed
-  if (!heretic && (huds_count > 0) && (force || hud_num != ohud_num))
+  if (!raven && (huds_count > 0) && (force || hud_num != ohud_num))
   {
     int i;
 
@@ -1537,7 +1543,7 @@ void HU_widget_build_armor(void)
   int i;
   char *s;
   char armorstr[80]; //jff
-  int armor = plr->armorpoints;
+  int armor = plr->armorpoints[ARMOR_ARMOR];
   int armorbars = armor>100? 25 : armor/4;
 
   if (w_armor.val != -1 && w_armor.val == armor)
@@ -1591,7 +1597,7 @@ void HU_widget_build_armor_big(void)
 {
   char *s;
   char armorstr[80]; //jff
-  int armor = plr->armorpoints;
+  int armor = plr->armorpoints[ARMOR_ARMOR];
 
   if (w_armor_big.val != -1 && w_armor_big.val == armor)
     return;
@@ -1763,7 +1769,7 @@ void HU_widget_build_keys(void)
       char numbuf[32];
 
       // scan thru players
-      for (k=0;k<MAXPLAYERS;k++)
+      for (k=0;k<g_maxplayers;k++)
       {
         // skip players not in game
         if (!playeringame[k])
@@ -1772,7 +1778,7 @@ void HU_widget_build_keys(void)
         fragcount = 0;
         // compute number of times they've fragged each player
         // minus number of times they've been fragged by them
-        for (m=0;m<MAXPLAYERS;m++)
+        for (m=0;m<g_maxplayers;m++)
         {
           if (!playeringame[m]) continue;
           fragcount += (m!=k)?  players[k].frags[m] : -players[k].frags[m];
@@ -1968,7 +1974,7 @@ void HU_widget_build_monsec(void)
     fullitemcount = 0;
     fullsecretcount = 0;
     max_kill_requirement = dsda_MaxKillRequirement();
-    for (i=0 ; i<MAXPLAYERS ; i++)
+    for (i=0 ; i<g_maxplayers ; i++)
     {
       if (playeringame[i])
       {
@@ -2095,7 +2101,7 @@ void HU_widget_draw_medict_percent(void)
 
 void HU_widget_build_armor_percent(void)
 {
-  int armor = plr->armorpoints;
+  int armor = plr->armorpoints[ARMOR_ARMOR];
 
   if (w_armor_percent.val != -1 && w_armor_percent.val == armor)
     return;
@@ -2261,7 +2267,7 @@ void SetCrosshairTarget(void)
       int top, bottom, h;
       stretch_param_t *params = &stretch_params[crosshair.flags & VPT_ALIGN_MASK];
 
-      if (V_GetMode() != VID_MODEGL)
+      if (V_IsSoftwareMode())
       {
         winy += (float)(viewheight/2 - centery);
       }
@@ -2446,6 +2452,9 @@ void HU_Drawer(void)
       int time = leveltime / TICRATE;
       int ttime = (totalleveltimes + leveltime) / TICRATE;
 
+      if (hexen)
+        ttime = players[consoleplayer].worldTimer / TICRATE;
+
       sprintf(str, "Monsters: \x1b%c%d/%d", '0' + hudcolor_mapstat_value,
         players[consoleplayer].killcount - players[consoleplayer].maxkilldiscount,
         totalkills);
@@ -2478,7 +2487,7 @@ void HU_Drawer(void)
         HUlib_addCharToTextLine(&w_map_time, *(s++));
       HUlib_drawTextLine(&w_map_time, false);
 
-      if (totalleveltimes > 0)
+      if (hexen || totalleveltimes > 0)
       {
         sprintf(str, "%02d:%02d:%02d", ttime/3600, (ttime%3600)/60, ttime%60);
         HUlib_clearTextLine(&w_map_totaltime);
@@ -2495,7 +2504,7 @@ void HU_Drawer(void)
   // killough 2/21/98: really allow new hud stuff to be turned off COMPLETELY
   if
   (
-    !heretic &&
+    !raven &&
     hud_num > 0 &&                   // hud optioned on
     hud_displayed &&                 // hud on from fullscreen key
     viewheight==SCREENHEIGHT &&      // fullscreen mode is active
@@ -2636,6 +2645,7 @@ void HU_Ticker(void)
   {
     message_on = false;
     message_nottobefuckedwith = false;
+    yellow_message = false;
   }
   if (bsdown && bscounter++ > 9) {
     HUlib_keyInIText(&w_chat, KEYD_BACKSPACE);
@@ -2665,11 +2675,14 @@ void HU_Ticker(void)
       message_nottobefuckedwith = message_dontfuckwithme;
       // clear the flag that "Messages Off" is being posted
       message_dontfuckwithme = 0;
+
+      yellow_message = plr->yellowMessage;
+      // hexen_note: use FONTAY_S for yellow messages (new font, y_message, etc)
     }
   }
 
   // centered messages
-  for (i = 0; i < MAXPLAYERS; i++)
+  for (i = 0; i < g_maxplayers; i++)
   {
     if (custom_message[i].ticks > 0)
       custom_message[i].ticks--;
@@ -2695,7 +2708,7 @@ void HU_Ticker(void)
   // check for incoming chat characters
   if (netgame)
   {
-    for (i=0; i<MAXPLAYERS; i++)
+    for (i=0; i<g_maxplayers; i++)
     {
       if (!playeringame[i])
         continue;
@@ -2722,6 +2735,7 @@ void HU_Ticker(void)
               message_nottobefuckedwith = true;
               message_on = true;
               message_counter = HU_MSGTIMEOUT;
+              yellow_message = false;
               if ( gamemode == commercial )
                 S_StartSound(0, sfx_radio);
               else
@@ -2811,7 +2825,7 @@ dboolean HU_Responder(event_t *ev)
   c = ev->type == ev_keydown ? ev->data1 : 0;
 
   numplayers = 0;
-  for (i=0 ; i<MAXPLAYERS ; i++)
+  for (i=0 ; i<g_maxplayers ; i++)
     numplayers += playeringame[i];
 
   if (ev->data1 == key_shift)
@@ -2869,7 +2883,7 @@ dboolean HU_Responder(event_t *ev)
       }
       else if (numplayers > 2)
       {
-        for (i=0; i<MAXPLAYERS ; i++)
+        for (i=0; i<g_maxplayers ; i++)
         {
           if (dsda_InputActivated(dsda_input_chat_dest0 + i))
           {
@@ -2962,7 +2976,7 @@ int SetCustomMessage(int plr, const char *msg, int delay, int ticks, int cm, int
 {
   custom_message_t item;
 
-  if (plr < 0 || plr >= MAXPLAYERS || !msg || ticks < 0 ||
+  if (plr < 0 || plr >= g_maxplayers || !msg || ticks < 0 ||
       sfx < 0 || sfx >= num_sfx || cm < 0 || cm >= CR_LIMIT)
   {
     return false;
@@ -2990,4 +3004,10 @@ int SetCustomMessage(int plr, const char *msg, int delay, int ticks, int cm, int
   }
 
   return true;
+}
+
+void ClearMessage(void)
+{
+  message_counter = 0;
+  yellow_message = false;
 }

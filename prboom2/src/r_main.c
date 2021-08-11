@@ -60,6 +60,8 @@
 #include "e6y.h"//e6y
 #include "xs_Float.h"
 
+#include "hexen/a_action.h"
+
 // e6y
 // Now they are variables. Depends from render_doom_lightmaps variable.
 // Unify colour maping logic by cph is removed, because of bugs.
@@ -75,6 +77,8 @@ int r_have_internal_hires = false;
 // Fineangles in the SCREENWIDTH wide window.
 #define FIELDOFVIEW 2048
 
+#define HEXEN_PI 3.141592657
+
 // killough: viewangleoffset is a legacy from the pre-v1.2 days, when Doom
 // had Left/Mid/Right viewing. +/-ANG90 offsets were placed here on each
 // node, by d_net.c, to set up a L/M/R session.
@@ -82,6 +86,7 @@ int r_have_internal_hires = false;
 int viewangleoffset;
 int viewpitchoffset;
 int validcount = 1;         // increment every time a check is made
+int validcount2 = 1;
 const lighttable_t *fixedcolormap;
 int      centerx, centery;
 // e6y: wide-res
@@ -391,6 +396,8 @@ static void R_InitLightTables (void)
   c_zlight = malloc(sizeof(*c_zlight) * numcolormaps);
   c_scalelight = malloc(sizeof(*c_scalelight) * numcolormaps);
 
+  // hexen_note: does hexen require render_doom_lightmaps?
+
   LIGHTLEVELS   = (render_doom_lightmaps ? 16 : 32);
   LIGHTSEGSHIFT = (render_doom_lightmaps ? 4 : 3);
   LIGHTBRIGHT   = (render_doom_lightmaps ? 1 : 2);
@@ -682,7 +689,7 @@ void R_BuildModelViewMatrix(void)
   yaw = 270.0f - (float)(viewangle>>ANGLETOFINESHIFT) * 360.0f / FINEANGLES;
   yaw *= (float)M_PI / 180.0f;
   pitch = 0;
-  if (V_GetMode() == VID_MODEGL)
+  if (V_IsOpenGLMode())
   {
     pitch = (float)(viewpitch>>ANGLETOFINESHIFT) * 360.0f / FINEANGLES;
     pitch *= (float)M_PI / 180.0f;
@@ -911,14 +918,14 @@ subsector_t *R_PointInSubsector(fixed_t x, fixed_t y)
 
 void R_SetupFreelook(void)
 {
-  if (V_GetMode() != VID_MODEGL)
+  if (V_IsSoftwareMode())
   {
     fixed_t InvZtoScale;
     fixed_t dy;
     int i;
 
     centery = viewheight / 2;
-    if (heretic || GetMouseLook())
+    if (raven || GetMouseLook())
     {
       dy = FixedMul(focallengthy, finetangent[(ANG90-viewpitch)>>ANGLETOFINESHIFT]);
       centery += dy >> FRACBITS;
@@ -949,7 +956,7 @@ void R_SetupMatrix(void)
   R_SetupViewport();
 
   #ifdef GL_DOOM
-  if (V_GetMode() == VID_MODEGL)
+  if (V_IsOpenGLMode())
   {
     extern int gl_nearclip;
     r_nearclip = gl_nearclip;
@@ -1032,7 +1039,7 @@ static void R_SetupFrame (player_t *player)
 
   R_SetClipPlanes();
 
-  if (V_GetMode() == VID_MODEGL || hudadd_crosshair)
+  if (V_IsOpenGLMode() || hudadd_crosshair)
     R_SetupMatrix();
 
   validcount++;
@@ -1055,7 +1062,7 @@ void R_ShowStats(void)
     renderer_fps = 1000 * FPS_FrameCount / (tick - FPS_SavedTick);
     if (rendering_stats)
     {
-      doom_printf((V_GetMode() == VID_MODEGL)
+      doom_printf((V_IsOpenGLMode())
                   ?"Frame rate %d fps\nWalls %d, Flats %d, Sprites %d"
                   :"Frame rate %d fps\nSegs %d, Visplanes %d, Sprites %d",
       renderer_fps, rendered_segs, rendered_visplanes, rendered_vissprites);
@@ -1075,6 +1082,7 @@ void R_ClearStats(void)
 //
 // R_RenderView
 //
+
 void R_RenderPlayerView (player_t* player)
 {
   dboolean automap = (automapmode & am_active) && !(automapmode & am_overlay);
@@ -1089,7 +1097,7 @@ void R_RenderPlayerView (player_t* player)
   R_ClearPlanes ();
   R_ClearSprites ();
 
-  if (V_GetMode() == VID_MODEGL)
+  if (V_IsOpenGLMode())
   {
 #ifdef GL_DOOM
     // proff 11/99: clear buffers
@@ -1116,7 +1124,7 @@ void R_RenderPlayerView (player_t* player)
 #endif
 
 #ifdef GL_DOOM
-  if (V_GetMode() == VID_MODEGL) {
+  if (V_IsOpenGLMode()) {
     {
       angle_t a1 = gld_FrustumAngle();
       gld_clipper_Clear();
@@ -1126,14 +1134,24 @@ void R_RenderPlayerView (player_t* player)
   }
 #endif
 
-  // The head node is the last node output.
-  R_RenderBSPNode (numnodes-1);
+  // Make displayed player invisible locally
+  if (localQuakeHappening[displayplayer] && gamestate == GS_LEVEL)
+  {
+    players[displayplayer].mo->flags2 |= MF2_DONTDRAW;
+    R_RenderBSPNode(numnodes - 1);  // head node is the last node output
+    players[displayplayer].mo->flags2 &= ~MF2_DONTDRAW;
+  }
+  else
+  {
+    // The head node is the last node output.
+    R_RenderBSPNode(numnodes - 1);
+  }
 
 #ifdef HAVE_NET
   NetUpdate ();
 #endif
 
-  if (V_GetMode() != VID_MODEGL)
+  if (V_IsSoftwareMode())
     R_DrawPlanes();
 
   R_ResetColumnBuffer();
@@ -1143,7 +1161,7 @@ void R_RenderPlayerView (player_t* player)
   NetUpdate ();
 #endif
 
-  if (V_GetMode() != VID_MODEGL) {
+  if (V_IsSoftwareMode()) {
     R_DrawMasked ();
     R_ResetColumnBuffer();
   }
@@ -1153,7 +1171,7 @@ void R_RenderPlayerView (player_t* player)
   NetUpdate ();
 #endif
 
-  if (V_GetMode() == VID_MODEGL && !automap) {
+  if (V_IsOpenGLMode() && !automap) {
 #ifdef GL_DOOM
     // proff 11/99: draw the scene
     gld_DrawScene(player);

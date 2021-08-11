@@ -83,7 +83,6 @@ extern int GetWeaponAmmo[NUMWEAPONS];
 
 dboolean P_GiveBody(player_t * player, int num);
 void P_SetMessage(player_t * player, const char *message, dboolean ultmsg);
-void Heretic_P_TouchSpecialThing(mobj_t * special, mobj_t * toucher);
 dboolean P_GiveArtifact(player_t * player, artitype_t arti, mobj_t * mo);
 dboolean Heretic_P_GiveWeapon(player_t * player, weapontype_t weapon);
 void P_SetDormantArtifact(mobj_t * arti);
@@ -94,5 +93,17 @@ void P_TouchWhirlwind(mobj_t * target);
 void P_MinotaurSlam(mobj_t * source, mobj_t * target);
 dboolean P_AutoUseChaosDevice(player_t * player);
 void P_AutoUseHealth(player_t * player, int saveHealth);
+
+// hexen
+
+#define MAXMORPHHEALTH 30
+
+void P_SetYellowMessage(player_t * player, const char *message, dboolean ultmsg);
+void P_FallingDamage(player_t * player);
+void P_PoisonPlayer(player_t * player, mobj_t * poisoner, int poison);
+void P_PoisonDamage(player_t * player, mobj_t * source, int damage, dboolean playPainSound);
+dboolean P_GiveMana(player_t * player, manatype_t mana, int count);
+dboolean Hexen_P_GiveArmor(player_t *player, armortype_t armortype, int amount);
+dboolean P_MorphPlayer(player_t * player);
 
 #endif
