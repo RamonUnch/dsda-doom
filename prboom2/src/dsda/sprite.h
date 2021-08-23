@@ -1,5 +1,5 @@
 //
-// Copyright(C) 2020 by Ryan Krafnick
+// Copyright(C) 2021 by Ryan Krafnick
 //
 // This program is free software; you can redistribute it and/or
 // modify it under the terms of the GNU General Public License
@@ -12,23 +12,15 @@
 // GNU General Public License for more details.
 //
 // DESCRIPTION:
-//	DSDA Time
+//	DSDA Sprite
 //
 
-#ifndef __DSDA_TIME__
-#define __DSDA_TIME__
+#ifndef __DSDA_SPRITE__
+#define __DSDA_SPRITE__
 
-typedef enum {
-  dsda_timer_displaytime,
-  dsda_timer_tic,
-  dsda_timer_realtime,
-  dsda_timer_memory,
-  dsda_timer_fps,
-  DSDA_TIMER_COUNT
-} dsda_timer_t;
-
-void dsda_StartTimer(int timer);
-unsigned long long dsda_ElapsedTime(int timer);
-void dsda_LimitFPS(void);
+int dsda_GetDehSpriteIndex(const char* key);
+int dsda_GetOriginalSpriteIndex(const char* key);
+void dsda_InitializeSprites(const char** source, int count);
+void dsda_FreeDehSprites(void);
 
 #endif

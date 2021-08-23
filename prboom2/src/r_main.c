@@ -60,6 +60,8 @@
 #include "e6y.h"//e6y
 #include "xs_Float.h"
 
+#include "dsda/settings.h"
+
 #include "hexen/a_action.h"
 
 // e6y
@@ -925,7 +927,7 @@ void R_SetupFreelook(void)
     int i;
 
     centery = viewheight / 2;
-    if (raven || GetMouseLook())
+    if (raven || dsda_MouseLook())
     {
       dy = FixedMul(focallengthy, finetangent[(ANG90-viewpitch)>>ANGLETOFINESHIFT]);
       centery += dy >> FRACBITS;
@@ -1085,6 +1087,9 @@ void R_ClearStats(void)
 
 void R_RenderPlayerView (player_t* player)
 {
+  // Framerate-independent fuzz progression
+  static int fuzzgametic = 0;
+  static int savedfuzzpos = 0;
   dboolean automap = (automapmode & am_active) && !(automapmode & am_overlay);
 
   r_frame_count++;
@@ -1115,6 +1120,17 @@ void R_RenderPlayerView (player_t* player)
       unsigned char color=(gametic % 20) < 9 ? 0xb0 : 0;
       V_FillRect(0, viewwindowx, viewwindowy, viewwidth, viewheight, color);
       R_DrawViewBorder();
+    }
+
+    // Only progress software fuzz offset if the gametic has progressed
+    if (fuzzgametic != gametic)
+    {
+      fuzzgametic = gametic;
+      savedfuzzpos = R_GetFuzzPos();
+    }
+    else
+    {
+      R_SetFuzzPos(savedfuzzpos);
     }
   }
 

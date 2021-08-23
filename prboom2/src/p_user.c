@@ -290,7 +290,7 @@ void P_SetPitch(player_t *player)
   {
     if (!(demoplayback || democontinue))
     {
-      if (GetMouseLook())
+      if (dsda_MouseLook())
       {
         if (!mo->reactiontime && (!(automapmode & am_active) || (automapmode & am_overlay)))
         {
@@ -329,7 +329,7 @@ void P_MovePlayer (player_t* player)
   ticcmd_t *cmd;
   mobj_t *mo;
 
-  if (raven) return Heretic_P_MovePlayer(player);
+  if (raven) return Raven_P_MovePlayer(player);
 
   cmd = &player->cmd;
   mo = player->mo;
@@ -404,7 +404,7 @@ void P_DeathThink (player_t* player)
   // fall to the ground
 
   onground = (player->mo->z <= player->mo->floorz);
-  if (player->mo->type == g_skullpop_mt || player->mo->type == HEXEN_MT_ICECHUNK)
+  if (player->mo->type == g_skullpop_mt || (hexen && player->mo->type == HEXEN_MT_ICECHUNK))
   {
     // Flying bloody skull
     player->viewheight = 6*FRACUNIT;
@@ -1386,7 +1386,7 @@ dboolean P_UseArtifact(player_t * player, artitype_t arti)
     return (true);
 }
 
-void Heretic_P_MovePlayer(player_t * player)
+void Raven_P_MovePlayer(player_t * player)
 {
     int look;
     int fly;

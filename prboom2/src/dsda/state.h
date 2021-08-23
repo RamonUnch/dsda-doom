@@ -1,5 +1,5 @@
 //
-// Copyright(C) 2020 by Ryan Krafnick
+// Copyright(C) 2021 by Ryan Krafnick
 //
 // This program is free software; you can redistribute it and/or
 // modify it under the terms of the GNU General Public License
@@ -12,23 +12,22 @@
 // GNU General Public License for more details.
 //
 // DESCRIPTION:
-//	DSDA Time
+//	DSDA State
 //
 
-#ifndef __DSDA_TIME__
-#define __DSDA_TIME__
+#ifndef __DSDA_STATE__
+#define __DSDA_STATE__
 
-typedef enum {
-  dsda_timer_displaytime,
-  dsda_timer_tic,
-  dsda_timer_realtime,
-  dsda_timer_memory,
-  dsda_timer_fps,
-  DSDA_TIMER_COUNT
-} dsda_timer_t;
+#include "info.h"
 
-void dsda_StartTimer(int timer);
-unsigned long long dsda_ElapsedTime(int timer);
-void dsda_LimitFPS(void);
+typedef struct {
+  state_t* state;
+  actionf_t* codeptr;
+  byte* defined_codeptr_args;
+} dsda_deh_state_t;
+
+dsda_deh_state_t dsda_GetDehState(int index);
+void dsda_InitializeStates(state_t* source, int count);
+void dsda_FreeDehStates(void);
 
 #endif
