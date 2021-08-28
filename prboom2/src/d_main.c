@@ -496,6 +496,9 @@ static const char *auto_shot_fname;
 
 static void D_DoomLoop(void)
 {
+  if (quickstart_window_ms > 0)
+    I_uSleep(quickstart_window_ms * 1000);
+
   for (;;)
   {
     WasRenderedInTryRunTics = false;
@@ -1027,15 +1030,18 @@ static char *FindIWADFile(void)
   int   i;
   char  * iwad  = NULL;
 
-  if (M_CheckParm("-heretic") || CheckExeSuffix("-heretic"))
-    return I_FindFile("heretic.wad", ".wad");
-  else if (M_CheckParm("-hexen") || CheckExeSuffix("-hexen"))
-    return I_FindFile("hexen.wad", ".wad");
-
   i = M_CheckParm("-iwad");
-  if (i && (++i < myargc)) {
+  if (i && (++i < myargc))
+  {
     iwad = I_FindFile(myargv[i], ".wad");
-  } else {
+  }
+  else
+  {
+    if (M_CheckParm("-heretic") || CheckExeSuffix("-heretic"))
+      return I_FindFile("heretic.wad", ".wad");
+    else if (M_CheckParm("-hexen") || CheckExeSuffix("-hexen"))
+      return I_FindFile("hexen.wad", ".wad");
+
     for (i=0; !iwad && i<nstandard_iwads; i++)
       iwad = I_FindFile(standard_iwads[i], ".wad");
   }
@@ -1708,6 +1714,7 @@ const char* doomverstr = NULL;
 static void D_DoomMainSetup(void)
 {
   int p,slot;
+  dboolean autoload;
 
   if (M_CheckParm("-verbose"))
     I_EnableVerboseLogging();
@@ -1900,16 +1907,20 @@ static void D_DoomMainSetup(void)
   //e6y: some stuff from command-line should be initialised before ProcessDehFile()
   e6y_InitCommandLine();
 
+  // Automatic pistol start when advancing from one level to the next.
+  pistolstart = M_CheckParm("-pistolstart") || M_CheckParm("-wandstart");
+
   // CPhipps - autoloading of wads
   // Designed to be general, instead of specific to boomlump.wad
   // Some people might find this useful
   // cph - support MBF -noload parameter
+  autoload = !M_CheckParm("-noload") && !M_CheckParm("-noautoload");
   {
     // only autoloaded wads here - autoloaded patches moved down below W_Init
     int i, imax = MAXLOADFILES;
 
     // make sure to always autoload prboom-plus.wad
-    if (M_CheckParm("-noload"))
+    if (!autoload)
       imax = 1;
 
     for (i=0; i<imax; i++) {
@@ -1929,8 +1940,8 @@ static void D_DoomMainSetup(void)
   }
 
   // add wad files from autoload directory before wads from -file parameter
-
-  D_AutoloadIWadDir();
+  if (autoload)
+    D_AutoloadIWadDir();
 
   // add any files specified on the command line with -file wadfile
   // to the wad list
@@ -2002,8 +2013,8 @@ static void D_DoomMainSetup(void)
   }
 
   // add wad files from autoload PWAD directories
-
-  D_AutoloadPWadDir();
+  if (autoload)
+    D_AutoloadPWadDir();
 
   // CPhipps - move up netgame init
   //jff 9/3/98 use logical output routine
@@ -2072,7 +2083,7 @@ static void D_DoomMainSetup(void)
     }
   }
 
-  if (!M_CheckParm("-noload")) {
+  if (autoload) {
     // now do autoloaded dehacked patches, after IWAD patches but before PWAD
     int i;
 
@@ -2094,8 +2105,8 @@ static void D_DoomMainSetup(void)
   }
 
   // process deh files from autoload directory before deh in wads from -file parameter
-
-  D_AutoloadDehIWadDir();
+  if (autoload)
+    D_AutoloadDehIWadDir();
 
   if (!M_CheckParm ("-nodeh"))
     for (p = -1; (p = W_ListNumFromName("DEHACKED", p)) >= 0; )
@@ -2105,8 +2116,8 @@ static void D_DoomMainSetup(void)
         ProcessDehFile(NULL, D_dehout(), p);
 
   // process .deh files from PWADs autoload directories
-
-  D_AutoloadDehPWadDir();
+  if (autoload)
+    D_AutoloadDehPWadDir();
 
   // Load command line dehacked patches after WAD dehacked patches
 
@@ -2156,6 +2167,8 @@ static void D_DoomMainSetup(void)
   }
 
   PostProcessDeh();
+
+  dsda_DetectMapFormat();
 
   V_InitColorTranslation(); //jff 4/24/98 load color translation lumps
 

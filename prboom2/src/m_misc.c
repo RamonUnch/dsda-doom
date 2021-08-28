@@ -328,7 +328,7 @@ default_t defaults[] =
   {"dehfile_2",{NULL,&deh_files[1]},{0,""},UL,UL,def_str,ss_none},
 
   {"Game settings",{NULL},{0},UL,UL,def_none,ss_none},
-  {"default_skill",{&defaultskill},{3},1,5, // jff 3/24/98 allow default skill setting
+  {"default_skill",{&defaultskill},{4},1,5, // jff 3/24/98 allow default skill setting
    def_int,ss_none}, // selects default skill 1=TYTD 2=NTR 3=HMP 4=UV 5=NM
   {"player_bobbing",{&default_player_bobbing},{1},0,1,         // phares 2/25/98
    def_bool,ss_weap, &player_bobbing},
@@ -395,6 +395,7 @@ default_t defaults[] =
    def_bool,ss_none},
   {"exclusive_fullscreen",{&exclusive_fullscreen},{0},0,1, // [FG] mode-changing fullscreen
   def_bool,ss_none},
+  {"gl_exclusive_fullscreen",{&gl_exclusive_fullscreen},{1},0,1,def_bool,ss_none},
   {"render_vsync",{&render_vsync},{1},0,1,
    def_bool,ss_none},
   {"tran_filter_pct",{&tran_filter_pct},{66},0,100,         // killough 2/21/98
@@ -1006,6 +1007,8 @@ default_t defaults[] =
    def_str,ss_none},
   {"demo_overwriteexisting", {&demo_overwriteexisting},  {0},0,1,
    def_bool,ss_stat},
+  {"quickstart_window_ms", {&quickstart_window_ms},  {0},0,1000,
+   def_int,ss_stat},
 
   {"Prboom-plus game settings",{NULL},{0},UL,UL,def_none,ss_none},
   {"movement_strafe50", {&movement_strafe50},  {0},0,1,
