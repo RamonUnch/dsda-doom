@@ -57,7 +57,9 @@
 #include "g_overflow.h"
 #include "am_map.h"
 #include "e6y.h"//e6y
+
 #include "dsda.h"
+#include "dsda/map_format.h"
 
 #include "hexen/p_acs.h"
 #include "hexen/p_anim.h"
@@ -1484,7 +1486,7 @@ static void P_LoadThings (int lump)
   int mobjcount = 0;
   mobj_t **mobjlist;
 
-  numthings = W_LumpLength (lump) / (hexen_format ? sizeof(mapthing_t) : sizeof(doom_mapthing_t));
+  numthings = W_LumpLength (lump) / map_format.mapthing_size;
   data = W_CacheLumpNum(lump);
   doom_data = (const doom_mapthing_t*) data;
   mobjlist = malloc(numthings * sizeof(mobjlist[0]));
@@ -1496,7 +1498,7 @@ static void P_LoadThings (int lump)
   {
     mapthing_t mt;
 
-    if (hexen_format)
+    if (map_format.hexen)
     {
       mt = data[i];
 
@@ -1543,9 +1545,13 @@ static void P_LoadThings (int lump)
       mobjlist[mobjcount++] = mobj;
   }
 
-  if (hexen_format)
+  if (map_format.acs)
   {
     P_CreateTIDList();
+  }
+
+  if (hexen)
+  {
     P_InitCreatureCorpseQueue(false);   // false = do NOT scan for corpses
   }
 
@@ -1605,7 +1611,7 @@ static void P_LoadLineDefs (int lump)
   const byte *data; // cph - const*
   int  i;
 
-  numlines = W_LumpLength (lump) / (hexen_format ? sizeof(hexen_maplinedef_t) : sizeof(doom_maplinedef_t));
+  numlines = W_LumpLength (lump) / map_format.maplinedef_size;
   lines = calloc_IfSameLevel(lines, numlines, sizeof(line_t));
   data = W_CacheLumpNum (lump); // cph - wad lump handling updated
 
@@ -1614,7 +1620,7 @@ static void P_LoadLineDefs (int lump)
       line_t *ld = lines+i;
       vertex_t *v1, *v2;
 
-      if (hexen_format)
+      if (map_format.hexen)
       {
         const hexen_maplinedef_t *mld = (const hexen_maplinedef_t *) data + i;
 
@@ -2670,6 +2676,21 @@ void P_CheckLevelWadStructure(const char *mapname)
       I_Error("P_SetupLevel: Level wad structure is incomplete. There is no %s lump.", ml_labels[i]);
     }
   }
+
+  // we may be running a wad that has multiple formats
+  // if we are not in "hexen mode" then we need to abort
+  // eventually, we can add support for per-map format swapping
+  if (!map_format.hexen)
+  {
+    i = lumpnum + ML_BEHAVIOR;
+    if (P_CheckLumpsForSameSource(lumpnum, i))
+    {
+      if (!strncasecmp(lumpinfo[i].name, "BEHAVIOR", 8))
+      {
+        I_Error("P_SetupLevel: %s: Hexen format not supported", mapname);
+      }
+    }
+  }
 }
 
 void P_InitSubsectorsLines(void)
@@ -2976,16 +2997,20 @@ void P_SetupLevel(int episode, int map, int playermask, skill_t skill)
     P_OpenWeapons();
   }
 
-  if (hexen_format)
+  if (map_format.polyobjs)
   {
     PO_ResetBlockMap(true);
   }
 
   P_LoadThings(lumpnum+ML_THINGS);
 
-  if (hexen_format)
+  if (map_format.polyobjs)
   {
     PO_Init(lumpnum + ML_THINGS);       // Initialize the polyobjs
+  }
+
+  if (map_format.acs)
+  {
     P_LoadACScripts(lumpnum + ML_BEHAVIOR);     // ACS object code
   }
 
@@ -3035,7 +3060,7 @@ void P_SetupLevel(int episode, int map, int playermask, skill_t skill)
 
   P_MapEnd();
 
-  if (hexen_format)
+  if (map_format.mapinfo)
   {
     extern dboolean LevelUseFullBright;
 
@@ -3074,10 +3099,13 @@ void P_SetupLevel(int episode, int map, int playermask, skill_t skill)
   P_SyncWalkcam(true, true);
   R_SmoothPlaying_Reset(NULL);
 
-  if (hexen_format)
+  if (map_format.mapinfo)
   {
-    // Check if the level is a lightning level
     P_InitLightning();
+  }
+
+  if (map_format.sndseq)
+  {
     SN_StopAllSequences();
   }
 }
@@ -3111,7 +3139,7 @@ static void InitMapInfo(void)
     char songMulch[10];
     const char *default_sky_name = DEFAULT_SKY_NAME;
 
-    if (!hexen_format) return;
+    if (!map_format.mapinfo) return;
 
     mapMax = 1;
 
