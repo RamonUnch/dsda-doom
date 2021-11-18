@@ -101,6 +101,25 @@ typedef struct
 #define NULL_SECTOR                0x00000008
 #define MISSING_TOPTEXTURES        0x00000010
 #define MISSING_BOTTOMTEXTURES     0x00000020
+#define SECF_SECRET                0x00000040
+#define SECF_WASSECRET             0x00000080
+#define SECF_HIDDEN                0x00000100
+#define SECF_ENDGODMODE            0x00000200
+#define SECF_ENDLEVEL              0x00000400
+#define SECF_DMGTERRAINFX          0x00000800
+#define SECF_HAZARD                0x00001000
+#define SECF_DMGUNBLOCKABLE        0x00002000
+#define SECF_FRICTION              0x00004000
+#define SECF_PUSH                  0x00008000
+#define SECF_DAMAGEFLAGS (SECF_ENDGODMODE|SECF_ENDLEVEL|SECF_DMGTERRAINFX|SECF_HAZARD|SECF_DMGUNBLOCKABLE)
+#define SECF_TRANSFERMASK (SECF_SECRET|SECF_WASSECRET|SECF_DAMAGEFLAGS|SECF_FRICTION|SECF_PUSH)
+
+typedef struct
+{
+  short amount;
+  byte leakrate;
+  byte interval;
+} damage_t;
 
 typedef struct
 {
@@ -109,7 +128,7 @@ typedef struct
   fixed_t floorheight;
   fixed_t ceilingheight;
   int nexttag,firsttag;  // killough 1/30/98: improves searches for tags.
-  int soundtraversed;    // 0 = untraversed, 1,2 = sndlines-1
+  byte soundtraversed;   // 0 = untraversed, 1,2 = sndlines-1
   mobj_t *soundtarget;   // thing that made a sound (or null)
   int blockbox[4];       // mapblock bounding box for height changes
   int bbox[4];           // bounding box in map units
@@ -125,10 +144,11 @@ typedef struct
 
   // thinker_t for reversable actions
   void *floordata;    // jff 2/22/98 make thinkers on
-  void *ceilingdata;  // floors and ceilings independent
+  void *ceilingdata;  // floors, ceilings, and lights independent
+  void *lightingdata;
 
   // jff 2/26/98 lockout machinery for stairbuilding
-  int stairlock;   // -2 on first locked -1 after thinker done 0 normally
+  signed char stairlock; // -2 on first locked -1 after thinker done 0 normally
   int prevsec;     // -1 or number of sector for previous step
   int nextsec;     // -1 or number of next step sector
 
@@ -164,7 +184,6 @@ typedef struct
   short ceilingpic;
   short lightlevel;
   short special;
-  short oldspecial;      //jff 2/16/98 remembers if sector WAS secret (automap)
   short tag;
 
   // [kb] For R_FixWiggle
@@ -182,6 +201,10 @@ typedef struct
 
   // hexen
   seqtype_t seqType;          // stone, metal, heavy, etc...
+
+  // zdoom
+  fixed_t gravity;
+  damage_t damage;
 } sector_t;
 
 //
@@ -220,6 +243,14 @@ typedef enum
   ST_NEGATIVE
 } slopetype_t;
 
+typedef byte r_flags_t;
+#define RF_TOP_TILE 0x01 // Upper texture needs tiling
+#define RF_MID_TILE 0x02 // Mid texture needs tiling
+#define RF_BOT_TILE 0x04 // Lower texture needs tiling
+#define RF_IGNORE   0x08 // Renderer can skip this line
+#define RF_CLOSED   0x10 // Line blocks view
+#define RF_ISOLATED 0x20 // Isolated line
+
 typedef struct line_s
 {
   int iLineID;           // proff 04/05/2000: needed for OpenGL
@@ -228,7 +259,7 @@ typedef struct line_s
 #ifdef GL_DOOM
   float texel_length;
 #endif
-  unsigned short flags;           // Animation related.
+  unsigned int flags;           // Animation related.
   short special;
   short tag;
   unsigned short sidenum[2];        // Visual appearance: SideDefs.
@@ -242,14 +273,7 @@ typedef struct line_s
   int tranlump;          // killough 4/11/98: translucency filter, -1 == none
   int firsttag,nexttag;  // killough 4/17/98: improves searches for tags.
   int r_validcount;      // cph: if == gametic, r_flags already done
-  enum {                 // cph:
-    RF_TOP_TILE  = 1,     // Upper texture needs tiling
-    RF_MID_TILE = 2,     // Mid texture needs tiling
-    RF_BOT_TILE = 4,     // Lower texture needs tiling
-    RF_IGNORE   = 8,     // Renderer can skip this line
-    RF_CLOSED   =16,     // Line blocks view
-    RF_ISOLATED =32,     // Isolated line
-  } r_flags;
+  r_flags_t r_flags;     // cph
   degenmobj_t soundorg;  // sound origin for switches/buttons
 
   // hexen
@@ -259,6 +283,8 @@ typedef struct line_s
   byte arg4;
   byte arg5;
 } line_t;
+
+#define LINE_ARG_COUNT 5
 
 // phares 3/14/98
 //

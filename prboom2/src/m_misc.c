@@ -391,6 +391,7 @@ default_t defaults[] =
   {"videomode",{NULL, &default_videomode},{0,"Software"},UL,UL,def_str,ss_none},
   /* 640x480 default resolution */
   {"screen_resolution",{NULL, &screen_resolution},{0,"640x480"},UL,UL,def_str,ss_none},
+  {"custom_resolution",{0,&custom_resolution},{0,""},UL,UL,def_str,ss_chat},
   {"use_fullscreen",{&use_fullscreen},{0},0,1, /* proff 21/05/2000 */
    def_bool,ss_none},
   {"exclusive_fullscreen",{&exclusive_fullscreen},{0},0,1, // [FG] mode-changing fullscreen
@@ -406,9 +407,7 @@ default_t defaults[] =
    def_int,ss_none}, // gamma correction level // killough 1/18/98
   {"uncapped_framerate", {&movement_smooth_default},  {1},0,1,
    def_bool,ss_stat},
-  {"dsda_subframes", {&dsda_subframes}, {0}, 0, 100, def_int, ss_stat},
-  {"test_interpolation_method", {&interpolation_method},  {0},0,1,
-   def_int,ss_stat},
+  {"dsda_fps_limit", {&dsda_fps_limit}, {0}, 0, 1000, def_int, ss_stat},
   {"filter_wall",{(int*)&drawvars.filterwall},{RDRAW_FILTER_POINT},
    RDRAW_FILTER_POINT, RDRAW_FILTER_ROUNDED, def_int,ss_none},
   {"filter_floor",{(int*)&drawvars.filterfloor},{RDRAW_FILTER_POINT},
@@ -765,6 +764,14 @@ default_t defaults[] =
     dsda_input_avj, { 0, -1, -1 } },
   { "input_exhud", { NULL }, { 0 }, UL, UL, def_input, ss_keys, NULL, NULL,
     dsda_input_exhud, { 0, -1, -1 } },
+  { "input_mute_sfx", { NULL }, { 0 }, UL, UL, def_input, ss_keys, NULL, NULL,
+    dsda_input_mute_sfx, { 0, -1, -1 } },
+  { "input_mute_music", { NULL }, { 0 }, UL, UL, def_input, ss_keys, NULL, NULL,
+    dsda_input_mute_music, { 0, -1, -1 } },
+  { "input_cheat_codes", { NULL }, { 0 }, UL, UL, def_input, ss_keys, NULL, NULL,
+    dsda_input_cheat_codes, { 0, -1, -1 } },
+  { "input_notarget", { NULL }, { 0 }, UL, UL, def_input, ss_keys, NULL, NULL,
+    dsda_input_notarget, { 0, -1, -1 } },
 
   { "input_jump", { NULL }, { 0 }, UL, UL, def_input, ss_keys, NULL, NULL,
     dsda_input_jump, { 0, -1, -1 } },
@@ -852,6 +859,8 @@ default_t defaults[] =
    def_colour,ss_auto}, // color used for teleporter lines
   {"mapcolor_secr", {&mapcolor_secr}, {252},0,255,  // purple
    def_colour,ss_auto}, // color used for lines around secret sectors
+  {"mapcolor_revsecr", {&mapcolor_revsecr}, {112},0,255,  // green
+   def_colour,ss_auto}, // color used for lines around revealed secrets
   {"mapcolor_exit", {&mapcolor_exit}, {0},0,255,    // none
    def_colour,ss_auto}, // color used for exit lines
   {"mapcolor_unsn", {&mapcolor_unsn}, {104},0,255,  // dk gray
@@ -1043,6 +1052,7 @@ default_t defaults[] =
   { "dsda_cycle_ghost_colors", { &dsda_cycle_ghost_colors }, { 0 }, 0, 1, def_bool, ss_stat },
   { "dsda_auto_key_frame_interval", { &dsda_auto_key_frame_interval }, { 1 }, 1, 600, def_int, ss_stat },
   { "dsda_auto_key_frame_depth", { &dsda_auto_key_frame_depth }, { 60 }, 0, 600, def_int, ss_stat },
+  { "dsda_auto_key_frame_timeout", { &dsda_auto_key_frame_timeout }, { 10 }, 0, 25, def_int, ss_stat },
   { "dsda_exhud", { (int *) &dsda_setting[dsda_exhud] }, { 0 }, 0, 1, def_bool, ss_stat },
   { "dsda_wipe_at_full_speed", { &dsda_wipe_at_full_speed }, { 1 }, 0, 1, def_bool, ss_stat },
   { "dsda_show_demo_attempts", { &dsda_show_demo_attempts }, { 1 }, 0, 1, def_bool, ss_stat },
@@ -1056,6 +1066,11 @@ default_t defaults[] =
   { "dsda_skip_quit_prompt", { &dsda_skip_quit_prompt }, { 0 }, 0, 1, def_bool, ss_stat },
   { "dsda_show_split_data", { &dsda_show_split_data }, { 1 }, 0, 1, def_bool, ss_stat },
   { "dsda_player_name", { 0, &dsda_player_name }, { 0, "Anonymous" }, UL, UL, def_str,ss_chat },
+  { "dsda_quickstart_cache_tics", { &dsda_quickstart_cache_tics }, { 0 }, 0, 35, def_int, ss_stat },
+  { "dsda_death_use_action", { &dsda_death_use_action }, { 0 }, 0, 2, def_int, ss_none },
+  { "dsda_mute_sfx", { (int *) &dsda_setting[dsda_mute_sfx] }, { 0 }, 0, 1, def_bool, ss_stat },
+  { "dsda_mute_music", { (int *) &dsda_setting[dsda_mute_music] }, { 0 }, 0, 1, def_bool, ss_stat },
+  { "dsda_cheat_codes", { (int *) &dsda_setting[dsda_cheat_codes] }, { 1 }, 0, 1, def_bool, ss_stat },
 
   // NSM
   {"Video capture encoding settings",{NULL},{0},UL,UL,def_none,ss_none},

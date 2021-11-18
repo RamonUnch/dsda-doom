@@ -51,7 +51,9 @@
 #include "g_overflow.h"
 #include "hu_tracers.h"
 #include "e6y.h"//e6y
+
 #include "dsda.h"
+#include "dsda/map_format.h"
 
 #include "heretic/def.h"
 
@@ -78,7 +80,8 @@ static int ls_y; // Lost Soul position for Lost Soul checks      // phares
 //  to undo the changes.
 //
 
-static dboolean crushchange, nofit;
+static int crushchange;
+static dboolean nofit;
 
 // If "floatok" true, move would be ok
 // if within "tmfloorz - tmceilingz".
@@ -192,17 +195,28 @@ int P_GetFriction(const mobj_t *mo, int *frictionfactor)
   }
   else
   {
-  if (!(mo->flags & (MF_NOCLIP|MF_NOGRAVITY))
-      && (mbf_features || (mo->player && !compatibility)) &&
-      variable_friction)
-    for (m = mo->touching_sectorlist; m; m = m->m_tnext)
-      if ((sec = m->m_sector)->special & FRICTION_MASK &&
-    (sec->friction < friction || friction == ORIG_FRICTION) &&
-    (mo->z <= sec->floorheight ||
-     (sec->heightsec != -1 &&
-      mo->z <= sectors[sec->heightsec].floorheight &&
-      mbf_features)))
-  friction = sec->friction, movefactor = sec->movefactor;
+    if (
+      !(mo->flags & (MF_NOCLIP | MF_NOGRAVITY)) &&
+      (mbf_features || (mo->player && !compatibility)) &&
+      variable_friction
+    )
+      for (m = mo->touching_sectorlist; m; m = m->m_tnext)
+        if (
+          (sec = m->m_sector)->flags & SECF_FRICTION &&
+          (sec->friction < friction || friction == ORIG_FRICTION) &&
+          (
+            mo->z <= sec->floorheight ||
+            (
+              sec->heightsec != -1 &&
+              mo->z <= sectors[sec->heightsec].floorheight &&
+              mbf_features
+            )
+          )
+        )
+        {
+          friction = sec->friction;
+          movefactor = sec->movefactor;
+        }
   }
 
   if (frictionfactor)
@@ -463,7 +477,7 @@ dboolean PIT_CheckLine (line_t* ld)
         }
       }
     }
-    else if (hexen)
+    else if (map_format.hexen)
     {
       if (tmthing->flags2 & MF2_BLASTED)
       {
@@ -477,13 +491,13 @@ dboolean PIT_CheckLine (line_t* ld)
   }
 
   // killough 8/10/98: allow bouncing objects to pass through as missiles
-  if (!(tmthing->flags & (MF_MISSILE | MF_BOUNCES)))
+  if (!(tmthing->flags & (MF_MISSILE | MF_BOUNCES)) || ld->flags & ML_BLOCKEVERYTHING)
   {
     // explicitly blocking everything
     // or blocking player
     if (ld->flags & ML_BLOCKING || (mbf21 && tmthing->player && ld->flags & ML_BLOCKPLAYERS))
     {
-      if (hexen)
+      if (map_format.hexen)
       {
         if (tmthing->flags2 & MF2_BLASTED)
         {
@@ -592,7 +606,7 @@ static dboolean PIT_CheckThing(mobj_t *thing) // killough 3/26/98: make static
   if (thing == tmthing)
     return true;
 
-  if (hexen)
+  if (map_format.hexen)
     BlockingMobj = thing;
 
   /* killough 11/98:
@@ -1221,6 +1235,48 @@ dboolean P_CheckPosition (mobj_t* thing,fixed_t x,fixed_t y)
 
 static dboolean Hexen_P_TryMove(mobj_t* thing, fixed_t x, fixed_t y);
 
+void P_CheckCompatibleImpact(mobj_t *thing)
+{
+  // nothing in doom
+}
+
+void P_CheckHereticImpact(mobj_t *thing)
+{
+  int i;
+
+  if (!numspechit || !(thing->flags & MF_MISSILE) || !thing->target || !thing->target->player)
+  {
+    return;
+  }
+
+  for (i = numspechit - 1; i >= 0; i--)
+  {
+    map_format.shoot_special_line(thing->target, spechit[i]);
+  }
+}
+
+void P_CheckZDoomImpact(mobj_t *thing)
+{
+  if (!(thing->flags & (MF_TELEPORT | MF_NOCLIP)))
+  {
+    int i, side;
+    line_t *ld;
+
+    if (tmthing->flags2 & MF2_BLASTED)
+    {
+      P_DamageMobj(tmthing, NULL, NULL, tmthing->info->mass >> 5);
+    }
+
+    for (i = numspechit - 1; i >= 0; i--)
+    {
+      // see if the line was crossed
+      ld = spechit[i];
+      side = P_PointOnLineSide(thing->x, thing->y, ld);
+      CheckForPushSpecial(ld, side, thing);
+    }
+  }
+}
+
 dboolean P_TryMove(mobj_t* thing,fixed_t x,fixed_t y,
                   dboolean dropoff) // killough 3/15/98: allow dropoff as option
 {
@@ -1233,7 +1289,8 @@ dboolean P_TryMove(mobj_t* thing,fixed_t x,fixed_t y,
 
   if (!P_CheckPosition(thing, x, y))
   {                           // Solid wall or thing
-    CheckMissileImpact(thing);
+    if (heretic || !BlockingMobj || BlockingMobj->player || !thing->player)
+      map_format.check_impact(thing);
     return false;
   }
 
@@ -1269,7 +1326,7 @@ dboolean P_TryMove(mobj_t* thing,fixed_t x,fixed_t y,
       )
     )
     {
-      CheckMissileImpact(thing);
+      map_format.check_impact(thing);
       return tmunstuck
         && !(ceilingline && untouched(ceilingline))
         && !(  floorline && untouched(  floorline));
@@ -1280,12 +1337,14 @@ dboolean P_TryMove(mobj_t* thing,fixed_t x,fixed_t y,
       if (thing->z + thing->height > tmceilingz)
       {
         thing->momz = -8 * FRACUNIT;
+        map_format.check_impact(thing);
         return false;
       }
       else if (thing->z < tmfloorz
                && tmfloorz - tmdropoffz > 24 * FRACUNIT)
       {
         thing->momz = 8 * FRACUNIT;
+        map_format.check_impact(thing);
         return false;
       }
     }
@@ -1296,15 +1355,15 @@ dboolean P_TryMove(mobj_t* thing,fixed_t x,fixed_t y,
       tmfloorz - thing->z > 24*FRACUNIT
     )
     {
-      CheckMissileImpact(thing);
+      map_format.check_impact(thing);
       return tmunstuck
         && !(ceilingline && untouched(ceilingline))
         && !(  floorline && untouched(  floorline));
     }
 
-    if ((thing->flags & MF_MISSILE) && tmfloorz > thing->z)
+    if (heretic && tmfloorz > thing->z)
     {
-      CheckMissileImpact(thing);
+      map_format.check_impact(thing);
     }
 
     /* killough 3/15/98: Allow certain objects to drop off
@@ -1401,10 +1460,9 @@ dboolean P_TryMove(mobj_t* thing,fixed_t x,fixed_t y,
     while (numspechit--)
       if (spechit[numspechit]->special)  // see if the line was crossed
       {
-        int oldside;
-        if ((oldside = P_PointOnLineSide(oldx, oldy, spechit[numspechit])) !=
-            P_PointOnLineSide(thing->x, thing->y, spechit[numspechit]))
-          P_CrossSpecialLine(spechit[numspechit], oldside, thing, false);
+        int oldside = P_PointOnLineSide(oldx, oldy, spechit[numspechit]);
+        if (oldside != P_PointOnLineSide(thing->x, thing->y, spechit[numspechit]))
+          map_format.cross_special_line(spechit[numspechit], oldside, thing, false);
       }
 
   return true;
@@ -1931,7 +1989,7 @@ dboolean PTR_AimTraverse (intercept_t* in)
   {
     li = in->d.line;
 
-    if ( !(li->flags & ML_TWOSIDED) )
+    if ( !(li->flags & (ML_TWOSIDED | ML_BLOCKEVERYTHING)) )
       return false;   // stop
 
     // Crosses a two sided line.
@@ -2043,9 +2101,9 @@ dboolean PTR_ShootTraverse (intercept_t* in)
     line_t *li = in->d.line;
 
     if (li->special)
-      P_ShootSpecialLine (shootthing, li);
+      map_format.shoot_special_line(shootthing, li);
 
-    if (li->flags & ML_TWOSIDED)
+    if (li->flags & ML_TWOSIDED && !(li->flags & ML_BLOCKEVERYTHING))
     {  // crosses a two sided (really 2s) line
       P_LineOpening (li);
       dist = FixedMul(attackrange, in->frac);
@@ -2293,7 +2351,14 @@ dboolean PTR_UseTraverse (intercept_t* in)
   {
     int sound;
 
-    P_LineOpening (in->d.line);
+    if (in->d.line->flags & ML_BLOCKEVERYTHING)
+    {
+      openrange = 0;
+    }
+    else
+    {
+      P_LineOpening (in->d.line);
+    }
 
     if (openrange <= 0)
     {
@@ -2652,12 +2717,11 @@ dboolean PIT_ChangeSector (mobj_t* thing)
 
   nofit = true;
 
-  if (crushchange && !(leveltime & 3)) {
+  if (crushchange > 0 && !(leveltime & 3)) {
     int t;
-    int damage = hexen ? crushchange : 10;
 
-    P_DamageMobj(thing, NULL, NULL, damage);
-    dsda_WatchCrush(thing, damage);
+    P_DamageMobj(thing, NULL, NULL, crushchange);
+    dsda_WatchCrush(thing, crushchange);
 
     if (
       !hexen ||
@@ -2689,7 +2753,7 @@ dboolean PIT_ChangeSector (mobj_t* thing)
 //
 // P_ChangeSector
 //
-dboolean P_ChangeSector(sector_t* sector,dboolean crunch)
+dboolean P_ChangeSector(sector_t* sector, int crunch)
 {
   int   x;
   int   y;
@@ -2717,7 +2781,7 @@ dboolean P_ChangeSector(sector_t* sector,dboolean crunch)
 // sector. Both more accurate and faster.
 //
 
-dboolean P_CheckSector(sector_t* sector,dboolean crunch)
+dboolean P_CheckSector(sector_t* sector, int crunch)
 {
   msecnode_t *n;
 
@@ -3246,17 +3310,21 @@ void P_FakeZMovement(mobj_t * mo)
     }
     else if (mo->flags2 & MF2_LOGRAV)
     {
+        fixed_t gravity = mo->subsector->sector->gravity;
+
         if (mo->momz == 0)
-            mo->momz = -(GRAVITY >> 3) * 2;
+            mo->momz = -(gravity >> 3) * 2;
         else
-            mo->momz -= GRAVITY >> 3;
+            mo->momz -= gravity >> 3;
     }
     else if (!(mo->flags & MF_NOGRAVITY))
     {
+        fixed_t gravity = mo->subsector->sector->gravity;
+
         if (mo->momz == 0)
-            mo->momz = -GRAVITY * 2;
+            mo->momz = -gravity * 2;
         else
-            mo->momz -= GRAVITY;
+            mo->momz -= gravity;
     }
 
     if (mo->z + mo->height > mo->ceilingz)
@@ -3292,30 +3360,12 @@ void P_AppendSpecHit(line_t * ld)
       &tmfloorz,     // fixed_t *tmfloorz;
       &tmceilingz,   // fixed_t *tmceilingz;
 
-      &crushchange,  // dboolean *crushchange;
+      &crushchange,  // int *crushchange;
       &nofit,        // dboolean *nofit;
     };
     spechit_overrun_param.line = ld;
     SpechitOverrun(&spechit_overrun_param);
   }
-}
-
-void CheckMissileImpact(mobj_t * mobj)
-{
-    int i;
-
-    if (!heretic || !numspechit || !(mobj->flags & MF_MISSILE) || !mobj->target)
-    {
-        return;
-    }
-    if (!mobj->target->player)
-    {
-        return;
-    }
-    for (i = numspechit - 1; i >= 0; i--)
-    {
-        P_ShootSpecialLine(mobj->target, spechit[i]);
-    }
 }
 
 // hexen
@@ -3328,6 +3378,10 @@ dboolean PTR_BounceTraverse(intercept_t * in)
         I_Error("PTR_BounceTraverse: not a line?");
 
     li = in->d.line;
+
+    if (li->flags & ML_BLOCKEVERYTHING)
+        goto bounceblocking;
+
     if (!(li->flags & ML_TWOSIDED))
     {
         if (P_PointOnLineSide(slidemo->x, slidemo->y, li))
@@ -3454,11 +3508,11 @@ static void CheckForPushSpecial(line_t * line, int side, mobj_t * mobj)
     {
         if (mobj->flags2 & MF2_PUSHWALL)
         {
-            P_ActivateLine(line, mobj, side, SPAC_PUSH);
+            P_ActivateLine(line, mobj, side, ML_SPAC_PUSH);
         }
         else if (mobj->flags2 & MF2_IMPACT)
         {
-            P_ActivateLine(line, mobj, side, SPAC_IMPACT);
+            P_ActivateLine(line, mobj, side, ML_SPAC_IMPACT);
         }
     }
 }
@@ -3580,18 +3634,7 @@ static dboolean Hexen_P_TryMove(mobj_t* thing, fixed_t x, fixed_t y)
             {
                 if (ld->special)
                 {
-                    if (thing->player)
-                    {
-                        P_ActivateLine(ld, thing, oldside, SPAC_CROSS);
-                    }
-                    else if (thing->flags2 & MF2_MCROSS)
-                    {
-                        P_ActivateLine(ld, thing, oldside, SPAC_MCROSS);
-                    }
-                    else if (thing->flags2 & MF2_PCROSS)
-                    {
-                        P_ActivateLine(ld, thing, oldside, SPAC_PCROSS);
-                    }
+                    map_format.cross_special_line(ld, oldside, thing, false);
                 }
             }
         }

@@ -662,12 +662,53 @@ void I_GetScreenResolution(void)
 static const struct {
   const int w, h;
 } canonicals[] = {
-  {640, 480}, // Doom 95
-  {640, 400}, // MBF
-  {320, 240}, // Doom 95
-  {320, 200}, // Vanilla Doom
+  { 640, 480}, // Doom 95
+  { 320, 240}, // Doom 95
+  {1120, 400}, // 21:9
+  { 854, 400}, // 16:9
+  { 768, 400}, // 16:10
+  { 640, 400}, // MBF
+  { 560, 200}, // 21:9
+  { 426, 200}, // 16:9
+  { 384, 200}, // 16:10
+  { 320, 200}, // Vanilla Doom
 };
 static const int num_canonicals = sizeof(canonicals)/sizeof(*canonicals);
+
+static void I_AppendResolution(SDL_DisplayMode *mode, int *current_resolution_index, int *list_size)
+{
+  int i;
+  char mode_name[256];
+
+
+  doom_snprintf(mode_name, sizeof(mode_name), "%dx%d", mode->w, mode->h);
+
+  for(i = 0; i < *list_size; i++)
+    if (!strcmp(mode_name, screen_resolutions_list[i]))
+      return;
+
+  screen_resolutions_list[*list_size] = strdup(mode_name);
+
+  if (mode->w == desired_screenwidth && mode->h == desired_screenheight)
+    *current_resolution_index = *list_size;
+
+  (*list_size)++;
+}
+
+const char *custom_resolution;
+
+static void I_AppendCustomResolution(int *current_resolution_index, int *list_size)
+{
+  if (strlen(custom_resolution))
+  {
+    SDL_DisplayMode mode;
+
+    if (sscanf(custom_resolution, "%4dx%4d", &mode.w, &mode.h) == 2)
+    {
+      I_AppendResolution(&mode, current_resolution_index, list_size);
+    }
+  }
+}
 
 //
 // I_FillScreenResolutionsList
@@ -725,29 +766,11 @@ static void I_FillScreenResolutionsList(void)
         SDL_GetDisplayMode(display_index, i, &mode);
       }
 
-      doom_snprintf(mode_name, sizeof(mode_name), "%dx%d", mode.w, mode.h);
-
-      for(j = 0; j < list_size; j++)
-      {
-        if (!strcmp(mode_name, screen_resolutions_list[j]))
-        {
-          in_list = true;
-          break;
-        }
-      }
-
-      if (!in_list)
-      {
-        screen_resolutions_list[list_size] = strdup(mode_name);
-
-        if (mode.w == desired_screenwidth && mode.h == desired_screenheight)
-        {
-          current_resolution_index = list_size;
-        }
-
-        list_size++;
-      }
+      I_AppendResolution(&mode, &current_resolution_index, &list_size);
     }
+
+    I_AppendCustomResolution(&current_resolution_index, &list_size);
+
     screen_resolutions_list[list_size] = NULL;
   }
 
@@ -892,6 +915,11 @@ void I_CalculateRes(int width, int height)
     // It is extremally important for wiping in software.
     // I have ~20x improvement in speed with using 1056 instead of 1024 on Pentium4
     // and only ~10% for Core2Duo
+    if (nodrawers)
+    {
+      SCREENPITCH = ((width + 15) & ~15) + 32;
+    }
+    else
     {
       unsigned int mintime = 100;
       int w = (width+15) & ~15;
@@ -1213,8 +1241,7 @@ void I_UpdateVideoMode(void)
     sdl_renderer = SDL_CreateRenderer(sdl_window, -1, flags);
 
     // [FG] aspect ratio correction for the canonical video modes
-    if ((SCREENWIDTH == 320 && SCREENHEIGHT == 200) ||
-        (SCREENWIDTH == 640 && SCREENHEIGHT == 400))
+    if (SCREENHEIGHT == 200 || SCREENHEIGHT == 400)
     {
       actualheight = 6*SCREENHEIGHT/5;
     }
@@ -1270,7 +1297,7 @@ void I_UpdateVideoMode(void)
   {
      SDL_version ver;
      SDL_GetVersion(&ver);
-     if (ver.major == 2 && ver.minor == 0 && ver.patch == 14)
+     if (ver.major == 2 && ver.minor == 0 && ver.patch >= 14)
      {
         SDL_SetHintWithPriority(SDL_HINT_VIDEO_MINIMIZE_ON_FOCUS_LOSS, "1", SDL_HINT_OVERRIDE);
      }

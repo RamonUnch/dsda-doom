@@ -59,6 +59,8 @@
 #include "e6y.h"//e6y
 
 #include "dsda.h"
+#include "dsda/compatibility.h"
+#include "dsda/line_special.h"
 #include "dsda/map_format.h"
 
 #include "hexen/p_acs.h"
@@ -992,7 +994,6 @@ static void P_LoadSectors (int lump)
       ss->ceilingpic = R_FlatNumForName(ms->ceilingpic);
       ss->lightlevel = LittleShort(ms->lightlevel);
       ss->special = LittleShort(ms->special);
-      ss->oldspecial = LittleShort(ms->special);
       ss->tag = LittleShort(ms->tag);
       ss->thinglist = NULL;
       ss->touching_thinglist = NULL;            // phares 3/14/98
@@ -1024,6 +1025,13 @@ static void P_LoadSectors (int lump)
 
       // hexen
       ss->seqType = SEQTYPE_STONE;    // default seqType
+
+      // killough 8/28/98: initialize all sectors to normal friction
+      ss->friction = ORIG_FRICTION;
+      ss->movefactor = ORIG_FRICTION_FACTOR;
+
+      // zdoom
+      ss->gravity = GRAVITY;
     }
 
   W_UnlockLumpNum(lump); // cph - release the data
@@ -1606,6 +1614,105 @@ static void P_LoadThings (int lump)
 //
 // killough 5/3/98: reformatted, cleaned up
 
+void P_TranslateZDoomLineFlags(unsigned int *flags)
+{
+  unsigned int result;
+  static unsigned int spac_to_flags[8] = {
+    ML_SPAC_CROSS,
+    ML_SPAC_USE,
+    ML_SPAC_MCROSS,
+    ML_SPAC_IMPACT,
+    ML_SPAC_PUSH,
+    ML_SPAC_PCROSS,
+    ML_SPAC_USE | ML_PASSUSE,
+    ML_SPAC_IMPACT | ML_SPAC_PCROSS
+  };
+
+  result = *flags & 0x1ff;
+
+  // from zdoom-in-hexen to dsda-doom
+
+  result |= spac_to_flags[GET_SPAC(*flags)];
+
+  if (*flags & HML_REPEATSPECIAL)
+    result |= ML_REPEATSPECIAL;
+
+  if (*flags & ZML_BLOCKPLAYERS)
+    result |= ML_BLOCKPLAYERS;
+
+  if (*flags & ZML_MONSTERSCANACTIVATE)
+    result |= ML_MONSTERSCANACTIVATE;
+
+  if (*flags & ZML_BLOCKEVERYTHING)
+    result |= ML_BLOCKING | ML_BLOCKEVERYTHING;
+
+  *flags = result;
+}
+
+void P_TranslateHexenLineFlags(unsigned int *flags)
+{
+  unsigned int result;
+  static unsigned int spac_to_flags[8] = {
+    ML_SPAC_CROSS,
+    ML_SPAC_USE,
+    ML_SPAC_MCROSS,
+    ML_SPAC_IMPACT,
+    ML_SPAC_PUSH,
+    ML_SPAC_PCROSS,
+    0,
+    0
+  };
+
+  result = *flags & 0x1ff;
+
+  // from hexen to dsda-doom
+
+  result |= spac_to_flags[GET_SPAC(*flags)];
+
+  if (*flags & HML_REPEATSPECIAL)
+    result |= ML_REPEATSPECIAL;
+
+  *flags = result;
+}
+
+void P_TranslateCompatibleLineFlags(unsigned int *flags)
+{
+  int filter;
+
+  if (mbf21)
+    filter = (*flags & ML_RESERVED && comp[comp_reservedlineflag]) ? 0x01ff : 0x3fff;
+  else
+    filter = 0x03ff;
+
+  *flags = *flags & filter;
+}
+
+static void P_SetLineID(line_t *ld)
+{
+  if (!map_format.zdoom) return;
+
+  switch (ld->special)
+  {
+    case zl_line_set_identification:
+      ld->tag = (unsigned short) 256 * ld->arg5 + ld->arg1;
+      ld->special = 0;
+      break;
+    case zl_translucent_line:
+      ld->tag = ld->arg1;
+      break;
+    case zl_teleport_line:
+    case zl_scroll_texture_model:
+      ld->tag = ld->arg1;
+      break;
+    case zl_polyobj_start_line:
+      ld->tag = ld->arg4;
+      break;
+    case zl_polyobj_explicit_line:
+      ld->tag = ld->arg5;
+      break;
+  }
+}
+
 static void P_LoadLineDefs (int lump)
 {
   const byte *data; // cph - const*
@@ -1636,6 +1743,7 @@ static void P_LoadLineDefs (int lump)
         v2 = ld->v2 = &vertexes[(unsigned short)LittleShort(mld->v2)];
         ld->sidenum[0] = LittleShort(mld->sidenum[0]);
         ld->sidenum[1] = LittleShort(mld->sidenum[1]);
+        P_SetLineID(ld);
       }
       else
       {
@@ -1654,6 +1762,8 @@ static void P_LoadLineDefs (int lump)
         ld->sidenum[0] = LittleShort(mld->sidenum[0]);
         ld->sidenum[1] = LittleShort(mld->sidenum[1]);
       }
+
+      map_format.translate_line_flags(&ld->flags);
 
       ld->dx = v2->x - v1->x;
       ld->dy = v2->y - v1->y;
@@ -1747,6 +1857,56 @@ static void P_LoadLineDefs (int lump)
   W_UnlockLumpNum(lump); // cph - release the lump
 }
 
+void P_PostProcessCompatibleLineSpecial(line_t *ld)
+{
+  switch (ld->special)
+  {                         // killough 4/11/98: handle special types
+    int lump, j;
+
+    case 260:               // killough 4/11/98: translucent 2s textures
+      lump = sides[*ld->sidenum].special; // translucency from sidedef
+      if (!ld->tag)                       // if tag==0,
+        ld->tranlump = lump;              // affect this linedef only
+      else
+        for (j=0;j<numlines;j++)          // if tag!=0,
+          if (lines[j].tag == ld->tag)    // affect all matching linedefs
+            lines[j].tranlump = lump;
+      break;
+  }
+}
+
+void P_PostProcessHereticLineSpecial(line_t *ld)
+{
+  // nothing in heretic
+}
+
+void P_PostProcessHexenLineSpecial(line_t *ld)
+{
+  // nothing in hexen
+}
+
+void P_PostProcessZDoomLineSpecial(line_t *ld)
+{
+  switch (ld->special)
+  {                           // killough 4/11/98: handle special types
+    case zl_translucent_line: // killough 4/11/98: translucent 2s textures
+      {
+        int i, lump;
+
+        lump = sides[*ld->sidenum].special; // translucency from sidedef
+        if (!ld->arg1)
+          ld->tranlump = lump;
+        else
+          // for (i = -1; (i = P_FindLineFromTag(ld->arg1, i)) >= 0;)
+          for (i = 0; i < numlines; i++)
+            if (lines[i].tag == ld->arg1)
+              lines[i].tranlump = lump;
+        ld->special = 0;
+      }
+      break;
+  }
+}
+
 // killough 4/4/98: delay using sidedefs until they are loaded
 // killough 5/3/98: reformatted, cleaned up
 
@@ -1754,29 +1914,13 @@ static void P_LoadLineDefs2(int lump)
 {
   int i = numlines;
   register line_t *ld = lines;
-  for (;i--;ld++)
+
+  for (; i--; ld++)
   {
     ld->frontsector = sides[ld->sidenum[0]].sector; //e6y: Can't be NO_INDEX here
-    ld->backsector  = ld->sidenum[1]!=NO_INDEX ? sides[ld->sidenum[1]].sector : 0;
+    ld->backsector  = ld->sidenum[1] != NO_INDEX ? sides[ld->sidenum[1]].sector : 0;
 
-    if (!raven)
-    {
-      switch (ld->special)
-      {                       // killough 4/11/98: handle special types
-        int lump, j;
-
-        case 260:               // killough 4/11/98: translucent 2s textures
-          transparentpresent = true;//e6y
-          lump = sides[*ld->sidenum].special; // translucency from sidedef
-          if (!ld->tag)                       // if tag==0,
-            ld->tranlump = lump;              // affect this linedef only
-          else
-            for (j=0;j<numlines;j++)          // if tag!=0,
-              if (lines[j].tag == ld->tag)    // affect all matching linedefs
-                lines[j].tranlump = lump;
-          break;
-      }
-    }
+    map_format.post_process_line_special(ld);
   }
 }
 
@@ -1789,6 +1933,153 @@ static void P_LoadSideDefs (int lump)
 {
   numsides = W_LumpLength(lump) / sizeof(mapsidedef_t);
   sides = calloc_IfSameLevel(sides, numsides, sizeof(side_t));
+}
+
+void P_PostProcessCompatibleSidedefSpecial(side_t *sd, const mapsidedef_t *msd, sector_t *sec, int i)
+{
+  // killough 4/4/98: allow sidedef texture names to be overloaded
+  // killough 4/11/98: refined to allow colormaps to work as wall
+  // textures if invalid as colormaps but valid as textures.
+  switch (sd->special)
+  {
+    case 242:                       // variable colormap via 242 linedef
+      sd->bottomtexture =
+        (sec->bottommap =   R_ColormapNumForName(msd->bottomtexture)) < 0 ?
+        sec->bottommap = 0, R_TextureNumForName(msd->bottomtexture): 0 ;
+      sd->midtexture =
+        (sec->midmap =   R_ColormapNumForName(msd->midtexture)) < 0 ?
+        sec->midmap = 0, R_TextureNumForName(msd->midtexture)  : 0 ;
+      sd->toptexture =
+        (sec->topmap =   R_ColormapNumForName(msd->toptexture)) < 0 ?
+        sec->topmap = 0, R_TextureNumForName(msd->toptexture)  : 0 ;
+      break;
+
+    case 260: // killough 4/11/98: apply translucency to 2s normal texture
+      sd->midtexture = strncasecmp("TRANMAP", msd->midtexture, 8) ?
+        (sd->special = W_CheckNumForName(msd->midtexture)) < 0 ||
+        W_LumpLength(sd->special) != 65536 ?
+        sd->special=0, R_TextureNumForName(msd->midtexture) :
+          (sd->special++, 0) : (sd->special=0);
+      sd->toptexture = R_TextureNumForName(msd->toptexture);
+      sd->bottomtexture = R_TextureNumForName(msd->bottomtexture);
+      break;
+
+#ifdef GL_DOOM
+    case 271:
+    case 272:
+      if (R_CheckTextureNumForName(msd->toptexture) == -1)
+      {
+        sd->skybox_index = R_BoxSkyboxNumForName(msd->toptexture);
+      }
+      // fallthrough
+#endif
+
+    default:                        // normal cases
+      sd->midtexture = R_SafeTextureNumForName(msd->midtexture, i);
+      sd->toptexture = R_SafeTextureNumForName(msd->toptexture, i);
+      sd->bottomtexture = R_SafeTextureNumForName(msd->bottomtexture, i);
+      break;
+  }
+}
+
+void P_PostProcessHereticSidedefSpecial(side_t *sd, const mapsidedef_t *msd, sector_t *sec, int i)
+{
+  sd->midtexture = R_SafeTextureNumForName(msd->midtexture, i);
+  sd->toptexture = R_SafeTextureNumForName(msd->toptexture, i);
+  sd->bottomtexture = R_SafeTextureNumForName(msd->bottomtexture, i);
+}
+
+void P_PostProcessHexenSidedefSpecial(side_t *sd, const mapsidedef_t *msd, sector_t *sec, int i)
+{
+  sd->midtexture = R_SafeTextureNumForName(msd->midtexture, i);
+  sd->toptexture = R_SafeTextureNumForName(msd->toptexture, i);
+  sd->bottomtexture = R_SafeTextureNumForName(msd->bottomtexture, i);
+}
+
+void P_PostProcessZDoomSidedefSpecial(side_t *sd, const mapsidedef_t *msd, sector_t *sec, int i)
+{
+  switch (sd->special)
+  {
+    // case zl_transfer_heights:  // variable colormap via 242 linedef
+    //     // [RH] The colormap num we get here isn't really a colormap,
+    //     //    but a packed ARGB word for blending, so we also allow
+    //     //    the blend to be specified directly by the texture names
+    //     //    instead of figuring something out from the colormap.
+    //   if (sec != NULL)
+    //   {
+    //     SetTexture (sd, side_t::bottom, &sec->bottommap, msd->bottomtexture);
+    //     SetTexture (sd, side_t::mid, &sec->midmap, msd->midtexture);
+    //     SetTexture (sd, side_t::top, &sec->topmap, msd->toptexture);
+    //   }
+    //   break;
+    //
+    // case zl_static_init:
+    //   // [RH] Set sector color and fog
+    //   // upper "texture" is light color
+    //   // lower "texture" is fog color
+    //   {
+    //     DWORD color = MAKERGB(255,255,255), fog = 0;
+    //     bool colorgood, foggood;
+    //
+    //     SetTextureNoErr (sd, side_t::bottom, &fog, msd->bottomtexture, &foggood, true);
+    //     SetTextureNoErr (sd, side_t::top, &color, msd->toptexture, &colorgood, false);
+    //     SetTexture(sd, side_t::mid, msd->midtexture, missingtex);
+    //
+    //     if (colorgood | foggood)
+    //     {
+    //       int s;
+    //       FDynamicColormap *colormap = NULL;
+    //
+    //       for (s = 0; s < numsectors; s++)
+    //       {
+    //         if (tagManager.SectorHasTag(s, tag))
+    //         {
+    //           if (!colorgood) color = sectors[s].ColorMap->Color;
+    //           if (!foggood) fog = sectors[s].ColorMap->Fade;
+    //           if (colormap == NULL ||
+    //             colormap->Color != color ||
+    //             colormap->Fade != fog)
+    //           {
+    //             colormap = GetSpecialLights (color, fog, 0);
+    //           }
+    //           sectors[s].ColorMap = colormap;
+    //         }
+    //       }
+    //     }
+    //   }
+    //   break;
+    //
+    // case zl_sector_set_3d_floor:
+    //   if (msd->toptexture[0]=='#')
+    //   {
+    //     sd->SetTexture(side_t::top, FNullTextureID() +(-strtol(&msd->toptexture[1], NULL, 10)));  // store the alpha as a negative texture index
+    //                           // This will be sorted out by the 3D-floor code later.
+    //   }
+    //   else
+    //   {
+    //     SetTexture(sd, side_t::top, msd->toptexture, missingtex);
+    //   }
+    //
+    //   SetTexture(sd, side_t::mid, msd->midtexture, missingtex);
+    //   SetTexture(sd, side_t::bottom, msd->bottomtexture, missingtex);
+    //   break;
+    //
+    case zl_translucent_line: // killough 4/11/98: apply translucency to 2s normal texture
+      sd->midtexture = strncasecmp("TRANMAP", msd->midtexture, 8) ?
+        (sd->special = W_CheckNumForName(msd->midtexture)) < 0 ||
+        W_LumpLength(sd->special) != 65536 ?
+        sd->special = 0, R_TextureNumForName(msd->midtexture) :
+          (sd->special++, 0) : (sd->special = 0);
+      sd->toptexture = R_TextureNumForName(msd->toptexture);
+      sd->bottomtexture = R_TextureNumForName(msd->bottomtexture);
+      break;
+
+    default:      // normal cases
+      sd->midtexture = R_SafeTextureNumForName(msd->midtexture, i);
+      sd->toptexture = R_SafeTextureNumForName(msd->toptexture, i);
+      sd->bottomtexture = R_SafeTextureNumForName(msd->bottomtexture, i);
+      break;
+  }
 }
 
 // killough 4/4/98: delay using texture names until
@@ -1818,58 +2109,7 @@ static void P_LoadSideDefs2(int lump)
       sd->sector = sec = &sectors[sector_num];
     }
 
-    // killough 4/4/98: allow sidedef texture names to be overloaded
-    // killough 4/11/98: refined to allow colormaps to work as wall
-    // textures if invalid as colormaps but valid as textures.
-    if (!raven)
-    {
-      switch (sd->special)
-      {
-        case 242:                       // variable colormap via 242 linedef
-          sd->bottomtexture =
-            (sec->bottommap =   R_ColormapNumForName(msd->bottomtexture)) < 0 ?
-            sec->bottommap = 0, R_TextureNumForName(msd->bottomtexture): 0 ;
-          sd->midtexture =
-            (sec->midmap =   R_ColormapNumForName(msd->midtexture)) < 0 ?
-            sec->midmap = 0, R_TextureNumForName(msd->midtexture)  : 0 ;
-          sd->toptexture =
-            (sec->topmap =   R_ColormapNumForName(msd->toptexture)) < 0 ?
-            sec->topmap = 0, R_TextureNumForName(msd->toptexture)  : 0 ;
-          break;
-
-        case 260: // killough 4/11/98: apply translucency to 2s normal texture
-          sd->midtexture = strncasecmp("TRANMAP", msd->midtexture, 8) ?
-            (sd->special = W_CheckNumForName(msd->midtexture)) < 0 ||
-            W_LumpLength(sd->special) != 65536 ?
-            sd->special=0, R_TextureNumForName(msd->midtexture) :
-              (sd->special++, 0) : (sd->special=0);
-          sd->toptexture = R_TextureNumForName(msd->toptexture);
-          sd->bottomtexture = R_TextureNumForName(msd->bottomtexture);
-          break;
-
-#ifdef GL_DOOM
-        case 271:
-        case 272:
-          if (R_CheckTextureNumForName(msd->toptexture) == -1)
-          {
-            sd->skybox_index = R_BoxSkyboxNumForName(msd->toptexture);
-          }
-          // fallthrough
-#endif
-
-        default:                        // normal cases
-          sd->midtexture = R_SafeTextureNumForName(msd->midtexture, i);
-          sd->toptexture = R_SafeTextureNumForName(msd->toptexture, i);
-          sd->bottomtexture = R_SafeTextureNumForName(msd->bottomtexture, i);
-          break;
-      }
-    }
-    else
-    {
-      sd->midtexture = R_SafeTextureNumForName(msd->midtexture, i);
-      sd->toptexture = R_SafeTextureNumForName(msd->toptexture, i);
-      sd->bottomtexture = R_SafeTextureNumForName(msd->bottomtexture, i);
-    }
+    map_format.post_process_sidedef_special(sd, msd, sec, i);
   }
 
   W_UnlockLumpNum(lump); // cph - release the lump
@@ -2642,6 +2882,7 @@ dboolean P_CheckLumpsForSameSource(int lump1, int lump2)
 void P_CheckLevelWadStructure(const char *mapname)
 {
   int i, lumpnum;
+  dboolean has_behavior = false;
 
   static const char *ml_labels[] = {
     "ML_LABEL",             // A separator, name, ExMx or MAPxx
@@ -2677,20 +2918,25 @@ void P_CheckLevelWadStructure(const char *mapname)
     }
   }
 
-  // we may be running a wad that has multiple formats
-  // if we are not in "hexen mode" then we need to abort
-  // eventually, we can add support for per-map format swapping
-  if (!map_format.hexen)
+  // Find out what format we have
+  i = lumpnum + ML_BEHAVIOR;
+  if (P_CheckLumpsForSameSource(lumpnum, i))
   {
-    i = lumpnum + ML_BEHAVIOR;
-    if (P_CheckLumpsForSameSource(lumpnum, i))
+    if (!strncasecmp(lumpinfo[i].name, "BEHAVIOR", 8))
     {
-      if (!strncasecmp(lumpinfo[i].name, "BEHAVIOR", 8))
-      {
-        I_Error("P_SetupLevel: %s: Hexen format not supported", mapname);
-      }
+      has_behavior = true;
     }
   }
+
+  if (has_behavior && !hexen)
+  {
+    if (heretic)
+      I_Error("Hexen format maps are not supported in Heretic yet");
+
+    dsda_ApplyZDoomMapFormat();
+  }
+  else
+    dsda_ApplyDefaultMapFormat();
 }
 
 void P_InitSubsectorsLines(void)
@@ -2804,7 +3050,6 @@ void P_SetupLevel(int episode, int map, int playermask, skill_t skill)
 
   //e6y
   totallive = 0;
-  transparentpresent = false;
 
   dsda_WatchBeforeLevelSetup();
 
@@ -2838,16 +3083,8 @@ void P_SetupLevel(int episode, int map, int playermask, skill_t skill)
   //    W_Reload ();     killough 1/31/98: W_Reload obsolete
 
   // find map name
-  if (gamemode == commercial || hexen)
-  {
-    sprintf(lumpname, "MAP%02d", map);           // killough 1/24/98: simplify
-    sprintf(gl_lumpname, "GL_MAP%02d", map);    // figgi
-  }
-  else
-  {
-    sprintf(lumpname, "E%dM%d", episode, map);   // killough 1/24/98: simplify
-    sprintf(gl_lumpname, "GL_E%iM%i", episode, map); // figgi
-  }
+  strcpy(lumpname, MAPNAME(episode, map));
+  sprintf(gl_lumpname, "GL_%s", lumpname);
 
   lumpnum = W_GetNumForName(lumpname);
   gl_lumpnum = W_CheckNumForName(gl_lumpname); // figgi
@@ -2856,6 +3093,8 @@ void P_SetupLevel(int episode, int map, int playermask, skill_t skill)
   // Refuse to load a map with incomplete pwad structure.
   // Avoid segfaults on levels without nodes.
   P_CheckLevelWadStructure(lumpname);
+
+  dsda_ApplyLevelCompatibility(lumpnum);
 
   leveltime = 0; totallive = 0;
 
@@ -2881,6 +3120,8 @@ void P_SetupLevel(int episode, int map, int playermask, skill_t skill)
   current_episode = episode;
   current_map = map;
   current_nodesVersion = nodesVersion;
+
+  dsda_WatchNewLevel();
 
   if (!samelevel)
   {

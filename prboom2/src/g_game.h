@@ -51,7 +51,7 @@ void G_DeferedPlayDemo(const char *demo); // CPhipps - const
 void G_LoadGame(int slot, dboolean is_command); // killough 5/15/98
 void G_ForcedLoadGame(void);           // killough 5/15/98: forced loadgames
 void G_DoLoadGame(void);
-void G_SaveGame(int slot, char *description); // Called by M_Responder.
+void G_SaveGame(int slot, const char *description); // Called by M_Responder.
 void G_BeginRecording(void);
 // CPhipps - const on these string params
 void G_RecordDemo(const char *name);          // Only called by startup code.
@@ -92,7 +92,6 @@ void G_SetSpeed(dboolean force);
 #define RDH_SAFE 0x00000001
 #define RDH_SKIP_HEADER 0x00000002
 const byte* G_ReadDemoHeaderEx(const byte* demo_p, size_t size, unsigned int params);
-const byte* G_ReadDemoHeader(const byte* demo_p, size_t size);
 void G_CalculateDemoParams(const byte *demo_p);
 
 // killough 1/18/98: Doom-style printf;   killough 4/25/98: add gcc attributes

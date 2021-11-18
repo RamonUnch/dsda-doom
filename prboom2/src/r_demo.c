@@ -847,6 +847,16 @@ void I_DemoExShutdown(void)
     {
       lprintf(LO_DEBUG, "I_DemoExShutdown: %s\n", strerror(errno));
     }
+
+    // remove original temp file too
+    if (strlen(demoex_filename) > 4) // tempfile.wad -> tempfile
+    {
+      demoex_filename[strlen(demoex_filename) - 3] = 0;
+      if (unlink(demoex_filename) != 0)
+      {
+        lprintf(LO_DEBUG, "I_DemoExShutdown: %s\n", strerror(errno));
+      }
+    }
   }
 }
 
@@ -1060,62 +1070,68 @@ static int G_ReadDemoFooter(const char *filename)
 
   demoex_filename[0] = 0;
 
-  if (demo_demoex_filename && *demo_demoex_filename)
-  {
-    strncpy(demoex_filename, demo_demoex_filename, PATH_MAX-1);
-  }
-  else
-  {
-    const char* tmp_dir;
-    char* tmp_path = NULL;
-    const char* template_format = "%sdsda-doom-demoex-XXXXXX";
+  buffer = G_GetDemoFooter(filename, &demoex_p, &size);
 
-    tmp_dir = I_GetTempDir();
-    if (tmp_dir && *tmp_dir != '\0')
+  if (buffer)
+  {
+    //the demo has an additional information itself
+    size_t i;
+    waddata_t waddata;
+
+    if (demo_demoex_filename && *demo_demoex_filename)
     {
-      tmp_path = malloc(strlen(tmp_dir) + 2);
-      strcpy(tmp_path, tmp_dir);
-      if (!HasTrailingSlash(tmp_dir))
-      {
-        strcat(tmp_path, "/");
-      }
-
-      doom_snprintf(demoex_filename, sizeof(demoex_filename), template_format, tmp_path);
-#ifdef HAVE_MKSTEMP
-      if (mkstemp(demoex_filename) == -1)
-      {
-        demoex_filename[0] = 0;
-      }
-#else
-      mktemp(demoex_filename);
-#endif
-
-      free(tmp_path);
+      strncpy(demoex_filename, demo_demoex_filename, PATH_MAX-1);
     }
-  }
-
-  if (!demoex_filename[0])
-  {
-    lprintf(LO_ERROR, "G_ReadDemoFooter: failed to create demoex temp file");
-  }
-  else
-  {
-    AddDefaultExtension(demoex_filename, ".wad");
-
-    buffer = G_GetDemoFooter(filename, &demoex_p, &size);
-    if (buffer)
+    else
     {
-      //the demo has an additional information itself
-      size_t i;
-      waddata_t waddata;
+      int tmp_fd = -1;
+      const char* tmp_dir;
+      char* tmp_path = NULL;
+      const char* template_format = "%sdsda-doom-demoex2-XXXXXX";
+
+      tmp_dir = I_GetTempDir();
+      if (tmp_dir && *tmp_dir != '\0')
+      {
+        tmp_path = malloc(strlen(tmp_dir) + 2);
+        strcpy(tmp_path, tmp_dir);
+        if (!HasTrailingSlash(tmp_dir))
+        {
+          strcat(tmp_path, "/");
+        }
+
+        doom_snprintf(demoex_filename, sizeof(demoex_filename), template_format, tmp_path);
+#ifdef HAVE_MKSTEMP
+        if ((tmp_fd = mkstemp(demoex_filename)) == -1)
+#else
+        if (mktemp(demoex_filename) == NULL)
+#endif
+        {
+          demoex_filename[0] = 0;
+        }
+
+        // don't leave file open
+        if (tmp_fd >= 0)
+        {
+          close(tmp_fd);
+        }
+
+        free(tmp_path);
+      }
+    }
+
+    if (!demoex_filename[0])
+    {
+      lprintf(LO_ERROR, "G_ReadDemoFooter: failed to create demoex temp file");
+    }
+    else
+    {
+      AddDefaultExtension(demoex_filename, ".wad");
 
       if (!CheckWadBufIntegrity(demoex_p, size))
       {
         lprintf(LO_ERROR, "G_ReadDemoFooter: demo footer is corrupted\n");
-      }
-      else
-      //write an additional info from a demo to demoex.wad
-      if (!M_WriteFile(demoex_filename, demoex_p, size))
+      } // write an additional info from a demo to demoex.wad
+      else if (!M_WriteFile(demoex_filename, demoex_p, size))
       {
         lprintf(LO_ERROR, "G_ReadDemoFooter: failed to create demoex temp file %s\n", demoex_filename);
       }
@@ -1161,12 +1177,8 @@ static int G_ReadDemoFooter(const char *filename)
         }
         WadDataFree(&waddata);
       }
-      free(buffer);
     }
-    else
-    {
-      demoex_filename[0] = 0;
-    }
+    free(buffer);
   }
 
   return result;

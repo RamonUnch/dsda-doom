@@ -53,7 +53,9 @@
 
 #include "hexen/sn_sonix.h"
 
+#include "dsda/map_format.h"
 #include "dsda/memory.h"
+#include "dsda/settings.h"
 
 // when to clip out sounds
 // Does not fit the large outdoor areas.
@@ -92,12 +94,14 @@ typedef struct
 static channel_t *channels;
 static degenmobj_t *sobjs;
 
-// These are not used, but should be (menu).
 // Maximum volume of a sound effect.
 // Internal default is max out of 0-15.
 int snd_SfxVolume = 15;
 
-// Maximum volume of music. Useless so far.
+// Derived value (not saved, accounts for muted sfx)
+static int sfx_volume;
+
+// Maximum volume of music.
 int snd_MusicVolume = 15;
 
 // whether songs are mus_paused
@@ -245,7 +249,7 @@ void S_Start(void)
   // start new music for the level
   mus_paused = 0;
 
-  if (hexen)
+  if (map_format.mapinfo)
   {
     mnum = gamemap;
   }
@@ -268,7 +272,7 @@ void S_Start(void)
     else
     {
       if (gamemode == commercial)
-        mnum = mus_runnin + WRAP(gamemap - 1, DOOM_NUMMUSIC - mus_runnin);
+        mnum = mus_runnin + WRAP(gamemap - 1, DOOM_MUSINFO - mus_runnin);
       else
       {
         static const int spmus[] =     // Song - Who? - Where?
@@ -338,8 +342,8 @@ void S_StartSoundAtVolume(void *origin_p, int sfx_id, int volume)
       if (volume < 1)
         return;
 
-      if (volume > snd_SfxVolume)
-        volume = snd_SfxVolume;
+      if (volume > sfx_volume)
+        volume = sfx_volume;
     }
   else
     {
@@ -410,7 +414,7 @@ void S_StartSound(void *origin, int sfx_id)
 {
   if (raven) return Hexen_S_StartSoundAtVolume(origin, sfx_id, 127);
 
-  S_StartSoundAtVolume(origin, sfx_id, snd_SfxVolume);
+  S_StartSoundAtVolume(origin, sfx_id, sfx_volume);
 }
 
 void S_StopSound(void *origin)
@@ -519,7 +523,7 @@ void S_UpdateSounds(void* listener_p)
       if (I_SoundIsPlaying(c->handle))
       {
         // initialize parameters
-        int volume = snd_SfxVolume;
+        int volume = sfx_volume;
         int pitch = c->pitch; // use channel's pitch!
         int sep = NORM_SEP;
 
@@ -533,8 +537,8 @@ void S_UpdateSounds(void* listener_p)
             continue;
           }
           else
-            if (volume > snd_SfxVolume)
-              volume = snd_SfxVolume;
+            if (volume > sfx_volume)
+              volume = sfx_volume;
         }
 
         // check non-local sounds for distance clipping
@@ -573,12 +577,22 @@ void S_SetSfxVolume(int volume)
   //jff 1/22/98 return if sound is not enabled
   if (!snd_card || nosfxparm)
     return;
+
   if (volume < 0 || volume > 127)
     I_Error("S_SetSfxVolume: Attempt to set sfx volume at %d", volume);
+
   snd_SfxVolume = volume;
+
+  if (dsda_MuteSfx())
+    sfx_volume = 0;
+  else
+    sfx_volume = volume;
 }
 
-
+void S_ResetSfxVolume(void)
+{
+  S_SetSfxVolume(snd_SfxVolume);
+}
 
 // Starts some music with the music id found in sounds.h.
 //
@@ -616,7 +630,7 @@ void S_ChangeMusic(int musicnum, int looping)
   // get lumpnum if neccessary
   if (!music->lumpnum)
   {
-    if (hexen && musicnum < hexen_mus_hub)
+    if (map_format.mapinfo && musicnum < hexen_mus_hub)
     {
       const char* songLump;
 
@@ -817,7 +831,7 @@ int S_AdjustSoundParams(mobj_t *listener, mobj_t *source,
   if (!approx_dist)  // killough 11/98: handle zero-distance as special case
     {
       *sep = NORM_SEP;
-      *vol = snd_SfxVolume;
+      *vol = sfx_volume;
       return *vol > 0;
     }
 
@@ -837,10 +851,10 @@ int S_AdjustSoundParams(mobj_t *listener, mobj_t *source,
 
   // volume calculation
   if (approx_dist < S_CLOSE_DIST)
-    *vol = snd_SfxVolume*8;
+    *vol = sfx_volume*8;
   else
     // distance effect
-    *vol = (snd_SfxVolume * ((S_CLIPPING_DIST-approx_dist)>>FRACBITS) * 8)
+    *vol = (sfx_volume * ((S_CLIPPING_DIST-approx_dist)>>FRACBITS) * 8)
       / S_ATTENUATOR;
 
   return (*vol > 0);
@@ -1011,7 +1025,7 @@ static void Hexen_S_StartSoundAtVolume(void *_origin, int sound_id, int volume)
 
   for (i = 0; i < numChannels; i++)
   {
-    if (origin->player)
+    if (gamestate != GS_LEVEL || origin->player)
     {
       i = numChannels;
       break;              // let the player have more than one sound.
@@ -1071,7 +1085,7 @@ static void Hexen_S_StartSoundAtVolume(void *_origin, int sound_id, int volume)
   if (sfx->lumpnum <= 0)
     sfx->lumpnum = I_GetSfxLumpNum(sfx);
 
-  vol = (soundCurve[dist] * volume * snd_SfxVolume * 8) >> 14;
+  vol = (soundCurve[dist] * volume * sfx_volume * 8) >> 14;
 
   if (origin == listener)
     sep = 128;
@@ -1125,7 +1139,7 @@ static void Heretic_S_StartSoundAtVolume(void *_origin, int sound_id, int volume
 
   sfx = &S_sfx[sound_id];
 
-  volume = (volume * (snd_SfxVolume + 1) * 8) >> 7;
+  volume = (volume * (sfx_volume + 1) * 8) >> 7;
 
   // no priority checking, as ambient sounds would be the LOWEST.
   for (i = 0; i < numChannels; i++)
@@ -1189,10 +1203,10 @@ void Heretic_S_UpdateSounds(mobj_t *listener)
   // I_UpdateSound();
 
   listener = GetSoundListener();
-  if (snd_SfxVolume == 0)
+  if (sfx_volume == 0)
     return;
 
-  if (hexen)
+  if (map_format.sndseq)
   {
     // Update any Sequences
     SN_UpdateActiveSequences();
@@ -1238,7 +1252,7 @@ void Heretic_S_UpdateSounds(mobj_t *listener)
       dist = 0;
 
     // calculate the volume based upon the distance from the sound origin.
-    vol = (soundCurve[dist] * snd_SfxVolume * 8 * channels[i].volume) >> 14;
+    vol = (soundCurve[dist] * sfx_volume * 8 * channels[i].volume) >> 14;
 
     angle = R_PointToAngle2(listener->x, listener->y, origin->x, origin->y);
     if (angle <= listener->angle)

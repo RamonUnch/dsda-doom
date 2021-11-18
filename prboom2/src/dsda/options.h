@@ -60,8 +60,8 @@ typedef struct dsda_options {
   int comp_translucency;
   int comp_ledgeblock;
   int comp_friendlyspawn;
-  // int comp_31;
-  // int comp_32;
+  int comp_voodooscroller;
+  int comp_reservedlineflag;
 } dsda_options_t;
 
 const dsda_options_t* dsda_Options(void);

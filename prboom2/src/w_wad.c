@@ -142,14 +142,16 @@ static void W_AddFile(wadfile_info_t *wadfile)
   filelump_t  singleinfo;
   int         flags = 0;
 
+  // Close any existing handle
+  if (wadfile->handle > 0)
+  {
+    close(wadfile->handle);
+    wadfile->handle = 0;
+  }
+
   // open the file and add to directory
 
   wadfile->handle = open(wadfile->name,O_RDONLY | O_BINARY);
-
-#ifdef HAVE_NET
-  if (wadfile->handle == -1 && D_NetGetWad(wadfile->name)) // CPhipps
-    wadfile->handle = open(wadfile->name,O_RDONLY | O_BINARY);
-#endif
 
   if (wadfile->handle == -1 &&
     strlen(wadfile->name) > 4 &&

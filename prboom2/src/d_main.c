@@ -66,7 +66,6 @@
 #include "m_argv.h"
 #include "m_misc.h"
 #include "m_menu.h"
-#include "p_checksum.h"
 #include "i_main.h"
 #include "i_system.h"
 #include "i_sound.h"
@@ -168,6 +167,7 @@ const char *const standard_iwads[]=
 
   "hacx.wad",
   "chex.wad",
+  "rekkrsa.wad",
 
   "bfgdoom2.wad",
   "bfgdoom.wad",
@@ -383,6 +383,9 @@ void D_Display (fixed_t frac)
     // Boom colormaps should be applied for everything in R_RenderPlayerView
     use_boom_cm=true;
 
+    if (frac < 0)
+      frac = I_GetTimeFrac();
+
     R_InterpolateView(&players[displayplayer], frac);
 
     R_ClearStats();
@@ -453,11 +456,8 @@ void D_Display (fixed_t frac)
 
   // menus go directly to the screen
   M_Drawer();          // menu is drawn even on top of everything
-#ifdef HAVE_NET
-  NetUpdate();         // send out any new accumulation
-#else
-  D_BuildNewTiccmds();
-#endif
+
+  FakeNetUpdate();     // send out any new accumulation
 
   HU_DrawDemoProgress(true); //e6y
 
@@ -519,7 +519,6 @@ static void D_DoomLoop(void)
         D_DoAdvanceDemo ();
       M_Ticker ();
       G_Ticker ();
-      P_Checksum(gametic);
       gametic++;
       maketic++;
     }
@@ -552,7 +551,7 @@ static void D_DoomLoop(void)
       }
       else
       {
-        D_Display(I_GetTimeFrac());
+        D_Display(-1);
       }
     }
 
@@ -848,8 +847,7 @@ void CheckIWAD(const char *iwadname,GameMode_t *gmode,dboolean *hassec)
 {
   if ( !access (iwadname,R_OK) )
   {
-    int ud=0,rg=0,sw=0,cm=0,sc=0,hx=0,cq=0;
-    dboolean noiwad=0;
+    int ud=0,rg=0,sw=0,cm=0,sc=0,hx=0;
     FILE* fp;
 
     // Identify IWAD correctly
@@ -865,7 +863,7 @@ void CheckIWAD(const char *iwadname,GameMode_t *gmode,dboolean *hassec)
 
         if (strncmp(header.identification, "IWAD", 4)) // missing IWAD tag in header
         {
-          noiwad++;
+          lprintf(LO_WARN,"CheckIWAD: IWAD tag %s not present\n", iwadname);
         }
 
         // read IWAD directory
@@ -910,14 +908,8 @@ void CheckIWAD(const char *iwadname,GameMode_t *gmode,dboolean *hassec)
             bfgedition++;
           if (!strncmp(fileinfo[length].name,"HACX",4))
             hx++;
-          if (!strncmp(fileinfo[length].name,"W94_1",5) ||
-              !strncmp(fileinfo[length].name,"POSSH0M0",8))
-            cq++;
         }
         free(fileinfo);
-
-        if (noiwad && !bfgedition && cq < 2)
-          I_Error("CheckIWAD: IWAD tag %s not present", iwadname);
 
       }
     }
@@ -2021,8 +2013,8 @@ static void D_DoomMainSetup(void)
 
   // CPhipps - move up netgame init
   //jff 9/3/98 use logical output routine
-  lprintf(LO_INFO,"D_InitNetGame: Checking for network game.\n");
-  D_InitNetGame();
+  lprintf(LO_INFO,"D_InitFakeNetGame: Checking for network game.\n");
+  D_InitFakeNetGame();
 
   //jff 9/3/98 use logical output routine
   lprintf(LO_INFO,"W_Init: Init WADfiles.\n");
@@ -2171,7 +2163,7 @@ static void D_DoomMainSetup(void)
 
   PostProcessDeh();
 
-  dsda_DetectMapFormat();
+  dsda_ApplyDefaultMapFormat();
 
   V_InitColorTranslation(); //jff 4/24/98 load color translation lumps
 
@@ -2206,11 +2198,6 @@ static void D_DoomMainSetup(void)
     SN_InitSequenceScript();
   }
 
-#ifdef HAVE_NET
-  // CPhipps - now wait for netgame start
-  D_CheckNetGame();
-#endif
-
   //jff 9/3/98 use logical output routine
   lprintf(LO_INFO,"R_Init: Init DOOM refresh daemon - ");
   R_Init();
@@ -2221,6 +2208,9 @@ static void D_DoomMainSetup(void)
 
   // Must be after P_Init
   HandleWarp();
+
+  // Must be after HandleWarp
+  e6y_HandleSkip();
 
   //jff 9/3/98 use logical output routine
   lprintf(LO_INFO,"I_Init: Setting up machine state.\n");
@@ -2273,11 +2263,6 @@ static void D_DoomMainSetup(void)
         autostart = true;
         G_RecordDemo(myargv[p]);
       }
-  }
-
-  if ((p = M_CheckParm ("-checksum")) && ++p < myargc)
-  {
-    P_RecordChecksum (myargv[p]);
   }
 
   if ((p = M_CheckParm ("-fastdemo")) && ++p < myargc)

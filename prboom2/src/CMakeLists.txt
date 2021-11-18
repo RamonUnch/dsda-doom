@@ -1,11 +1,3 @@
-
-function(ApplySDL2NetOptions TARGET)
-    if(SDL2_NET_FOUND)
-        target_include_directories(${TARGET} PRIVATE ${SDL2_NET_INCLUDE_DIRS})
-        target_link_libraries(${TARGET} PRIVATE ${SDL2_NET_LIBRARIES})
-    endif()
-endfunction()
-
 # PrBoom main executable
 
 set(COMMON_SRC
@@ -23,12 +15,16 @@ set(COMMON_SRC
     dsda/analysis.h
     dsda/command_display.c
     dsda/command_display.h
+    dsda/compatibility.c
+    dsda/compatibility.h
     dsda/console.c
     dsda/console.h
     dsda/coordinate_display.c
     dsda/coordinate_display.h
     dsda/data_organizer.c
     dsda/data_organizer.h
+    dsda/death.c
+    dsda/death.h
     dsda/demo.c
     dsda/demo.h
     dsda/exhud.c
@@ -45,12 +41,15 @@ set(COMMON_SRC
     dsda/intermission_display.h
     dsda/key_frame.c
     dsda/key_frame.h
+    dsda/line_special.h
     dsda/map_format.c
     dsda/map_format.h
     dsda/memory.c
     dsda/memory.h
     dsda/mobjinfo.c
     dsda/mobjinfo.h
+    dsda/mouse.c
+    dsda/mouse.h
     dsda/msecnode.c
     dsda/msecnode.h
     dsda/music.c
@@ -154,7 +153,6 @@ set(COMMON_SRC
     i_glob.h
     i_joy.h
     i_main.h
-    i_network.h
     i_pcsound.c
     i_pcsound.h
     i_sound.h
@@ -178,10 +176,7 @@ set(COMMON_SRC
     m_random.c
     m_random.h
     m_swap.h
-    protocol.h
     p_ceilng.c
-    p_checksum.c
-    p_checksum.h
     p_doors.c
     p_enemy.c
     p_enemy.h
@@ -292,7 +287,6 @@ set(MUS2MID_SRC
 set(SDLDOOM_SOURCES
     SDL/i_joy.c
     SDL/i_main.c
-    SDL/i_network.c
     SDL/i_sound.c
     SDL/i_sshot.c
     SDL/i_system.c
@@ -439,7 +433,6 @@ function(AddGameExecutable TARGET SOURCES)
         target_include_directories(${TARGET} PRIVATE ${PCRE_INCLUDE_DIR})
         target_link_libraries(${TARGET} PRIVATE ${PCREPOSIX_LIBRARIES})
     endif()
-    ApplySDL2NetOptions(${TARGET})
     if(ZLIB_FOUND)
         target_include_directories(${TARGET} PRIVATE ${ZLIB_INCLUDE_DIRS})
         target_link_libraries(${TARGET} PRIVATE ${ZLIB_LIBRARIES})
@@ -495,49 +488,6 @@ function(AddGameExecutable TARGET SOURCES)
 endfunction()
 
 AddGameExecutable(dsda-doom "${PRBOOM_PLUS_SOURCES}")
-
-
-# DSDA-Doom server executable
-
-option(BUILD_SERVER "Build DSDA-Doom server executable" OFF)
-
-if(BUILD_SERVER AND SDL2_NET_FOUND)
-    set(DSDA_DOOM_GAME_SERVER_SOURCES
-        d_server.c
-        protocol.h
-        SDL/i_network.c
-    )
-
-    if(MSVC)
-        set(DSDA_DOOM_GAME_SERVER_SOURCES
-            ${DSDA_DOOM_GAME_SERVER_SOURCES}
-            SDL/i_system.c
-            dsda/time.c
-            dsda/time.h
-        )
-    else()
-        set(DSDA_DOOM_GAME_SERVER_SOURCES
-            ${DSDA_DOOM_GAME_SERVER_SOURCES}
-            POSIX/i_system.c
-        )
-    endif()
-
-    add_executable(dsda-doom-game-server ${DSDA_DOOM_GAME_SERVER_SOURCES})
-    target_include_directories(dsda-doom-game-server PRIVATE
-        ${SDL2_INCLUDE_DIRS}
-        ${CMAKE_BINARY_DIR}
-        ${CMAKE_CURRENT_SOURCE_DIR}
-    )
-    target_link_libraries(dsda-doom-game-server PRIVATE
-        ${SDL2_LIBRARIES}
-    )
-    set_target_properties(dsda-doom-game-server PROPERTIES
-        COMPILE_DEFINITIONS PRBOOM_SERVER
-        RUNTIME_OUTPUT_DIRECTORY ${PRBOOM_OUTPUT_PATH}
-    )
-    ApplySDL2NetOptions(dsda-doom-game-server)
-    install(TARGETS dsda-doom-game-server COMPONENT "Game server executable" RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
-endif()
 
 
 # PrBoom-Plus macOS launcher
@@ -607,11 +557,4 @@ if(APPLE)
         COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:${BUNDLE_GAME_EXECUTABLE}> $<TARGET_FILE_DIR:prboom-plus-launcher>/PrBoom-Plus
         COMMAND ${CMAKE_COMMAND} -E copy_if_different ${WAD_DATA_PATH} $<TARGET_FILE_DIR:prboom-plus-launcher>
     )
-
-    if(BUILD_SERVER AND SDL2_NET_FOUND)
-        add_dependencies(prboom-plus-launcher dsda-doom-game-server)
-        add_custom_command(TARGET prboom-plus-launcher POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:dsda-doom-game-server> $<TARGET_FILE_DIR:prboom-plus-launcher>
-        )
-    endif()
 endif()

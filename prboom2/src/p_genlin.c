@@ -100,7 +100,7 @@ int EV_DoGenFloor
 
 manual_floor:
     // Do not start another function if floor already moving
-    if (P_SectorActive(floor_special,sec))
+    if (P_FloorActive(sec))
     {
       if (!manual)
         continue;
@@ -115,13 +115,11 @@ manual_floor:
     P_AddThinker (&floor->thinker);
     sec->floordata = floor;
     floor->thinker.function = T_MoveFloor;
-    floor->crush = Crsh;
+    floor->crush = (Crsh ? DOOM_CRUSH : NO_CRUSH);
     floor->direction = Dirn? 1 : -1;
     floor->sector = sec;
     floor->texture = sec->floorpic;
-    floor->newspecial = sec->special;
-    //jff 3/14/98 transfer old special field too
-    floor->oldspecial = sec->oldspecial;
+    P_CopyTransferSpecial(&floor->newspecial, sec);
     floor->type = genFloor;
 
     // set the speed of motion
@@ -202,15 +200,11 @@ manual_floor:
           switch(ChgT)
           {
             case FChgZero:  // zero type
-              floor->newspecial = 0;
-              //jff 3/14/98 change old field too
-              floor->oldspecial = 0;
+              P_ResetTransferSpecial(&floor->newspecial);
               floor->type = genFloorChg0;
               break;
             case FChgTyp:   // copy type
-              floor->newspecial = sec->special;
-              //jff 3/14/98 change old field too
-              floor->oldspecial = sec->oldspecial;
+              P_CopyTransferSpecial(&floor->newspecial, sec);
               floor->type = genFloorChgT;
               break;
             case FChgTxt:   // leave type be
@@ -227,15 +221,11 @@ manual_floor:
         switch (ChgT)
         {
           case FChgZero:    // zero type
-            floor->newspecial = 0;
-            //jff 3/14/98 change old field too
-            floor->oldspecial = 0;
+            P_ResetTransferSpecial(&floor->newspecial);
             floor->type = genFloorChg0;
             break;
           case FChgTyp:     // copy type
-            floor->newspecial = line->frontsector->special;
-            //jff 3/14/98 change old field too
-            floor->oldspecial = line->frontsector->oldspecial;
+            P_CopyTransferSpecial(&floor->newspecial, line->frontsector);
             floor->type = genFloorChgT;
             break;
           case FChgTxt:     // leave type be
@@ -305,7 +295,7 @@ int EV_DoGenCeiling
 
 manual_ceiling:
     // Do not start another function if ceiling already moving
-    if (P_SectorActive(ceiling_special,sec)) //jff 2/22/98
+    if (P_CeilingActive(sec)) //jff 2/22/98
     {
       if (!manual)
         continue;
@@ -320,13 +310,11 @@ manual_ceiling:
     P_AddThinker (&ceiling->thinker);
     sec->ceilingdata = ceiling; //jff 2/22/98
     ceiling->thinker.function = T_MoveCeiling;
-    ceiling->crush = Crsh;
+    ceiling->crush = (Crsh ? DOOM_CRUSH : NO_CRUSH);
     ceiling->direction = Dirn? 1 : -1;
     ceiling->sector = sec;
     ceiling->texture = sec->ceilingpic;
-    ceiling->newspecial = sec->special;
-    //jff 3/14/98 change old field too
-    ceiling->oldspecial = sec->oldspecial;
+    P_CopyTransferSpecial(&ceiling->newspecial, sec);
     ceiling->tag = sec->tag;
     ceiling->type = genCeiling;
 
@@ -411,15 +399,11 @@ manual_ceiling:
           switch (ChgT)
           {
             case CChgZero:  // type is zeroed
-              ceiling->newspecial = 0;
-              //jff 3/14/98 change old field too
-              ceiling->oldspecial = 0;
+              P_ResetTransferSpecial(&ceiling->newspecial);
               ceiling->type = genCeilingChg0;
               break;
             case CChgTyp:   // type is copied
-              ceiling->newspecial = sec->special;
-              //jff 3/14/98 change old field too
-              ceiling->oldspecial = sec->oldspecial;
+              P_CopyTransferSpecial(&ceiling->newspecial, sec);
               ceiling->type = genCeilingChgT;
               break;
             case CChgTxt:   // type is left alone
@@ -436,15 +420,11 @@ manual_ceiling:
         switch (ChgT)
         {
           case CChgZero:    // type is zeroed
-            ceiling->newspecial = 0;
-            //jff 3/14/98 change old field too
-            ceiling->oldspecial = 0;
+            P_ResetTransferSpecial(&ceiling->newspecial);
             ceiling->type = genCeilingChg0;
             break;
           case CChgTyp:     // type is copied
-            ceiling->newspecial = line->frontsector->special;
-            //jff 3/14/98 change old field too
-            ceiling->oldspecial = line->frontsector->oldspecial;
+            P_CopyTransferSpecial(&ceiling->newspecial, line->frontsector);
             ceiling->type = genCeilingChgT;
             break;
           case CChgTxt:     // type is left alone
@@ -513,7 +493,7 @@ int EV_DoGenLift
 
 manual_lift:
     // Do not start another function if floor already moving
-    if (P_SectorActive(floor_special,sec))
+    if (P_FloorActive(sec))
     {
       if (!manual)
         continue;
@@ -530,7 +510,7 @@ manual_lift:
     plat->sector = sec;
     plat->sector->floordata = plat;
     plat->thinker.function = T_PlatRaise;
-    plat->crush = false;
+    plat->crush = NO_CRUSH;
     plat->tag = line->tag;
 
     plat->type = genLift;
@@ -675,7 +655,7 @@ manual_stair:
     //Do not start another function if floor already moving
     //jff 2/26/98 add special lockout condition to wait for entire
     //staircase to build before retriggering
-    if (P_SectorActive(floor_special,sec) || sec->stairlock)
+    if (P_FloorActive(sec) || sec->stairlock)
     {
       if (!manual)
         continue;
@@ -733,7 +713,7 @@ manual_stair:
     height = sec->floorheight + floor->direction * stairsize;
     floor->floordestheight = height;
     texture = sec->floorpic;
-    floor->crush = false;
+    floor->crush = NO_CRUSH;
     floor->type = genBuildStair; // jff 3/31/98 do not leave uninited
 
     sec->stairlock = -2;         // jff 2/26/98 set up lock on current sector
@@ -769,7 +749,7 @@ manual_stair:
           height += floor->direction * stairsize;
 
         //jff 2/26/98 special lockout condition for retriggering
-        if (P_SectorActive(floor_special,tsec) || tsec->stairlock)
+        if (P_FloorActive(tsec) || tsec->stairlock)
           continue;
 
         /* jff 6/19/98 increase height AFTER continue */
@@ -797,7 +777,7 @@ manual_stair:
         floor->sector = sec;
         floor->speed = speed;
         floor->floordestheight = height;
-        floor->crush = false;
+        floor->crush = NO_CRUSH;
         floor->type = genBuildStair; // jff 3/31/98 do not leave uninited
 
         ok = 1;
@@ -840,7 +820,7 @@ int EV_DoGenCrusher
 
   //jff 2/22/98  Reactivate in-stasis ceilings...for certain types.
   //jff 4/5/98 return if activated
-  rtn = P_ActivateInStasisCeiling(line);
+  rtn = P_ActivateInStasisCeiling(line->tag);
 
   if (ProcessNoTagLines(line, &sec, &secnum)) {if (zerotag_manual) {manual = true; goto manual_crusher;} else {return rtn;}};//e6y
   // check if a manual trigger, if so do just the sector on the backside
@@ -862,7 +842,7 @@ int EV_DoGenCrusher
 
 manual_crusher:
     // Do not start another function if ceiling already moving
-    if (P_SectorActive(ceiling_special,sec)) //jff 2/22/98
+    if (P_CeilingActive(sec)) //jff 2/22/98
     {
       if (!manual)
         continue;
@@ -877,13 +857,14 @@ manual_crusher:
     P_AddThinker (&ceiling->thinker);
     sec->ceilingdata = ceiling; //jff 2/22/98
     ceiling->thinker.function = T_MoveCeiling;
-    ceiling->crush = true;
+    ceiling->crush = DOOM_CRUSH;
     ceiling->direction = -1;
     ceiling->sector = sec;
     ceiling->texture = sec->ceilingpic;
-    ceiling->newspecial = sec->special;
+    P_CopyTransferSpecial(&ceiling->newspecial, sec);
     ceiling->tag = sec->tag;
     ceiling->type = Slnt? genSilentCrusher : genCrusher;
+    ceiling->silent = (ceiling->type == genSilentCrusher);
     ceiling->topheight = sec->ceilingheight;
     ceiling->bottomheight = sec->floorheight + (8*FRACUNIT);
 
@@ -959,7 +940,7 @@ int EV_DoGenLockedDoor
     sec = &sectors[secnum];
 manual_locked:
     // Do not start another function if ceiling already moving
-    if (P_SectorActive(ceiling_special,sec)) //jff 2/22/98
+    if (P_CeilingActive(sec)) //jff 2/22/98
     {
       if (!manual)
         continue;
@@ -1070,7 +1051,7 @@ int EV_DoGenDoor
     sec = &sectors[secnum];
 manual_door:
     // Do not start another function if ceiling already moving
-    if (P_SectorActive(ceiling_special,sec)) //jff 2/22/98
+    if (P_CeilingActive(sec)) //jff 2/22/98
     {
       if (!manual)
         continue;

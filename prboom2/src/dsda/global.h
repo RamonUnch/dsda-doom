@@ -38,7 +38,6 @@ extern int g_wp_pistol;
 extern int g_telefog_height;
 extern int g_thrust_factor;
 extern int g_fuzzy_aim_shift;
-extern int g_special_friction_low;
 
 extern int g_s_null;
 
@@ -86,6 +85,8 @@ extern int g_sfx_pistol;
 extern int g_sfx_oof;
 extern int g_sfx_menu;
 extern int g_sfx_respawn;
+extern int g_sfx_secret;
+extern int g_sfx_revive;
 
 extern int g_door_normal;
 extern int g_door_raise_in_5_mins;

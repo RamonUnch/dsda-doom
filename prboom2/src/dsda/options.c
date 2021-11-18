@@ -95,7 +95,9 @@ static const dsda_options_t default_mbf_options = {
   // .comp_maxhealth = 0,
   // .comp_translucency = 0,
   // .comp_ledgeblock = 0,
-  // .comp_friendlyspawn = 1
+  // .comp_friendlyspawn = 1,
+  // .comp_voodooscroller = 1,
+  // .comp_reservedlineflag = 1,
 };
 
 static const dsda_options_t default_latest_options = {
@@ -141,7 +143,9 @@ static const dsda_options_t default_latest_options = {
   .comp_maxhealth = 0,
   .comp_translucency = 0,
   .comp_ledgeblock = 1,
-  .comp_friendlyspawn = 1
+  .comp_friendlyspawn = 1,
+  .comp_voodooscroller = 0,
+  .comp_reservedlineflag = 1,
 };
 
 static dsda_options_t mbf_options;
@@ -189,6 +193,8 @@ static dsda_option_t option_list[] = {
   { "comp_soul", &mbf_options.comp_soul, 0, 1 },
   { "comp_ledgeblock", &mbf_options.comp_ledgeblock, 0, 1 },
   { "comp_friendlyspawn", &mbf_options.comp_friendlyspawn, 0, 1 },
+  { "comp_voodooscroller", &mbf_options.comp_voodooscroller, 0, 1 },
+  { "comp_reservedlineflag", &mbf_options.comp_reservedlineflag, 0, 1 },
   { 0 }
 };
 
@@ -278,7 +284,7 @@ const dsda_options_t* dsda_Options(void) {
   return dsda_MBFOptions();
 }
 
-#define MBF21_COMP_TOTAL 23
+#define MBF21_COMP_TOTAL 25
 
 static int mbf21_comp_translation[MBF21_COMP_TOTAL] = {
   comp_telefrag,
@@ -304,6 +310,8 @@ static int mbf21_comp_translation[MBF21_COMP_TOTAL] = {
   comp_soul,
   comp_ledgeblock,
   comp_friendlyspawn,
+  comp_voodooscroller,
+  comp_reservedlineflag,
 };
 
 // killough 5/2/98: number of bytes reserved for saving options
@@ -398,6 +406,14 @@ const byte *dsda_ReadOptions21(const byte *demo_p) {
 
   for (i = 0; i < count; i++)
     comp[mbf21_comp_translation[i]] = *demo_p++;
+
+  // comp_voodooscroller
+  if (count < 24)
+    comp[mbf21_comp_translation[23]] = 1;
+
+  // comp_reservedlineflag
+  if (count < 25)
+    comp[mbf21_comp_translation[24]] = 0;
 
   G_Compatibility();
 

@@ -51,7 +51,9 @@
 #include "hu_stuff.h"
 #include "lprintf.h"
 #include "e6y.h"//e6y
+
 #include "dsda.h"
+#include "dsda/map_format.h"
 
 static mobj_t *current_actor;
 
@@ -943,53 +945,54 @@ static dboolean P_LookForMonsters(mobj_t *actor, dboolean allaround)
   // Search for new enemy
 
   if (cap->cnext != cap)        // Empty list? bail out early
-    {
-      int x = P_GetSafeBlockX(actor->x - bmaporgx);
-      int y = P_GetSafeBlockY(actor->y - bmaporgy);
-      int d;
-
-      current_actor = actor;
-      current_allaround = allaround;
-
-      // Search first in the immediate vicinity.
-
-      if (!P_BlockThingsIterator(x, y, PIT_FindTarget))
-  return true;
-
-      for (d=1; d<5; d++)
   {
-    int i = 1 - d;
-    do
-      if (!P_BlockThingsIterator(x+i, y-d, PIT_FindTarget) ||
-    !P_BlockThingsIterator(x+i, y+d, PIT_FindTarget))
-        return true;
-    while (++i < d);
-    do
-      if (!P_BlockThingsIterator(x-d, y+i, PIT_FindTarget) ||
-    !P_BlockThingsIterator(x+d, y+i, PIT_FindTarget))
-        return true;
-    while (--i + d >= 0);
-  }
+    int x = P_GetSafeBlockX(actor->x - bmaporgx);
+    int y = P_GetSafeBlockY(actor->y - bmaporgy);
+    int d;
 
-      {   // Random number of monsters, to prevent patterns from forming
-  int n = (P_Random(pr_friends) & 31) + 15;
+    current_actor = actor;
+    current_allaround = allaround;
 
-  for (th = cap->cnext; th != cap; th = th->cnext)
-    if (--n < 0)
-      {
-        // Only a subset of the monsters were searched. Move all of
-        // the ones which were searched so far, to the end of the list.
+    // Search first in the immediate vicinity.
 
-        (cap->cnext->cprev = cap->cprev)->cnext = cap->cnext;
-        (cap->cprev = th->cprev)->cnext = cap;
-        (th->cprev = cap)->cnext = th;
-        break;
-     }
-    else
-      if (!PIT_FindTarget((mobj_t *) th))   // If target sighted
-        return true;
-      }
+    if (!P_BlockThingsIterator(x, y, PIT_FindTarget))
+      return true;
+
+    for (d = 1; d < 5; d++)
+    {
+      int i = 1 - d;
+      do
+        if (!P_BlockThingsIterator(x + i, y - d, PIT_FindTarget) ||
+            !P_BlockThingsIterator(x + i, y + d, PIT_FindTarget))
+          return true;
+      while (++i < d);
+
+      do
+        if (!P_BlockThingsIterator(x - d, y + i, PIT_FindTarget) ||
+            !P_BlockThingsIterator(x + d, y + i, PIT_FindTarget))
+          return true;
+      while (--i + d >= 0);
     }
+
+    {   // Random number of monsters, to prevent patterns from forming
+      int n = (P_Random(pr_friends) & 31) + 15;
+
+      for (th = cap->cnext; th != cap; th = th->cnext)
+        if (--n < 0)
+        {
+          // Only a subset of the monsters were searched. Move all of
+          // the ones which were searched so far, to the end of the list.
+
+          (cap->cnext->cprev = cap->cprev)->cnext = cap->cnext;
+          (cap->cprev = th->cprev)->cnext = cap;
+          (th->cprev = cap)->cnext = th;
+          break;
+       }
+        else
+          if (!PIT_FindTarget((mobj_t *) th))   // If target sighted
+            return true;
+    }
+  }
 
   return false;  // No monster found
 }
@@ -2530,7 +2533,7 @@ void A_BossDeath(mobj_t *mo)
 			  junk.tag = (short)gamemapinfo->bossactions[i].tag;
 			  // use special semantics for line activation to block problem types.
 			  if (!P_UseSpecialLine(mo, &junk, 0, true))
-				  P_CrossSpecialLine(&junk, 0, mo, true);
+				  map_format.cross_special_line(&junk, 0, mo, true);
 		  }
 	  }
 
@@ -3097,7 +3100,7 @@ void A_LineEffect(mobj_t *mo)
     return;
   junk.tag = (short)mo->state->misc2;
   if (!P_UseSpecialLine(mo, &junk, 0, false))
-    P_CrossSpecialLine(&junk, 0, mo, false);
+    map_format.cross_special_line(&junk, 0, mo, false);
   mo->state->misc1 = junk.special;
   mo->player = oldplayer;
 }
@@ -3784,6 +3787,7 @@ dboolean P_UpdateChicken(mobj_t * actor, int tics)
     oldChicken = *actor;
     P_SetMobjState(actor, HERETIC_S_FREETARGMOBJ);
     mo = P_SpawnMobj(x, y, z, moType);
+    dsda_WatchUnMorph(mo);
     if (P_TestMobjLocation(mo) == false)
     {                           // Didn't fit
         P_RemoveMobj(mo);
@@ -3794,6 +3798,7 @@ dboolean P_UpdateChicken(mobj_t * actor, int tics)
         P_SetTarget(&mo->target, oldChicken.target);
         mo->special1.i = 5 * 35;  // Next try in 5 seconds
         mo->special2.i = moType;
+        dsda_WatchMorph(mo);
         return (false);
     }
     mo->angle = oldChicken.angle;
@@ -5245,7 +5250,7 @@ dboolean P_UpdateMorphedMonster(mobj_t * actor, int tics)
     P_RemoveMobjFromTIDList(actor);
     P_SetMobjState(actor, HEXEN_S_FREETARGMOBJ);
     mo = P_SpawnMobj(x, y, z, moType);
-
+    dsda_WatchUnMorph(mo);
     if (P_TestMobjLocation(mo) == false)
     {                           // Didn't fit
         P_RemoveMobj(mo);
@@ -5260,6 +5265,7 @@ dboolean P_UpdateMorphedMonster(mobj_t * actor, int tics)
         mo->tid = oldMonster.tid;
         memcpy(mo->args, oldMonster.args, 5);
         P_InsertMobjIntoTIDList(mo, oldMonster.tid);
+        dsda_WatchMorph(mo);
         return (false);
     }
     mo->angle = oldMonster.angle;
@@ -7130,7 +7136,7 @@ void A_FreezeDeath(mobj_t * actor)
     else if (actor->flags & MF_COUNTKILL && actor->special)
     {
         // Initiate monster death actions.
-        P_ExecuteLineSpecial(actor->special, actor->args, NULL, 0, actor);
+        map_format.execute_line_special(actor->special, actor->args, NULL, 0, actor);
     }
 }
 

@@ -154,6 +154,7 @@ void SV_RestoreMapArchive(byte **buffer)
 
     if (map_archive[i].size)
     {
+      map_archive[i].buffer = malloc(map_archive[i].size);
       memcpy(map_archive[i].buffer, *buffer, map_archive[i].size);
       *buffer += map_archive[i].size;
     }
@@ -633,8 +634,12 @@ static void StreamIn_floormove_t(floormove_t *str)
     // int direction;
     str->direction = SV_ReadLong();
 
-    // int newspecial;
-    str->newspecial = SV_ReadLong();
+    // newspecial_t newspecial;
+    str->newspecial.special = SV_ReadWord();
+    str->newspecial.flags = SV_ReadLong();
+    str->newspecial.damage.amount = SV_ReadWord();
+    str->newspecial.damage.leakrate = SV_ReadByte();
+    str->newspecial.damage.interval = SV_ReadByte();
 
     // short texture;
     str->texture = SV_ReadWord();
@@ -684,8 +689,12 @@ static void StreamOut_floormove_t(floormove_t *str)
     // int direction;
     SV_WriteLong(str->direction);
 
-    // int newspecial;
-    SV_WriteLong(str->newspecial);
+    // newspecial_t newspecial;
+    SV_WriteWord(str->newspecial.special);
+    SV_WriteLong(str->newspecial.flags);
+    SV_WriteWord(str->newspecial.damage.amount);
+    SV_WriteByte(str->newspecial.damage.leakrate);
+    SV_WriteByte(str->newspecial.damage.interval);
 
     // short texture;
     SV_WriteWord(str->texture);
@@ -1243,7 +1252,7 @@ static void StreamOut_polydoor_t(polydoor_t *str)
     SV_WriteLong(str->close);
 }
 
-static void StreamIn_floorWaggle_t(floorWaggle_t *str)
+static void StreamIn_planeWaggle_t(planeWaggle_t *str)
 {
     int i;
 
@@ -1276,7 +1285,7 @@ static void StreamIn_floorWaggle_t(floorWaggle_t *str)
     str->state = SV_ReadLong();
 }
 
-static void StreamOut_floorWaggle_t(floorWaggle_t *str)
+static void StreamOut_planeWaggle_t(planeWaggle_t *str)
 {
     // sector_t *sector;
     SV_WriteLong(str->sector - sectors);
@@ -1342,7 +1351,7 @@ static void ArchiveWorld(void)
     }
     for (i = 0, li = lines; i < numlines; i++, li++)
     {
-        SV_WriteWord(li->flags);
+        SV_WriteLong(li->flags);
         SV_WriteByte(li->special);
         SV_WriteByte(li->arg1);
         SV_WriteByte(li->arg2);
@@ -1386,11 +1395,12 @@ static void UnarchiveWorld(void)
         sec->seqType = SV_ReadWord();
         sec->ceilingdata = 0;
         sec->floordata = 0;
+        sec->lightingdata = 0;
         sec->soundtarget = 0;
     }
     for (i = 0, li = lines; i < numlines; i++, li++)
     {
-        li->flags = SV_ReadWord();
+        li->flags = SV_ReadLong();
         li->special = SV_ReadByte();
         li->arg1 = SV_ReadByte();
         li->arg2 = SV_ReadByte();
@@ -1507,7 +1517,7 @@ static void UnarchiveMobjs(void)
     P_InitCreatureCorpseQueue(true);    // true = scan for corpses
 }
 
-static void RestoreFloorWaggle(floorWaggle_t *th)
+static void RestoreFloorWaggle(planeWaggle_t *th)
 {
   th->sector->floordata = th->thinker.function;
 }
@@ -1632,10 +1642,10 @@ static thinkInfo_t ThinkerInfo[] = {
     {
       TC_FLOOR_WAGGLE,
       T_FloorWaggle,
-      StreamOut_floorWaggle_t,
-      StreamIn_floorWaggle_t,
+      StreamOut_planeWaggle_t,
+      StreamIn_planeWaggle_t,
       RestoreFloorWaggle,
-      sizeof(floorWaggle_t)
+      sizeof(planeWaggle_t)
     },
     { TC_NULL, NULL, NULL, NULL, NULL, 0 },
 };

@@ -54,7 +54,9 @@
 #endif
 #include "p_inter.h"
 #include "e6y.h"//e6y
+
 #include "dsda.h"
+#include "dsda/map_format.h"
 
 #include "heretic/def.h"
 #include "heretic/sb_bar.h"
@@ -309,6 +311,28 @@ dboolean P_GiveBody(player_t * player, int num)
     }
     player->mo->health = player->health;
     return (true);
+}
+
+void P_HealMobj(mobj_t *mo, int num)
+{
+  player_t *player = mo->player;
+
+  if (mo->health <= 0 || (player && player->playerstate == PST_DEAD))
+    return;
+
+  if (player)
+  {
+    P_GiveBody(player, num);
+    return;
+  }
+  else
+  {
+    int max = mobjinfo[mo->type].spawnhealth;
+
+    mo->health += num;
+    if (mo->health > max)
+      mo->health = max;
+  }
 }
 
 //
@@ -807,8 +831,7 @@ static void P_KillMobj(mobj_t *source, mobj_t *target)
       }
       else
       {
-          P_ExecuteLineSpecial(target->special, target->args,
-                               NULL, 0, target);
+          map_format.execute_line_special(target->special, target->args, NULL, 0, target);
       }
   }
 
@@ -2430,6 +2453,7 @@ dboolean P_ChickenMorph(mobj_t * actor)
     chicken->flags |= ghost;
     P_SetTarget(&chicken->target, target);
     chicken->angle = angle;
+    dsda_WatchMorph(chicken);
     return (true);
 }
 
@@ -2830,8 +2854,7 @@ static void TryPickupWeapon(player_t * player, pclass_t weaponClass,
     P_SetMessage(player, message, false);
     if (weapon->special)
     {
-        P_ExecuteLineSpecial(weapon->special, weapon->args,
-                             NULL, 0, player->mo);
+        map_format.execute_line_special(weapon->special, weapon->args, NULL, 0, player->mo);
         weapon->special = 0;
     }
 
@@ -2927,8 +2950,7 @@ static void TryPickupWeaponPiece(player_t * player, pclass_t matchClass,
     // Pick up the weapon piece
     if (pieceMobj->special)
     {
-        P_ExecuteLineSpecial(pieceMobj->special, pieceMobj->args,
-                             NULL, 0, player->mo);
+        map_format.execute_line_special(pieceMobj->special, pieceMobj->args, NULL, 0, player->mo);
         pieceMobj->special = 0;
     }
     if (remove)
@@ -3063,8 +3085,7 @@ static void TryPickupArtifact(player_t * player, artitype_t artifactType, mobj_t
     {
         if (artifact->special)
         {
-            P_ExecuteLineSpecial(artifact->special, artifact->args,
-                                 NULL, 0, NULL);
+            map_format.execute_line_special(artifact->special, artifact->args, NULL, 0, NULL);
             artifact->special = 0;
         }
         player->bonuscount += BONUSADD;
@@ -3168,8 +3189,7 @@ static void Hexen_P_TouchSpecialThing(mobj_t * special, mobj_t * toucher)
             // get removed for coop netplay
             if (special->special)
             {
-                P_ExecuteLineSpecial(special->special, special->args,
-                                     NULL, 0, toucher);
+                map_format.execute_line_special(special->special, special->args, NULL, 0, toucher);
                 special->special = 0;
             }
 
@@ -3379,8 +3399,7 @@ static void Hexen_P_TouchSpecialThing(mobj_t * special, mobj_t * toucher)
     }
     if (special->special)
     {
-        P_ExecuteLineSpecial(special->special, special->args, NULL,
-                             0, toucher);
+        map_format.execute_line_special(special->special, special->args, NULL, 0, toucher);
         special->special = 0;
     }
     if (deathmatch && respawn && !(special->flags & MF_DROPPED))
@@ -3521,6 +3540,7 @@ static dboolean P_MorphMonster(mobj_t * actor)
     monster->special = oldMonster.special;
     P_InsertMobjIntoTIDList(monster, oldMonster.tid);
     memcpy(monster->args, oldMonster.args, 5);
+    dsda_WatchMorph(monster);
 
     // check for turning off minotaur power for active icon
     if (moType == HEXEN_MT_MINOTAUR)

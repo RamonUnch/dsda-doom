@@ -60,7 +60,6 @@
 #include "p_saveg.h"
 #include "p_tick.h"
 #include "p_map.h"
-#include "p_checksum.h"
 #include "d_main.h"
 #include "wi_stuff.h"
 #include "hu_stuff.h"
@@ -91,6 +90,8 @@
 #include "dsda/save.h"
 #include "dsda/settings.h"
 #include "dsda/input.h"
+#include "dsda/map_format.h"
+#include "dsda/mouse.h"
 #include "dsda/options.h"
 #include "dsda/tas.h"
 #include "dsda/split_tracker.h"
@@ -267,7 +268,7 @@ static int   joyymove;
 
 // Game events info
 static buttoncode_t special_event; // Event triggered by local player, to send
-static byte  savegameslot;         // Slot to load if gameaction == ga_loadgame
+static int   savegameslot;         // Slot to load if gameaction == ga_loadgame
 char         savedescription[SAVEDESCLEN];  // Description to save in savegame if gameaction == ga_savegame
 
 //jff 3/24/98 define defaultskill here
@@ -422,7 +423,7 @@ static dboolean WeaponSelectable(weapontype_t weapon)
 static int G_NextWeapon(int direction)
 {
   weapontype_t weapon;
-  int i, arrlen;
+  int start_i, i, arrlen;
 
   // Find index in the table.
   if (players[consoleplayer].pendingweapon == wp_nochange)
@@ -443,13 +444,14 @@ static int G_NextWeapon(int direction)
     }
   }
 
-  // Switch weapon.
+  // Switch weapon. Don't loop forever.
+  start_i = i;
   do
   {
     i += direction;
     i = (i + arrlen) % arrlen;
   }
-  while (!WeaponSelectable(weapon_order_table[i].weapon));
+  while (i != start_i && !WeaponSelectable(weapon_order_table[i].weapon));
 
   return weapon_order_table[i].weapon_num;
 }
@@ -987,6 +989,8 @@ void G_BuildTiccmd(ticcmd_t* cmd)
   cmd->forwardmove += fudgef((signed char)forward);
   cmd->sidemove += side;
 
+  dsda_ApplyQuickstartMouseCache(cmd);
+
   if ((demorecording && !longtics) || shorttics)
   {
     // Chocolate Doom Mouse Behaviour
@@ -1056,7 +1060,7 @@ static void G_DoLoadLevel (void)
 
   skyflatnum = R_FlatNumForName(g_skyflatname);
 
-  if (hexen)
+  if (map_format.doublesky)
   {
     skytexture = Sky1Texture;
   }
@@ -1159,7 +1163,7 @@ static void G_DoLoadLevel (void)
   // died.
   P_FreeSecNodeList();
 
-  if (hexen)
+  if (map_format.sndseq)
     SN_StopAllSequences();
 
   P_SetupLevel (gameepisode, gamemap, 0, gameskill);
@@ -1334,9 +1338,6 @@ void G_Ticker (void)
   if (!demoplayback && mapcolor_plyr[consoleplayer] != mapcolor_me) {
     // Changed my multiplayer colour - Inform the whole game
     int net_cl = LittleLong(mapcolor_me);
-#ifdef HAVE_NET
-    D_NetSendMisc(nm_plcolour, sizeof(net_cl), &net_cl);
-#endif
     G_ChangedPlayerColour(consoleplayer, mapcolor_me);
   }
   P_MapStart();
@@ -2300,7 +2301,7 @@ const char * comp_lev_str[MAX_COMPATIBILITY_LEVEL] =
 { "Doom v1.2", "Doom v1.666", "Doom/Doom2 v1.9", "Ultimate Doom/Doom95", "Final Doom",
   "early DosDoom", "TASDoom", "\"boom compatibility\"", "boom v2.01", "boom v2.02", "lxdoom v1.3.2+",
   "MBF", "PrBoom 2.03beta", "PrBoom v2.1.0-2.1.1", "PrBoom v2.1.2-v2.2.6",
-  "PrBoom v2.3.x", "PrBoom 2.4.0", "Current PrBoom"  };
+  "PrBoom v2.3.x", "PrBoom 2.4.0", "Current PrBoom", "", "", "", "MBF21" };
 
 //e6y
 unsigned int GetPackageVersion(void)
@@ -2366,6 +2367,8 @@ void G_DoLoadGame(void)
   unsigned int packageversion = 0;
   const char *maplump;
   int time, ttime;
+
+  dsda_SetLastSaveSlot(savegameslot);
 
   name = dsda_SaveGameName(savegameslot, demoplayback);
 
@@ -2505,6 +2508,11 @@ void G_DoLoadGame(void)
     SB_SetClassData();
   }
 
+  if (raven)
+  {
+    players[consoleplayer].readyArtifact = players[consoleplayer].inventory[inv_ptr].type;
+  }
+
   if (setsizeneeded)
     R_ExecuteSetViewSize ();
 
@@ -2529,16 +2537,12 @@ void G_DoLoadGame(void)
 // Description is a 24 byte text string
 //
 
-void G_SaveGame(int slot, char *description)
+void G_SaveGame(int slot, const char *description)
 {
   strcpy(savedescription, description);
 
   savegameslot = slot;
   G_DoSaveGame(true);
-
-#ifdef HAVE_NET
-  D_NetSendMisc(nm_savegamename, strlen(savedescription)+1, savedescription);
-#endif
 }
 
 // Check for overrun and realloc if necessary -- Lee Killough 1/22/98
@@ -2577,6 +2581,8 @@ static void G_DoSaveGame (dboolean menu)
 
   gameaction = ga_nothing; // cph - cancel savegame at top of this function,
     // in case later problems cause a premature exit
+
+  dsda_SetLastSaveSlot(savegameslot);
 
   name = dsda_SaveGameName(savegameslot, demoplayback && !menu);
 
@@ -2769,10 +2775,10 @@ void G_Compatibility(void)
     { boom_compatibility, mbf21_compatibility },
     // comp_friendlyspawn - A_Spawn new mobj inherits friendliness
     { prboom_1_compatibility, mbf21_compatibility },
-    // comp_placeholder_31 - Not defined yet
-    { 255, 255 },
-    // comp_placeholder_32 - Not defined yet
-    { 255, 255 }
+    // comp_voodooscroller - Voodoo dolls on slow scrollers move too slowly
+    { mbf21_compatibility, mbf21_compatibility },
+    // comp_reservedlineflag - ML_RESERVED clears extended flags
+    { mbf21_compatibility, mbf21_compatibility }
   };
   unsigned int i;
 
@@ -2782,6 +2788,18 @@ void G_Compatibility(void)
   for (i = 0; i < sizeof(levels)/sizeof(*levels); i++)
     if (compatibility_level < levels[i].opt)
       comp[i] = (compatibility_level < levels[i].fix);
+
+  // These options were deoptionalized in mbf21
+  if (mbf21)
+  {
+    comp[comp_moveblock] = 0;
+    comp[comp_sound] = 0;
+    comp[comp_666] = 0;
+    comp[comp_maskedanim] = 0;
+    comp[comp_ouchface] = 0;
+    comp[comp_maxhealth] = 0;
+    comp[comp_translucency] = 0;
+  }
 
   e6y_G_Compatibility();//e6y
 
@@ -2796,18 +2814,6 @@ void G_Compatibility(void)
     dog_jumping = 0;
 
     monkeys = 0;
-  }
-
-  // These options were deoptionalized in mbf21
-  if (mbf21)
-  {
-    comp[comp_moveblock] = 0;
-    comp[comp_sound] = 0;
-    comp[comp_666] = 0;
-    comp[comp_maskedanim] = 0;
-    comp[comp_ouchface] = 0;
-    comp[comp_maxhealth] = 0;
-    comp[comp_translucency] = 0;
   }
 }
 
@@ -2913,6 +2919,8 @@ void G_ReloadDefaults(void)
     comp[comp_translucency] = options->comp_translucency;
     comp[comp_ledgeblock] = options->comp_ledgeblock;
     comp[comp_friendlyspawn] = options->comp_friendlyspawn;
+    comp[comp_voodooscroller] = options->comp_voodooscroller;
+    comp[comp_reservedlineflag] = options->comp_reservedlineflag;
   }
 
   G_Compatibility();
@@ -2936,7 +2944,7 @@ void G_DoNewGame (void)
   netgame = solo_net;
   deathmatch = false;
 
-  if (hexen)
+  if (map_format.mapinfo)
   {
     G_StartNewInit();
     realMap = P_TranslateMap(d_map);
@@ -3106,7 +3114,7 @@ void G_InitNew(skill_t skill, int episode, int map)
       if (map > 9)
         map = 9;
     }
-    else if (hexen)
+    else if (map_format.map99)
     {
       if (map < 1)
         map = 1;
@@ -3189,7 +3197,7 @@ void G_InitNew(skill_t skill, int episode, int map)
   //jff 4/16/98 force marks on automap cleared every new level start
   AM_clearMarks();
 
-  if (hexen)
+  if (map_format.doublesky)
     R_InitSky(map);
 
   G_DoLoadLevel ();
@@ -3509,6 +3517,17 @@ void G_BeginRecording (void)
   demostart = demo_p = malloc(1000);
   longtics = 0;
 
+  if (map_format.zdoom)
+  {
+    if (!M_CheckParm("-baddemo"))
+      I_Error("Experimental formats require the -baddemo option to record.");
+
+    if (!mbf21)
+      I_Error("You must use complevel 21 when recording on doom-in-hexen format.");
+
+    dsda_WriteDSDADemoHeader(&demo_p);
+  }
+
   /* cph - 3 demo record formats supported: MBF+, BOOM, and Doom v1.9 */
   if (mbf_features) {
     { /* Write version code into demo */
@@ -3718,11 +3737,6 @@ static dboolean CheckForOverrun(const byte *start_p, const byte *current_p, size
       return true;
   }
   return false;
-}
-
-const byte* G_ReadDemoHeader(const byte *demo_p, size_t size)
-{
-  return G_ReadDemoHeaderEx(demo_p, size, 0);
 }
 
 const byte* G_ReadDemoHeaderEx(const byte *demo_p, size_t size, unsigned int params)
@@ -4038,7 +4052,7 @@ const byte* G_ReadDemoHeaderEx(const byte *demo_p, size_t size, unsigned int par
   if (!(params & RDH_SKIP_HEADER))
   {
     if (gameaction != ga_loadgame) { /* killough 12/98: support -loadgame */
-      if (hexen)
+      if (map_format.mapinfo)
         G_StartNewInit();
 
       G_InitNew(skill, episode, map);
@@ -4126,8 +4140,6 @@ dboolean G_CheckDemoStatus (void)
   //e6y
   if (doSkip && (demo_stoponend || demo_stoponnext))
     G_SkipDemoStop();
-
-  P_ChecksumFinal();
 
   if (demorecording)
   {

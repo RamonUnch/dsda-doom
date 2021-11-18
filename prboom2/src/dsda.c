@@ -32,6 +32,7 @@
 #include "dsda/hud.h"
 #include "dsda/command_display.h"
 #include "dsda/key_frame.h"
+#include "dsda/mouse.h"
 #include "dsda/settings.h"
 #include "dsda/split_tracker.h"
 #include "dsda.h"
@@ -103,7 +104,7 @@ void dsda_DisplayNotifications(void) {
 }
 
 void dsda_DisplayNotification(const char* msg) {
-  S_StartSound(0, sfx_radio);
+  S_StartSound(0, gamemode == commercial ? sfx_radio : sfx_itmbk);
   doom_printf("%s", msg);
 }
 
@@ -209,6 +210,18 @@ void dsda_WatchSpawn(mobj_t* spawned) {
     ++dsda_max_kill_requirement;
 }
 
+void dsda_WatchMorph(mobj_t* morphed) {
+  // Fix count from dsda_WatchSpawn
+  if (!((morphed->flags ^ MF_COUNTKILL) & (MF_FRIEND | MF_COUNTKILL)))
+    --dsda_max_kill_requirement;
+}
+
+void dsda_WatchUnMorph(mobj_t* morphed) {
+  // Fix count from dsda_WatchSpawn
+  if (!((morphed->flags ^ MF_COUNTKILL) & (MF_FRIEND | MF_COUNTKILL)))
+    --dsda_max_kill_requirement;
+}
+
 void dsda_WatchIconSpawn(mobj_t* spawned) {
   spawned->intflags |= MIF_SPAWNED_BY_ICON;
 
@@ -261,6 +274,10 @@ void dsda_WatchBeforeLevelSetup(void) {
 
 void dsda_WatchAfterLevelSetup(void) {
   dsda_SpawnGhost();
+}
+
+void dsda_WatchNewLevel(void) {
+  dsda_ResetAutoKeyFrameTimeout();
 }
 
 void dsda_WatchLevelCompletion(void) {
@@ -372,6 +389,7 @@ void dsda_WatchDeferredInitNew(skill_t skill, int episode, int map) {
   ++dsda_session_attempts;
 
   dsda_ResetTracking();
+  dsda_QueueQuickstart();
 
   dsda_ResetRevealMap();
   G_CheckDemoStatus();

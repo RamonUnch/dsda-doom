@@ -31,6 +31,9 @@ typedef enum {
   dsda_command_display,
   dsda_coordinate_display,
   dsda_exhud,
+  dsda_mute_sfx,
+  dsda_mute_music,
+  dsda_cheat_codes,
   DSDA_SETTING_IDENTIFIER_COUNT
 } dsda_setting_identifier_t;
 
@@ -48,6 +51,7 @@ extern dsda_setting_t dsda_setting[DSDA_SETTING_IDENTIFIER_COUNT];
 
 extern int dsda_auto_key_frame_interval;
 extern int dsda_auto_key_frame_depth;
+extern int dsda_auto_key_frame_timeout;
 extern int dsda_cycle_ghost_colors;
 extern int dsda_command_history_size;
 extern int dsda_hide_empty_commands;
@@ -58,7 +62,9 @@ extern int dsda_hide_horns;
 extern int dsda_organized_saves;
 extern int dsda_skip_quit_prompt;
 extern int dsda_show_split_data;
-extern int dsda_subframes;
+extern int dsda_fps_limit;
+extern int dsda_quickstart_cache_tics;
+extern int dsda_death_use_action;
 extern const char* dsda_player_name;
 
 void dsda_InitSettings(void);
@@ -73,6 +79,9 @@ dboolean dsda_AutoRun(void);
 dboolean dsda_MouseLook(void);
 dboolean dsda_NoVert(void);
 dboolean dsda_StrictMode(void);
+dboolean dsda_MuteSfx(void);
+dboolean dsda_MuteMusic(void);
+dboolean dsda_ProcessCheatCodes(void);
 dboolean dsda_CycleGhostColors(void);
 dboolean dsda_WeaponAttackAlignment(void);
 dboolean dsda_AlwaysSR50(void);

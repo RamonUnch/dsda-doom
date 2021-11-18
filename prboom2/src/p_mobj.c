@@ -54,7 +54,9 @@
 #include "p_spec.h"
 #include "g_overflow.h"
 #include "e6y.h"//e6y
+
 #include "dsda.h"
+#include "dsda/map_format.h"
 
 #include "heretic/def.h"
 #include "heretic/sb_bar.h"
@@ -190,6 +192,44 @@ void P_ExplodeMissile (mobj_t* mo)
 // Attempts to move something if it has momentum.
 //
 
+void P_ApplyCompatibleSectorMovementSpecial(mobj_t *mo, int special)
+{
+  // nothing in doom
+}
+
+// heretic, hexen, and zdoom all use the same values
+void P_ApplyHereticSectorMovementSpecial(mobj_t *mo, int special)
+{
+  static int windTab[3] = { 2048 * 5, 2048 * 10, 2048 * 25 };
+
+  if (mo->flags2 & MF2_WINDTHRUST)
+  {
+    switch (special)
+    {
+      case zs_wind_east_weak:
+      case zs_wind_east_medium:
+      case zs_wind_east_strong:
+        P_ThrustMobj(mo, 0, windTab[special - 40]);
+        break;
+      case zs_wind_north_weak:
+      case zs_wind_north_medium:
+      case zs_wind_north_strong:
+        P_ThrustMobj(mo, ANG90, windTab[special - 43]);
+        break;
+      case zs_wind_south_weak:
+      case zs_wind_south_medium:
+      case zs_wind_south_strong:
+        P_ThrustMobj(mo, ANG270, windTab[special - 46]);
+        break;
+      case zs_wind_west_weak:
+      case zs_wind_west_medium:
+      case zs_wind_west_strong:
+        P_ThrustMobj(mo, ANG180, windTab[special - 49]);
+        break;
+    }
+  }
+}
+
 static void P_XYMovement (mobj_t* mo)
 {
   player_t *player;
@@ -200,7 +240,6 @@ static void P_XYMovement (mobj_t* mo)
 
   // heretic
   int special;
-  static int windTab[3] = { 2048 * 5, 2048 * 10, 2048 * 25 };
 
   if (!(mo->momx | mo->momy)) // Any momentum?
   {
@@ -223,32 +262,7 @@ static void P_XYMovement (mobj_t* mo)
   }
 
   special = mo->subsector->sector->special;
-  if (mo->flags2 & MF2_WINDTHRUST)
-  {
-    switch (special)
-    {
-      case 40:
-      case 41:
-      case 42:           // Wind_East
-        P_ThrustMobj(mo, 0, windTab[special - 40]);
-        break;
-      case 43:
-      case 44:
-      case 45:           // Wind_North
-        P_ThrustMobj(mo, ANG90, windTab[special - 43]);
-        break;
-      case 46:
-      case 47:
-      case 48:           // Wind_South
-        P_ThrustMobj(mo, ANG270, windTab[special - 46]);
-        break;
-      case 49:
-      case 50:
-      case 51:           // Wind_West
-        P_ThrustMobj(mo, ANG180, windTab[special - 49]);
-        break;
-    }
-  }
+  map_format.apply_sector_movement_special(mo, special);
 
   player = mo->player;
 
@@ -542,7 +556,8 @@ static void P_XYMovement (mobj_t* mo)
       !(player->cmd.forwardmove | player->cmd.sidemove) ||
       (
         player->mo != mo &&
-        compatibility_level >= lxdoom_1_compatibility
+        compatibility_level >= lxdoom_1_compatibility &&
+        (comp[comp_voodooscroller] || !(mo->intflags & MIF_SCROLLING))
       )
     )
   )
@@ -609,7 +624,11 @@ static void P_XYMovement (mobj_t* mo)
         mo->momx = FixedMul(mo->momx, FRICTION_FLY);
         mo->momy = FixedMul(mo->momy, FRICTION_FLY);
       }
-      else if (hexen ? P_GetThingFloorType(mo) == FLOOR_ICE : special == g_special_friction_low)
+      else if (
+        hexen ? P_GetThingFloorType(mo) == FLOOR_ICE :
+        heretic ? special == 15 :
+        false
+      )
       {
         mo->momx = FixedMul(mo->momx, FRICTION_LOW);
         mo->momy = FixedMul(mo->momy, FRICTION_LOW);
@@ -682,6 +701,8 @@ static void P_XYMovement (mobj_t* mo)
 
 static void P_ZMovement (mobj_t* mo)
 {
+  fixed_t gravity = mo->subsector->sector->gravity;
+
   /* killough 7/11/98:
    * BFG fireballs bounced on floors and ceilings in Pre-Beta Doom
    * killough 8/9/98: added support for non-missile objects bouncing
@@ -706,7 +727,7 @@ static void P_ZMovement (mobj_t* mo)
                      FixedMul(mo->momz, (fixed_t)(FRACUNIT*.45)) ;
 
           /* Bring it to rest below a certain speed */
-          if (D_abs(mo->momz) <= mo->info->mass*(GRAVITY*4/256))
+          if (D_abs(mo->momz) <= mo->info->mass * (gravity * 4 / 256))
             mo->momz = 0;
         }
 
@@ -741,7 +762,7 @@ static void P_ZMovement (mobj_t* mo)
     else
     {
       if (!(mo->flags & MF_NOGRAVITY))      /* free-fall under gravity */
-        mo->momz -= mo->info->mass*(GRAVITY/256);
+        mo->momz -= mo->info->mass * (gravity / 256);
 
       if (mo->flags & MF_FLOAT && sentient(mo)) goto floater;
       return;
@@ -901,7 +922,7 @@ floater:
         P_DamageMobj(mo, NULL, NULL, mo->health);
       else
       {
-        if (mo->flags2 & MF2_ICEDAMAGE && mo->momz < -GRAVITY * 8)
+        if (mo->flags2 & MF2_ICEDAMAGE && mo->momz < -gravity * 8)
         {
           mo->tics = 1;
           mo->momx = 0;
@@ -924,7 +945,7 @@ floater:
           // because original sources do not exclude voodoo dolls from condition above,
           // but Boom does it.
           (demo_compatibility || mo->player->mo == mo) &&
-          mo->momz < -GRAVITY * 8 &&
+          mo->momz < -gravity * 8 &&
           !(mo->flags2 & MF2_FLY)
         )
         {
@@ -947,7 +968,7 @@ floater:
               P_FallingDamage(mo->player);
               P_NoiseAlert(mo, mo);
             }
-            else if (mo->momz < -GRAVITY * 12 && !mo->player->morphTics)
+            else if (mo->momz < -gravity * 12 && !mo->player->morphTics)
             {
               S_StartSound(mo, hexen_sfx_player_land);
               switch (mo->player->pclass)
@@ -1009,15 +1030,15 @@ floater:
   else if (mo->flags2 & MF2_LOGRAV || (mo->type == MT_GIBDTH && !demorecording && !demoplayback))
   {
     if (mo->momz == 0)
-      mo->momz = -(GRAVITY >> 3) * 2;
+      mo->momz = -(gravity >> 3) * 2;
     else
-      mo->momz -= GRAVITY >> 3;
+      mo->momz -= gravity >> 3;
   }
   else if (!(mo->flags & MF_NOGRAVITY))
   {
     if (mo->momz == 0)
-      mo->momz = -GRAVITY;
-    mo->momz -= GRAVITY;
+      mo->momz = -gravity;
+    mo->momz -= gravity;
   }
 
   if (mo->z + mo->height > mo->ceilingz)
@@ -1202,7 +1223,7 @@ fixed_t FloatBobOffsets[64] = {
 // P_MobjThinker
 //
 
-static void PlayerLandedOnThing(mobj_t * mo, mobj_t * onmobj);
+static void PlayerLandedOnThing(mobj_t * mo, mobj_t * onmobj, fixed_t gravity);
 
 void P_MobjThinker (mobj_t* mobj)
 {
@@ -1259,9 +1280,11 @@ void P_MobjThinker (mobj_t* mobj)
         {
           if (hexen)
           {
-            if (mobj->momz < -GRAVITY * 8 && !(mobj->flags2 & MF2_FLY))
+            fixed_t gravity = mobj->subsector->sector->gravity;
+
+            if (mobj->momz < -gravity * 8 && !(mobj->flags2 & MF2_FLY))
             {
-              PlayerLandedOnThing(mobj, onmo);
+              PlayerLandedOnThing(mobj, onmo, gravity);
             }
             if (onmo->z + onmo->height - mobj->z <= 24 * FRACUNIT)
             {
@@ -1323,25 +1346,8 @@ void P_MobjThinker (mobj_t* mobj)
       mobj->intflags &= ~MIF_FALLING, mobj->gear = 0;  // Reset torque
   }
 
-  if (mbf21)
-  {
-    sector_t* sector = mobj->subsector->sector;
-
-    if (
-      sector->special & KILL_MONSTERS_MASK &&
-      mobj->z == mobj->floorz &&
-      mobj->player == NULL &&
-      mobj->flags & MF_SHOOTABLE &&
-      !(mobj->flags & MF_FLOAT)
-    )
-    {
-      P_DamageMobj(mobj, NULL, NULL, 10000);
-
-      // must have been removed
-      if (mobj->thinker.function != P_MobjThinker)
-        return;
-    }
-  }
+  if (map_format.mobj_in_special_sector(mobj))
+    return;
 
   // cycle through states,
   // calling action functions at transitions
@@ -1571,11 +1577,11 @@ void P_RemoveMobj (mobj_t* mobj)
       {
         A_DeQueueCorpse(mobj);
       }
+    }
 
-      if (mobj->tid)
-      {                           // Remove from TID list
-        P_RemoveMobjFromTIDList(mobj);
-      }
+    if (map_format.acs && mobj->tid)
+    {
+      P_RemoveMobjFromTIDList(mobj);
     }
 
     P_UnsetThingPosition(mobj);
@@ -1605,6 +1611,11 @@ void P_RemoveMobj (mobj_t* mobj)
     if (iquehead == iquetail)
       iquetail = (iquetail+1)&(ITEMQUESIZE-1);
     }
+
+  if (map_format.acs && mobj->tid)
+  {
+    P_RemoveMobjFromTIDList(mobj);
+  }
 
   // unlink from sector and block lists
 
@@ -1972,8 +1983,14 @@ mobj_t* P_SpawnMapThing (const mapthing_t* mthing, int index)
   // then simply ignore all upper bits.
 
   if (
-    (!hexen && demo_compatibility) ||
-    (compatibility_level >= lxdoom_1_compatibility && options & MTF_RESERVED)
+    !map_format.hexen &&
+    (
+      demo_compatibility ||
+      (
+        compatibility_level >= lxdoom_1_compatibility &&
+        options & MTF_RESERVED
+      )
+    )
   )
   {
     if (!demo_compatibility) // cph - Add warning about bad thing flags
@@ -2014,8 +2031,9 @@ mobj_t* P_SpawnMapThing (const mapthing_t* mthing, int index)
   	}
   }
 
-  if (hexen)
+  if (map_format.polyobjs)
   {
+    // MAP_FORMAT_TODO: PO types vary between games
     if (mthing->type == PO_ANCHOR_TYPE)
     {                           // Polyobj Anchor Pt.
       return NULL;
@@ -2044,7 +2062,7 @@ mobj_t* P_SpawnMapThing (const mapthing_t* mthing, int index)
       players[thingtype - 1].secretcount = 1;
 
       // killough 10/98: force it to be a friend
-      options |= MTF_FRIEND;
+      options |= (map_format.zdoom ? MTF_FRIENDLY : MTF_FRIEND);
       if (HelperThing != -1) // haleyjd 9/22/99: deh substitution
       {
         int type = HelperThing - 1;
@@ -2064,7 +2082,7 @@ mobj_t* P_SpawnMapThing (const mapthing_t* mthing, int index)
       goto spawnit;
     }
 
-    if (hexen)
+    if (map_format.hexen)
       start = mthing->arg1;
 
     // save spots for respawning in coop games
@@ -2082,6 +2100,7 @@ mobj_t* P_SpawnMapThing (const mapthing_t* mthing, int index)
     return NULL;
   }
 
+  // MAP_FORMAT_TODO: need to verify heretic types
   if (heretic)
   {
     // Ambient sound sequences
@@ -2100,7 +2119,7 @@ mobj_t* P_SpawnMapThing (const mapthing_t* mthing, int index)
     }
   }
 
-  if (hexen)
+  if (map_format.hexen)
   {
     // Check for player starts 5 to 8
     if (mthing->type >= 9100 && mthing->type <= 9103)
@@ -2116,7 +2135,7 @@ mobj_t* P_SpawnMapThing (const mapthing_t* mthing, int index)
 
       if (!deathmatch && !player_start->arg1)
       {
-        P_SpawnPlayer(thingtype - 1, player_start);
+        P_SpawnPlayer(player_start->type - 1, player_start);
       }
       return NULL;
     }
@@ -2266,7 +2285,7 @@ spawnit:
 
   InitThingsHealthTracer(mobj);
 
-  if (hexen)
+  if (map_format.hexen)
   {
     if (z == ONFLOORZ)
     {
@@ -2295,11 +2314,24 @@ spawnit:
     mobj->tics = 1 + (P_Random(pr_spawnthing) % mobj->tics);
 
   if (!(mobj->flags & MF_FRIEND) &&
-      options & MTF_FRIEND &&
+      options & (map_format.zdoom ? MTF_FRIENDLY : MTF_FRIEND) &&
       mbf_features)
   {
     mobj->flags |= MF_FRIEND;            // killough 10/98:
     P_UpdateThinker(&mobj->thinker);     // transfer friendliness flag
+  }
+
+  if (map_format.zdoom)
+  {
+    if (options & MTF_TRANSLUCENT)
+      mobj->flags |= MF_TRANSLUCENT;
+
+    if (options & MTF_INVISIBLE)
+    {
+      P_UnsetThingPosition(mobj);
+      mobj->flags |= MF_NOSECTOR;
+      P_SetThingPosition(mobj);
+    }
   }
 
   /* killough 7/20/98: exclude friends */
@@ -2309,7 +2341,7 @@ spawnit:
   if (mobj->flags & MF_COUNTITEM)
     totalitems++;
 
-  if (hexen)
+  if (map_format.hexen)
   {
     if (mobj->flags & MF_COUNTKILL)
     {
@@ -2328,10 +2360,10 @@ spawnit:
   if (options & MTF_AMBUSH)
     mobj->flags |= MF_AMBUSH;
 
-  if (hexen && mthing->options & MTF_DORMANT)
+  if (map_format.hexen && mthing->options & MTF_DORMANT)
   {
       mobj->flags2 |= MF2_DORMANT;
-      if (mobj->type == HEXEN_MT_ICEGUY)
+      if (hexen && mobj->type == HEXEN_MT_ICEGUY)
       {
         P_SetMobjState(mobj, HEXEN_S_ICEGUY_DORMANT);
       }
@@ -3272,7 +3304,7 @@ mobj_t *P_SPMAngleXYZ(mobj_t * source, fixed_t x, fixed_t y,
     return (P_CheckMissileSpawn(th) ? th : NULL);
 }
 
-static void PlayerLandedOnThing(mobj_t * mo, mobj_t * onmobj)
+static void PlayerLandedOnThing(mobj_t * mo, mobj_t * onmobj, fixed_t gravity)
 {
     mo->player->deltaviewheight = mo->momz >> 3;
     if (mo->momz < -23 * FRACUNIT)
@@ -3280,7 +3312,7 @@ static void PlayerLandedOnThing(mobj_t * mo, mobj_t * onmobj)
         P_FallingDamage(mo->player);
         P_NoiseAlert(mo, mo);
     }
-    else if (mo->momz < -GRAVITY * 12 && !mo->player->morphTics)
+    else if (mo->momz < -gravity * 12 && !mo->player->morphTics)
     {
         S_StartSound(mo, hexen_sfx_player_land);
         switch (mo->player->pclass)

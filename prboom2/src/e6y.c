@@ -90,6 +90,8 @@
 #include "d_deh.h"
 #include "e6y.h"
 
+#include "dsda/map_format.h"
+
 dboolean wasWiped = false;
 
 int secretfound;
@@ -260,7 +262,7 @@ prboom_comp_t prboom_comp[PC_MAX] = {
   {0x00000000, 0x02050104, 0, "-reset_monsterspawner_params_after_loading"},
 };
 
-void e6y_InitCommandLine(void)
+void e6y_HandleSkip(void)
 {
   int p;
 
@@ -276,8 +278,15 @@ void e6y_InitCommandLine(void)
 
   if ((IsDemoPlayback() || IsDemoContinue()) && (startmap > 1 || demo_skiptics))
     G_SkipDemoStart();
+}
+
+void e6y_InitCommandLine(void)
+{
+  int p;
+
   if ((p = M_CheckParm("-avidemo")) && (p < myargc-1))
     avi_shot_fname = myargv[p + 1];
+
   stats_level = M_CheckParm("-levelstat");
 
   if ((stroller = M_CheckParm("-stroller")))
@@ -355,9 +364,18 @@ void G_SkipDemoCheck(void)
 {
   if (doSkip && gametic > 0)
   {
-    if (((startmap <= 1) &&
-         (demo_skiptics > 0 ? gametic > demo_skiptics : demo_curr_tic >= demo_tics_count)) ||
-        (demo_warp && gametic - levelstarttic > demo_skiptics))
+    if (
+      (
+        startmap <= 1 &&
+        (
+          demo_skiptics > 0 ?
+            gametic > demo_skiptics :
+            demo_curr_tic - demo_skiptics >= demo_tics_count
+        )
+      ) ||
+      (
+        demo_warp && gametic - levelstarttic > demo_skiptics)
+      )
      {
        G_SkipDemoStop();
      }
@@ -368,7 +386,7 @@ int G_ReloadLevel(void)
 {
   int result = false;
 
-  if ((gamestate == GS_LEVEL) &&
+  if ((gamestate == GS_LEVEL || gamestate == GS_INTERMISSION) &&
       !deathmatch && !netgame &&
       !demorecording && !demoplayback &&
       !menuactive)
@@ -408,7 +426,7 @@ int G_GotoNextLevel(void)
   int map = -1;
   int changed = false;
 
-  if (hexen)
+  if (map_format.mapinfo)
     map = P_GetMapNextMap(gamemap);
 
   if (gamemapinfo != NULL)
@@ -686,7 +704,6 @@ void MouseAccelChanging(void)
 }
 
 float viewPitch;
-dboolean transparentpresent;
 
 int StepwiseSum(int value, int direction, int step, int minval, int maxval, int defval)
 {
@@ -785,10 +802,7 @@ void e6y_G_DoCompleted(void)
 
   memset(&stats[numlevels], 0, sizeof(timetable_t));
 
-  if (gamemode==commercial || hexen)
-    sprintf(stats[numlevels].map,"MAP%02i",gamemap);
-  else
-    sprintf(stats[numlevels].map,"E%iM%i",gameepisode,gamemap);
+  strcpy(stats[numlevels].map, MAPNAME(gameepisode, gamemap));
 
   if (secretexit)
   {

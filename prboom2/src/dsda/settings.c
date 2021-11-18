@@ -25,8 +25,12 @@
 #include "lprintf.h"
 
 #include "dsda/key_frame.h"
+#include "dsda/map_format.h"
 
 #include "settings.h"
+
+extern void S_ResetSfxVolume(void);
+extern void I_ResetMusicVolume(void);
 
 dsda_setting_t dsda_setting[DSDA_SETTING_IDENTIFIER_COUNT] = {
   [dsda_strict_mode] = { 0, 0, "Strict Mode", dsda_ChangeStrictMode, dsda_ChangeStrictMode },
@@ -37,6 +41,9 @@ dsda_setting_t dsda_setting[DSDA_SETTING_IDENTIFIER_COUNT] = {
   [dsda_command_display] = { 0, 0, "Command Display", NULL, NULL, false, true },
   [dsda_coordinate_display] = { 0, 0, "Coordinate Display", NULL, NULL, false, true },
   [dsda_exhud] = { 0, 0, NULL, NULL, NULL, false, true },
+  [dsda_mute_sfx] = { 0, 0, "Sfx", NULL, S_ResetSfxVolume, true, true },
+  [dsda_mute_music] = { 0, 0, "Music", NULL, I_ResetMusicVolume, true, true },
+  [dsda_cheat_codes] = { 0, 0, "Cheat Codes", NULL, NULL, false, true },
 };
 
 int dsda_auto_key_frame_interval;
@@ -131,6 +138,8 @@ int dsda_CompatibilityLevel(void) {
 
   if (raven) return doom_12_compatibility;
 
+  if (map_format.zdoom) return mbf21_compatibility;
+
   i = M_CheckParm("-complevel");
 
   if (i && (i + 1 < myargc)) {
@@ -185,6 +194,18 @@ dboolean dsda_NoVert(void) {
 
 dboolean dsda_StrictMode(void) {
   return dsda_Transient(dsda_strict_mode) && demorecording && !dsda_tas;
+}
+
+dboolean dsda_MuteSfx(void) {
+  return dsda_Transient(dsda_mute_sfx);
+}
+
+dboolean dsda_MuteMusic(void) {
+  return dsda_Transient(dsda_mute_music);
+}
+
+dboolean dsda_ProcessCheatCodes(void) {
+  return dsda_Transient(dsda_cheat_codes);
 }
 
 dboolean dsda_CycleGhostColors(void) {

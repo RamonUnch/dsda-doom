@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.0)
 
-project("dsda-doom" VERSION 0.21.3)
+project("dsda-doom" VERSION 0.22.0)
 
 # Set a default build type if none was specified
 set(default_build_type "RelWithDebInfo")
@@ -92,15 +92,6 @@ if(WITH_MIXER)
     find_package(SDL2_mixer)
     if(SDL2_MIXER_FOUND)
         set(HAVE_LIBSDL2_MIXER TRUE)
-    endif()
-endif()
-
-option(WITH_NET "Use SDL2_net if available" ON)
-if(WITH_NET)
-    find_package(SDL2_net)
-    if(SDL2_NET_FOUND)
-        set(HAVE_NET TRUE)
-        set(USE_SDL_NET TRUE)
     endif()
 endif()
 

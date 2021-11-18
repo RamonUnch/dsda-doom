@@ -39,6 +39,8 @@
 #include "dsda/options.h"
 #include "dsda/save.h"
 #include "dsda/settings.h"
+#include "dsda/time.h"
+
 #include "key_frame.h"
 
 // Hook into the save & demo ecosystem
@@ -47,11 +49,13 @@ extern byte* savebuffer;
 extern size_t savegamesize;
 extern dboolean setsizeneeded;
 extern dboolean BorderNeedRefresh;
+extern int inv_ptr;
 struct MapEntry *G_LookupMapinfo(int gameepisode, int gamemap);
 void RecalculateDrawnSubsectors(void);
 
 static byte* dsda_quick_key_frame_buffer;
 static int dsda_key_frame_restored;
+static dboolean dsda_auto_key_frame_timed_out;
 
 typedef struct {
   byte* buffer;
@@ -62,6 +66,8 @@ static dsda_key_frame_t* dsda_auto_key_frames;
 static int dsda_last_auto_key_frame;
 static int dsda_auto_key_frames_size;
 static int restore_key_frame_index = -1;
+
+int dsda_auto_key_frame_timeout;
 
 void dsda_InitKeyFrame(void) {
   dsda_auto_key_frames_size = dsda_AutoKeyFrameDepth();
@@ -240,6 +246,11 @@ void dsda_RestoreKeyFrame(byte* buffer, byte complete) {
     SB_SetClassData();
   }
 
+  if (raven)
+  {
+    players[consoleplayer].readyArtifact = players[consoleplayer].inventory[inv_ptr].type;
+  }
+
   if (setsizeneeded) R_ExecuteSetViewSize();
 
   R_FillBackScreen();
@@ -320,6 +331,10 @@ void dsda_RewindAutoKeyFrame(void) {
   else doom_printf("No key frame found"); // rewind past the depth limit
 }
 
+void dsda_ResetAutoKeyFrameTimeout(void) {
+  dsda_auto_key_frame_timed_out = false;
+}
+
 void dsda_UpdateAutoKeyFrames(void) {
   int key_frame_index;
   int current_time;
@@ -327,6 +342,7 @@ void dsda_UpdateAutoKeyFrames(void) {
   dsda_key_frame_t* current_key_frame;
 
   if (
+    dsda_auto_key_frame_timed_out ||
     dsda_auto_key_frames_size == 0 ||
     gamestate != GS_LEVEL ||
     gameaction != ga_nothing
@@ -350,6 +366,18 @@ void dsda_UpdateAutoKeyFrames(void) {
     current_key_frame = &dsda_auto_key_frames[dsda_last_auto_key_frame];
     current_key_frame->index = key_frame_index;
 
-    dsda_StoreKeyFrame(&current_key_frame->buffer, false);
+    {
+      unsigned long long elapsed_time;
+
+      dsda_StartTimer(dsda_timer_key_frame);
+      dsda_StoreKeyFrame(&current_key_frame->buffer, false);
+      elapsed_time = dsda_ElapsedTimeMS(dsda_timer_key_frame);
+
+      if (dsda_auto_key_frame_timeout && elapsed_time > dsda_auto_key_frame_timeout)
+      {
+        dsda_auto_key_frame_timed_out = true;
+        doom_printf("Slow key framing: rewind disabled");
+      }
+    }
   }
 }
