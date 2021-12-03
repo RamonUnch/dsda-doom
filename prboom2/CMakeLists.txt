@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.0)
 
-project("dsda-doom" VERSION 0.22.1)
+project("dsda-doom" VERSION 0.22.2)
 
 # Set a default build type if none was specified
 set(default_build_type "RelWithDebInfo")
@@ -36,7 +36,6 @@ set(PACKAGE_TARNAME "dsda-doom")
 set(WAD_DATA "dsda-doom.wad")
 set(PACKAGE_VERSION "${PROJECT_VERSION}")
 set(PACKAGE_STRING "${PROJECT_NAME} ${PROJECT_VERSION}")
-set(CMAKE_INSTALL_DOCDIR "${CMAKE_INSTALL_DATAROOTDIR}/doc/${PACKAGE_TARNAME}" CACHE PATH "" FORCE)
 
 include(CheckSymbolExists)
 
@@ -204,7 +203,6 @@ set(PRBOOM_OUTPUT_PATH ${CMAKE_BINARY_DIR})
 set(WAD_DATA_PATH "${PRBOOM_OUTPUT_PATH}/${WAD_DATA}")
 
 add_subdirectory(data)
-add_subdirectory(doc)
 add_subdirectory(src)
 
 if(NOT CMAKE_CROSSCOMPILING)

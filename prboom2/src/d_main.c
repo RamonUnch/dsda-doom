@@ -246,7 +246,7 @@ static void D_Wipe(void)
     I_Init2();
   }
 
-  wipestart = I_GetTime () - 1;
+  wipestart = dsda_GetTick() - 1;
 
   do
   {
@@ -254,7 +254,7 @@ static void D_Wipe(void)
     do
     {
       I_uSleep(5000); // CPhipps - don't thrash cpu in this loop
-      nowtime = I_GetTime();
+      nowtime = dsda_GetTick();
       tics = nowtime - wipestart;
     }
     while (!tics);
@@ -472,7 +472,7 @@ void D_Display (fixed_t frac)
 
   // e6y
   // Don't thrash cpu during pausing or if the window doesnt have focus
-  if ( (paused && !walkcamera.type) || (!window_focused) ) {
+  if (paused_camera || !window_focused) {
     I_uSleep(5000);
   }
 

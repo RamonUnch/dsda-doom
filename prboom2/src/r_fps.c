@@ -84,11 +84,6 @@ void M_ChangeUncappedFrameRate(void)
     movement_smooth = (singletics ? false : movement_smooth_default);
 }
 
-void R_InitInterpolation(void)
-{
-  tic_vars.tics_per_usec = dsda_RealticClockRate() * TICRATE / 100000000.0f;
-}
-
 typedef fixed_t fixed2_t[2];
 static fixed2_t *oldipos;
 static fixed2_t *bakipos;
@@ -102,7 +97,7 @@ void R_InterpolateView(player_t *player, fixed_t frac)
 {
   static mobj_t *oviewer;
 
-  dboolean NoInterpolate = (paused && !walkcamera.type) || (menuactive && !demoplayback);
+  dboolean NoInterpolate = paused_camera || paused_via_menu;
 
   viewplayer = player;
 
@@ -198,7 +193,7 @@ void R_InterpolateView(player_t *player, fixed_t frac)
     viewy += y_displacement;
   }
 
-  if (!paused && movement_smooth)
+  if (interpolate_view)
   {
     int i;
 
