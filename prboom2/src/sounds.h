@@ -48,9 +48,6 @@ struct sfxinfo_struct {
   // up to 6-character name
   const char *name; // CPhipps - const
 
-  // Sfx singularity (only one at a time)
-  int singularity;
-
   // Sfx priority
   int priority;
 
@@ -66,9 +63,6 @@ struct sfxinfo_struct {
   // sound data
   void *data;
 
-  // this field was related to caching (now meaningless)
-  int usefulness;
-
   // lump number of sfx
   int lumpnum;
 
@@ -77,6 +71,9 @@ struct sfxinfo_struct {
 
   // hexen
   const char *tagname;
+
+  int parallel_tic;
+  int parallel_count;
 };
 
 //
