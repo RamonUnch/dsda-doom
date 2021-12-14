@@ -578,12 +578,10 @@ void I_ShutdownSound(void)
 {
   if (sound_inited)
   {
-    lprintf(LO_INFO, "I_ShutdownSound: ");
 #ifdef HAVE_MIXER
     Mix_CloseAudio();
 #endif
     SDL_CloseAudio();
-    lprintf(LO_INFO, "\n");
     sound_inited = false;
 
     if (sfxmutex)
@@ -666,7 +664,7 @@ void I_InitSound(void)
   }
   if (first_sound_init)
   {
-    I_AtExit(I_ShutdownSound, true);
+    I_AtExit(I_ShutdownSound, true, "I_ShutdownSound", exit_priority_normal);
     first_sound_init = false;
   }
 
@@ -853,7 +851,7 @@ void I_InitMusic(void)
 #else /* !_WIN32 */
     music_tmp = strdup("doom.tmp");
 #endif
-    I_AtExit(I_ShutdownMusic, true);
+    I_AtExit(I_ShutdownMusic, true, "I_ShutdownMusic", exit_priority_normal);
   }
   return;
 #endif
@@ -1275,7 +1273,7 @@ static void Exp_InitMusic(void)
   // todo not so greedy
   for (i = 0; music_players[i]; i++)
     music_player_was_init[i] = music_players[i]->init (snd_samplerate);
-  I_AtExit(Exp_ShutdownMusic, true);
+  I_AtExit(Exp_ShutdownMusic, true, "Exp_ShutdownMusic", exit_priority_normal);
 }
 
 static void Exp_PlaySong(int handle, int looping)
