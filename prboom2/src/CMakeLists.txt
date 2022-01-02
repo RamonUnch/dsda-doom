@@ -401,8 +401,6 @@ function(AddGameExecutable TARGET SOURCES)
         endif()
     endif()
 
-    add_definitions("-DUSE_EXPERIMENTAL_MUSIC")
-
     add_executable(${TARGET} WIN32 ${SOURCES})
     target_include_directories(${TARGET} PRIVATE
         ${SDL2_INCLUDE_DIRS}
@@ -425,10 +423,10 @@ function(AddGameExecutable TARGET SOURCES)
         target_include_directories(${TARGET} PRIVATE ${SDL2_IMAGE_INCLUDE_DIRS})
         target_link_libraries(${TARGET} PRIVATE ${SDL2_IMAGE_LIBRARIES})
     endif()
-    if(SDL2_MIXER_FOUND)
-        target_include_directories(${TARGET} PRIVATE ${SDL2_MIXER_INCLUDE_DIRS})
-        target_link_libraries(${TARGET} PRIVATE ${SDL2_MIXER_LIBRARIES})
-    endif()
+
+    target_include_directories(${TARGET} PRIVATE ${SDL2_MIXER_INCLUDE_DIRS})
+    target_link_libraries(${TARGET} PRIVATE ${SDL2_MIXER_LIBRARIES})
+
     if(PCREPOSIX_FOUND)
         target_include_directories(${TARGET} PRIVATE ${PCRE_INCLUDE_DIR})
         target_link_libraries(${TARGET} PRIVATE ${PCREPOSIX_LIBRARIES})

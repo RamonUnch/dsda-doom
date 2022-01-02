@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.0)
 
-project("dsda-doom" VERSION 0.22.4)
+project("dsda-doom" VERSION 0.22.5)
 
 # Set a default build type if none was specified
 set(default_build_type "RelWithDebInfo")
@@ -86,13 +86,7 @@ if(WITH_IMAGE)
     endif()
 endif()
 
-option(WITH_MIXER "Use SDL2_mixer if available" ON)
-if(WITH_MIXER)
-    find_package(SDL2_mixer)
-    if(SDL2_MIXER_FOUND)
-        set(HAVE_LIBSDL2_MIXER TRUE)
-    endif()
-endif()
+find_package(SDL2_mixer REQUIRED)
 
 option(WITH_PCRE "Use PCRE if available" ON)
 if(WITH_PCRE)
