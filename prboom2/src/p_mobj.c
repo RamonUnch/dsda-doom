@@ -57,6 +57,8 @@
 
 #include "dsda.h"
 #include "dsda/map_format.h"
+#include "dsda/spawn_number.h"
+#include "dsda/thing_id.h"
 
 #include "heretic/def.h"
 #include "heretic/sb_bar.h"
@@ -1420,6 +1422,192 @@ mobj_t *P_SubstNullMobj(mobj_t *mobj)
     return mobj;
 }
 
+/*
+ * P_FindDoomedNum
+ *
+ * Finds a mobj type with a matching doomednum
+ *
+ * killough 8/24/98: rewrote to use hashing
+ */
+
+static PUREFUNC int P_FindDoomedNum(unsigned type)
+{
+  static struct { int first, next; } *hash;
+  register int i;
+
+  if (!hash)
+    {
+      hash = Z_Malloc(sizeof *hash * num_mobj_types, PU_CACHE, (void **) &hash);
+      for (i=0; i<num_mobj_types; i++)
+  hash[i].first = num_mobj_types;
+      for (i=mobj_types_zero; i<num_mobj_types; i++)
+  if (mobjinfo[i].doomednum != -1)
+    {
+      unsigned h = (unsigned) mobjinfo[i].doomednum % num_mobj_types;
+      hash[i].next = hash[h].first;
+      hash[h].first = i;
+    }
+    }
+
+  i = hash[type % num_mobj_types].first;
+  while ((i < num_mobj_types) && ((unsigned)mobjinfo[i].doomednum != type))
+    i = hash[i].next;
+  return i;
+}
+
+dboolean P_SpawnProjectile(short thing_id, mobj_t *source, int spawn_num, angle_t angle,
+	                         fixed_t speed, fixed_t vspeed, short dest_id, mobj_t *forcedest,
+                           int gravity, short new_thing_id)
+{
+  int type;
+  dboolean is_monster;
+  dboolean success = false;
+  thing_id_search_t search;
+  thing_id_search_t dest_search;
+  mobj_t *spawn_location;
+  mobj_t *destination;
+  mobj_t *new_mobj;
+
+  type = dsda_ThingTypeFromSpawnNumber(spawn_num);
+
+  if (type == num_mobj_types)
+    return false;
+
+  is_monster = (type == MT_SKULL || (mobjinfo[type].flags & MF_COUNTKILL));
+
+  if (nomonsters && is_monster)
+    return false;
+
+  dsda_ResetThingIDSearch(&search);
+  while ((spawn_location = dsda_FindMobjFromThingIDOrMobj(thing_id, source, &search)))
+  {
+    dsda_ResetThingIDSearch(&dest_search);
+    destination = dsda_FindMobjFromThingIDOrMobj(dest_id, forcedest, &dest_search);
+
+    if (!dest_id || destination)
+    {
+      do
+      {
+        new_mobj = P_SpawnMobj(spawn_location->x, spawn_location->y, spawn_location->z, type);
+        if (new_mobj)
+        {
+          if (new_thing_id)
+            dsda_AddMobjThingID(new_mobj, new_thing_id);
+
+          if (new_mobj->info->seesound)
+          {
+            S_StartSound(new_mobj, new_mobj->info->seesound);
+          }
+
+          if (gravity)
+          {
+            new_mobj->flags &= ~MF_NOGRAVITY;
+            if (!is_monster && gravity == 1)
+            {
+              new_mobj->flags2 |= MF2_LOGRAV;
+            }
+          }
+          else
+          {
+            new_mobj->flags |= MF_NOGRAVITY;
+          }
+
+          P_SetTarget(&new_mobj->target, spawn_location);
+
+          if (destination)
+          {
+            fixed_t aimx, aimy, aimz;
+            fixed_t slope;
+
+            aimx = destination->x - new_mobj->x;
+            aimy = destination->y - new_mobj->y;
+            aimz = destination->z + destination->height / 2 - new_mobj->z;
+            slope = FixedDiv(aimz, P_AproxDistance(aimx, aimy));
+            new_mobj->angle = R_PointToAngle2(0, 0, aimx, aimy);
+            new_mobj->momx = FixedMul(speed, finecosine[new_mobj->angle >> ANGLETOFINESHIFT]);
+            new_mobj->momy = FixedMul(speed, finesine[new_mobj->angle >> ANGLETOFINESHIFT]);
+            new_mobj->momz = FixedMul(speed, slope);
+          }
+          else
+          {
+            new_mobj->angle = angle;
+            new_mobj->momx = FixedMul(speed, finecosine[new_mobj->angle >> ANGLETOFINESHIFT]);
+            new_mobj->momy = FixedMul(speed, finesine[new_mobj->angle >> ANGLETOFINESHIFT]);
+            new_mobj->momz = vspeed;
+          }
+
+          new_mobj->flags |= MF_DROPPED; // Don't respawn
+
+          if (new_mobj->flags & MF_MISSILE)
+          {
+            if (P_CheckMissileSpawn(new_mobj))
+            {
+              success = true;
+            }
+          }
+          else if (P_TestMobjLocation(new_mobj))
+          {
+            success = true;
+          }
+          else
+          {
+            dsda_WatchFailedSpawn(new_mobj);
+            P_RemoveMobj(new_mobj);
+          }
+        }
+      } while (dest_id && (destination = dsda_FindMobjFromThingIDOrMobj(dest_id, forcedest, &dest_search)));
+    }
+  }
+
+  return success;
+}
+
+dboolean P_SpawnThing(short thing_id, mobj_t *source, int spawn_num,
+                      angle_t angle, dboolean fog, short new_thing_id)
+{
+  int type;
+  dboolean success = false;
+  thing_id_search_t search;
+  mobj_t *spawn_location;
+  mobj_t *new_mobj;
+
+  type = dsda_ThingTypeFromSpawnNumber(spawn_num);
+
+  if (type == num_mobj_types)
+    return false;
+
+  if (nomonsters && (type == MT_SKULL || (mobjinfo[type].flags & MF_COUNTKILL)))
+    return false;
+
+  dsda_ResetThingIDSearch(&search);
+  while ((spawn_location = dsda_FindMobjFromThingIDOrMobj(thing_id, source, &search)))
+  {
+    new_mobj = P_SpawnMobj(spawn_location->x, spawn_location->y, spawn_location->z, type);
+    if (!P_TestMobjLocation(new_mobj))
+    {
+      dsda_WatchFailedSpawn(new_mobj);
+      P_RemoveMobj(new_mobj);
+    }
+    else
+    {
+      new_mobj->angle = angle == ANGLE_MAX ? spawn_location->angle : angle;
+      if (fog)
+      {
+        mobj_t *fog_mobj;
+        fog_mobj = P_SpawnMobj(spawn_location->x, spawn_location->y,
+                              spawn_location->z + TELEFOGHEIGHT, g_mt_tfog);
+        S_StartSound(fog_mobj, g_sfx_telept);
+      }
+      if (new_thing_id)
+        dsda_AddMobjThingID(new_mobj, new_thing_id);
+      new_mobj->flags |= MF_DROPPED; // Don't respawn
+      success = true;
+    }
+  }
+
+  return success;
+}
+
 //
 // P_SpawnMobj
 //
@@ -1579,9 +1767,9 @@ void P_RemoveMobj (mobj_t* mobj)
       }
     }
 
-    if (map_format.acs && mobj->tid)
+    if (map_format.thing_id && mobj->tid)
     {
-      P_RemoveMobjFromTIDList(mobj);
+      map_format.remove_mobj_thing_id(mobj);
     }
 
     P_UnsetThingPosition(mobj);
@@ -1612,9 +1800,9 @@ void P_RemoveMobj (mobj_t* mobj)
       iquetail = (iquetail+1)&(ITEMQUESIZE-1);
     }
 
-  if (map_format.acs && mobj->tid)
+  if (map_format.thing_id && mobj->tid)
   {
-    P_RemoveMobjFromTIDList(mobj);
+    map_format.remove_mobj_thing_id(mobj);
   }
 
   // unlink from sector and block lists
@@ -1656,40 +1844,6 @@ void P_RemoveMobj (mobj_t* mobj)
   // free block
 
   P_RemoveThinker (&mobj->thinker);
-}
-
-
-/*
- * P_FindDoomedNum
- *
- * Finds a mobj type with a matching doomednum
- *
- * killough 8/24/98: rewrote to use hashing
- */
-
-static PUREFUNC int P_FindDoomedNum(unsigned type)
-{
-  static struct { int first, next; } *hash;
-  register int i;
-
-  if (!hash)
-    {
-      hash = Z_Malloc(sizeof *hash * num_mobj_types, PU_CACHE, (void **) &hash);
-      for (i=0; i<num_mobj_types; i++)
-  hash[i].first = num_mobj_types;
-      for (i=mobj_types_zero; i<num_mobj_types; i++)
-  if (mobjinfo[i].doomednum != -1)
-    {
-      unsigned h = (unsigned) mobjinfo[i].doomednum % num_mobj_types;
-      hash[i].next = hash[h].first;
-      hash[h].first = i;
-    }
-    }
-
-  i = hash[type % num_mobj_types].first;
-  while ((i < num_mobj_types) && ((unsigned)mobjinfo[i].doomednum != type))
-    i = hash[i].next;
-  return i;
 }
 
 //
@@ -3366,7 +3520,7 @@ void P_CreateTIDList(void)
     TIDList[i] = 0;
 }
 
-void P_InsertMobjIntoTIDList(mobj_t * mobj, int tid)
+void P_InsertMobjIntoTIDList(mobj_t * mobj, short tid)
 {
     int i;
     int index;
@@ -3412,7 +3566,7 @@ void P_RemoveMobjFromTIDList(mobj_t * mobj)
     mobj->tid = 0;
 }
 
-mobj_t *P_FindMobjFromTID(int tid, int *searchPosition)
+mobj_t *P_FindMobjFromTID(short tid, int *searchPosition)
 {
     int i;
 

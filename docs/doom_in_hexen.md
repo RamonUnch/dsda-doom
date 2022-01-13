@@ -190,9 +190,9 @@ Current work is isolated to the initial pass over the level format itself - line
 | 14    | Door_Animated                   | :x:                |
 | 15    | Autosave                        | :x:                |
 | 16    | Transfer_WallLight              | :telescope:        |
-| 17    | Thing_Raise                     | :telescope:        |
+| 17    | Thing_Raise                     | :heavy_check_mark: |
 | 18    | StartConversation               | :x:                |
-| 19    | Thing_Stop                      | :telescope:        |
+| 19    | Thing_Stop                      | :heavy_check_mark: |
 | 20    | Floor_LowerByValue              | :heavy_check_mark: |
 | 21    | Floor_LowerToLowest             | :heavy_check_mark: |
 | 22    | Floor_LowerToNearest            | :heavy_check_mark: |
@@ -212,7 +212,7 @@ Current work is isolated to the initial pass over the level format itself - line
 | 36    | Floor_LowerByValueTimes8        | :heavy_check_mark: |
 | 37    | Floor_MoveToValue               | :heavy_check_mark: |
 | 38    | Ceiling_Waggle                  | :heavy_check_mark: |
-| 39    | Teleport_ZombieChanger          | :telescope:        |
+| 39    | Teleport_ZombieChanger          | :heavy_check_mark: |
 | 40    | Ceiling_LowerByValue            | :heavy_check_mark: |
 | 41    | Ceiling_RaiseByValue            | :heavy_check_mark: |
 | 42    | Ceiling_CrushAndRaise           | :heavy_check_mark: |
@@ -245,11 +245,11 @@ Current work is isolated to the initial pass over the level format itself - line
 | 69    | Ceiling_MoveToValueTimes8       | :heavy_check_mark: |
 | 70    | Teleport                        | :heavy_check_mark: |
 | 71    | Teleport_NoFog                  | :heavy_check_mark: |
-| 72    | ThrustThing                     | :telescope:        |
-| 73    | DamageThing                     | :telescope:        |
+| 72    | ThrustThing                     | :heavy_check_mark: |
+| 73    | DamageThing                     | :heavy_check_mark: |
 | 74    | Teleport_NewMap                 | :telescope:        |
 | 75    | Teleport_EndGame                | :telescope:        |
-| 76    | TeleportOther                   | :telescope:        |
+| 76    | TeleportOther                   | :heavy_check_mark: |
 | 77    | TeleportGroup                   | :telescope:        |
 | 78    | TeleportInSector                | :telescope:        |
 | 79    | Thing_SetConversation           | :x:                |
@@ -292,25 +292,25 @@ Current work is isolated to the initial pass over the level format itself - line
 | 116   | Light_Strobe                    | :heavy_check_mark: |
 | 117   | Light_Stop                      | :heavy_check_mark: |
 | 118   | Plane_Copy                      | :x:                |
-| 119   | Thing_Damage                    | :telescope:        |
+| 119   | Thing_Damage                    | :heavy_check_mark: |
 | 120   | Radius_Quake                    | :telescope:        |
 | 121   | Line_SetIdentification          | :warning:          |
 | -     | -                               | -                  |
-| 125   | Thing_Move                      | :telescope:        |
+| 125   | Thing_Move                      | :heavy_check_mark: |
 | -     | -                               | -                  |
 | 127   | Thing_SetSpecial                | :telescope:        |
-| 128   | ThrustThingZ                    | :telescope:        |
+| 128   | ThrustThingZ                    | :heavy_check_mark: |
 | 129   | UsePuzzleItem                   | :x:                |
-| 130   | Thing_Activate                  | :telescope:        |
-| 131   | Thing_Deactivate                | :telescope:        |
-| 132   | Thing_Remove                    | :telescope:        |
-| 133   | Thing_Destroy                   | :telescope:        |
-| 134   | Thing_Projectile                | :telescope:        |
-| 135   | Thing_Spawn                     | :telescope:        |
-| 136   | Thing_ProjectileGravity         | :telescope:        |
-| 137   | Thing_SpawnNoFog                | :telescope:        |
+| 130   | Thing_Activate                  | :heavy_check_mark: |
+| 131   | Thing_Deactivate                | :heavy_check_mark: |
+| 132   | Thing_Remove                    | :heavy_check_mark: |
+| 133   | Thing_Destroy                   | :heavy_check_mark: |
+| 134   | Thing_Projectile                | :heavy_check_mark: |
+| 135   | Thing_Spawn                     | :heavy_check_mark: |
+| 136   | Thing_ProjectileGravity         | :heavy_check_mark: |
+| 137   | Thing_SpawnNoFog                | :heavy_check_mark: |
 | 138   | Floor_Waggle                    | :heavy_check_mark: |
-| 139   | Thing_SpawnFacing               | :telescope:        |
+| 139   | Thing_SpawnFacing               | :heavy_check_mark: |
 | 140   | Sector_ChangeSound              | :telescope:        |
 | -     | -                               | -                  |
 | 154   | Teleport_NoStop                 | :heavy_check_mark: |
@@ -328,10 +328,10 @@ Current work is isolated to the initial pass over the level format itself - line
 | 172   | Plat_UpNearestWaitDownStay      | :heavy_check_mark: |
 | 173   | NoiseAlert                      | :warning:          |
 | 174   | SendToCommunicator              | :x:                |
-| 175   | Thing_ProjectileIntercept       | :telescope:        |
-| 176   | Thing_ChangeTID                 | :telescope:        |
-| 177   | Thing_Hate                      | :telescope:        |
-| 178   | Thing_ProjectileAimed           | :telescope:        |
+| 175   | Thing_ProjectileIntercept       | :x:                |
+| 176   | Thing_ChangeTID                 | :heavy_check_mark: |
+| 177   | Thing_Hate                      | :warning:          |
+| 178   | Thing_ProjectileAimed           | :heavy_check_mark: |
 | 179   | ChangeSkill                     | :x:                |
 | 180   | Thing_SetTranslation            | :telescope:        |
 | 181   | Plane_Align                     | :x:                |
@@ -437,7 +437,8 @@ Current work is isolated to the initial pass over the level format itself - line
 - Line translucency works like boom (fixed alpha).
 - Line_SetBlocking only applies flags for creatures, players, monsters, sound, and everything.
 - NoiseAlert only works with the default arguments.
-- Teleport destination thing tags are currently ignored.
+- Thing_Hate only supports 0 for the third argument ("target only").
+- ThrustThing has an implicit speed limit.
 
 ### Sector Specials
 

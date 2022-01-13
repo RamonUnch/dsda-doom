@@ -303,6 +303,68 @@ int P_GetMoveFactor(mobj_t *mo, int *frictionp)
   return movefactor;
 }
 
+dboolean P_MoveThing(mobj_t *thing, fixed_t x, fixed_t y, fixed_t z, dboolean fog)
+{
+  subsector_t *newsubsec;
+  fixed_t oldx, oldy, oldz;
+  fixed_t oldfloorz, oldceilingz, olddropoffz;
+
+  oldx = thing->x;
+  oldy = thing->y;
+  oldz = thing->z;
+  oldfloorz = thing->floorz;
+  oldceilingz = thing->ceilingz;
+  olddropoffz = thing->dropoffz;
+
+  newsubsec = R_PointInSubsector(x, y);
+
+  thing->x = x;
+  thing->y = y;
+  thing->z = z;
+  thing->floorz = newsubsec->sector->floorheight;
+  thing->ceilingz = newsubsec->sector->ceilingheight;
+  thing->dropoffz = thing->floorz;
+
+  if (P_TestMobjLocation(thing))
+  {
+    P_UnsetThingPosition(thing);
+    P_SetThingPosition(thing);
+
+    if (fog)
+    {
+      mobj_t *telefog;
+
+      telefog = P_SpawnMobj(oldx,
+                            oldy,
+                            oldfloorz + g_telefog_height,
+                            g_mt_tfog);
+      S_StartSound(telefog, g_sfx_telept);
+      telefog = P_SpawnMobj(thing->x,
+                            thing->y,
+                            thing->floorz + g_telefog_height,
+                            g_mt_tfog);
+      S_StartSound(telefog, g_sfx_telept);
+    }
+
+    thing->PrevX = x;
+    thing->PrevY = y;
+    thing->PrevZ = z;
+
+    return true;
+  }
+  else
+  {
+    thing->x = oldx;
+    thing->y = oldy;
+    thing->z = oldz;
+    thing->floorz = oldfloorz;
+    thing->ceilingz = oldceilingz;
+    thing->dropoffz = olddropoffz;
+
+    return false;
+  }
+}
+
 //
 // P_TeleportMove
 //
@@ -1277,6 +1339,33 @@ void P_CheckZDoomImpact(mobj_t *thing)
   }
 }
 
+void P_IterateCompatibleSpecHit(mobj_t *thing, fixed_t oldx, fixed_t oldy)
+{
+  while (numspechit--)
+    if (spechit[numspechit]->special)  // see if the line was crossed
+    {
+      int oldside = P_PointOnLineSide(oldx, oldy, spechit[numspechit]);
+      if (oldside != P_PointOnLineSide(thing->x, thing->y, spechit[numspechit]))
+        map_format.cross_special_line(spechit[numspechit], oldside, thing, false);
+    }
+}
+
+void P_IterateZDoomSpecHit(mobj_t *thing, fixed_t oldx, fixed_t oldy)
+{
+  // In hexen format, crossing a special line can trigger a missile spawn,
+  //   which will trigger a check that resets numspechit.
+  // We must store the index separately in order to check everything
+  int tempnumspechit = numspechit;
+
+  while (tempnumspechit--)
+    if (spechit[tempnumspechit]->special)  // see if the line was crossed
+    {
+      int oldside = P_PointOnLineSide(oldx, oldy, spechit[tempnumspechit]);
+      if (oldside != P_PointOnLineSide(thing->x, thing->y, spechit[tempnumspechit]))
+        map_format.cross_special_line(spechit[tempnumspechit], oldside, thing, false);
+    }
+}
+
 dboolean P_TryMove(mobj_t* thing,fixed_t x,fixed_t y,
                   dboolean dropoff) // killough 3/15/98: allow dropoff as option
 {
@@ -1457,13 +1546,9 @@ dboolean P_TryMove(mobj_t* thing,fixed_t x,fixed_t y,
   // if any special lines were hit, do the effect
 
   if (!(thing->flags & (MF_TELEPORT | MF_NOCLIP)))
-    while (numspechit--)
-      if (spechit[numspechit]->special)  // see if the line was crossed
-      {
-        int oldside = P_PointOnLineSide(oldx, oldy, spechit[numspechit]);
-        if (oldside != P_PointOnLineSide(thing->x, thing->y, spechit[numspechit]))
-          map_format.cross_special_line(spechit[numspechit], oldside, thing, false);
-      }
+  {
+    map_format.iterate_spechit(thing, oldx, oldy);
+  }
 
   return true;
 }

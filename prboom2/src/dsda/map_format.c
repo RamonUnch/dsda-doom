@@ -230,8 +230,8 @@ extern void T_MoveHexenFloor(floormove_t *);
 void T_MoveCompatibleCeiling(ceiling_t * ceiling);
 void T_MoveHexenCeiling(ceiling_t * ceiling);
 
-int EV_CompatibleTeleport(int tag, line_t *line, int side, mobj_t *thing, int flags);
-int EV_HereticTeleport(int tag, line_t * line, int side, mobj_t * thing, int flags);
+int EV_CompatibleTeleport(short thing_id, int tag, line_t *line, int side, mobj_t *thing, int flags);
+int EV_HereticTeleport(short thing_id, int tag, line_t * line, int side, mobj_t * thing, int flags);
 
 void T_BuildHexenPillar(pillar_t * pillar);
 void T_BuildZDoomPillar(pillar_t * pillar);
@@ -240,11 +240,24 @@ void T_CompatiblePlatRaise(plat_t * plat);
 void T_HexenPlatRaise(plat_t * plat);
 void T_ZDoomPlatRaise(plat_t * plat);
 
+void P_CreateTIDList(void);
+void dsda_BuildMobjThingIDList(void);
+
+void P_InsertMobjIntoTIDList(mobj_t * mobj, short tid);
+void dsda_AddMobjThingID(mobj_t* mo, short thing_id);
+
+void P_RemoveMobjFromTIDList(mobj_t * mobj);
+void dsda_RemoveMobjThingID(mobj_t* mo);
+
+void P_IterateCompatibleSpecHit(mobj_t *thing, fixed_t oldx, fixed_t oldy);
+void P_IterateZDoomSpecHit(mobj_t *thing, fixed_t oldx, fixed_t oldy);
+
 static const map_format_t zdoom_in_hexen_map_format = {
   .zdoom = true,
   .hexen = true,
   .polyobjs = false,
   .acs = false,
+  .thing_id = true,
   .mapinfo = false,
   .sndseq = false,
   .sndinfo = false,
@@ -278,6 +291,10 @@ static const map_format_t zdoom_in_hexen_map_format = {
   .t_plat_raise = T_ZDoomPlatRaise,
   .ev_teleport = EV_CompatibleTeleport,
   .player_thrust = P_CompatiblePlayerThrust,
+  .build_mobj_thing_id_list = dsda_BuildMobjThingIDList,
+  .add_mobj_thing_id = dsda_AddMobjThingID,
+  .remove_mobj_thing_id = dsda_RemoveMobjThingID,
+  .iterate_spechit = P_IterateZDoomSpecHit,
   .mapthing_size = sizeof(mapthing_t),
   .maplinedef_size = sizeof(hexen_maplinedef_t),
   .mt_push = MT_PUSH,
@@ -289,6 +306,7 @@ static const map_format_t hexen_map_format = {
   .hexen = true,
   .polyobjs = true,
   .acs = true,
+  .thing_id = true,
   .mapinfo = true,
   .sndseq = true,
   .sndinfo = true,
@@ -322,6 +340,10 @@ static const map_format_t hexen_map_format = {
   .t_plat_raise = T_HexenPlatRaise,
   .ev_teleport = NULL, // not used
   .player_thrust = P_HexenPlayerThrust,
+  .build_mobj_thing_id_list = P_CreateTIDList,
+  .add_mobj_thing_id = P_InsertMobjIntoTIDList,
+  .remove_mobj_thing_id = P_RemoveMobjFromTIDList,
+  .iterate_spechit = NULL, // not used
   .mapthing_size = sizeof(mapthing_t),
   .maplinedef_size = sizeof(hexen_maplinedef_t),
   .mt_push = -1,
@@ -333,6 +355,7 @@ static const map_format_t heretic_map_format = {
   .hexen = false,
   .polyobjs = false,
   .acs = false,
+  .thing_id = false,
   .mapinfo = false,
   .sndseq = false,
   .sndinfo = false,
@@ -366,6 +389,10 @@ static const map_format_t heretic_map_format = {
   .t_plat_raise = T_CompatiblePlatRaise,
   .ev_teleport = EV_HereticTeleport,
   .player_thrust = P_HereticPlayerThrust,
+  .build_mobj_thing_id_list = NULL, // not used
+  .add_mobj_thing_id = NULL, // not used
+  .remove_mobj_thing_id = NULL, // not used
+  .iterate_spechit = P_IterateCompatibleSpecHit,
   .mapthing_size = sizeof(doom_mapthing_t),
   .maplinedef_size = sizeof(doom_maplinedef_t),
   .mt_push = -1,
@@ -377,6 +404,7 @@ static const map_format_t doom_map_format = {
   .hexen = false,
   .polyobjs = false,
   .acs = false,
+  .thing_id = false,
   .mapinfo = false,
   .sndseq = false,
   .sndinfo = false,
@@ -410,6 +438,10 @@ static const map_format_t doom_map_format = {
   .t_plat_raise = T_CompatiblePlatRaise,
   .ev_teleport = EV_CompatibleTeleport,
   .player_thrust = P_CompatiblePlayerThrust,
+  .build_mobj_thing_id_list = NULL, // not used
+  .add_mobj_thing_id = NULL, // not used
+  .remove_mobj_thing_id = NULL, // not used
+  .iterate_spechit = P_IterateCompatibleSpecHit,
   .mapthing_size = sizeof(doom_mapthing_t),
   .maplinedef_size = sizeof(doom_maplinedef_t),
   .mt_push = MT_PUSH,

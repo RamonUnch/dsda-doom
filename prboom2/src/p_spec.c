@@ -53,6 +53,7 @@
 #include "p_user.h"
 #include "g_game.h"
 #include "p_inter.h"
+#include "p_enemy.h"
 #include "s_sound.h"
 #include "sounds.h"
 #include "i_sound.h"
@@ -67,6 +68,7 @@
 #include "dsda/global.h"
 #include "dsda/line_special.h"
 #include "dsda/map_format.h"
+#include "dsda/thing_id.h"
 
 //
 //      source animation definition
@@ -1859,7 +1861,7 @@ void P_CrossCompatibleSpecialLine(line_t *line, int side, mobj_t *thing, dboolea
 
     case 39:
       // TELEPORT! //jff 02/09/98 fix using up with wrong side crossing
-      if (map_format.ev_teleport(line->tag, line, side, thing, TELF_VANILLA) || demo_compatibility)
+      if (map_format.ev_teleport(0, line->tag, line, side, thing, TELF_VANILLA) || demo_compatibility)
         line->special = 0;
       break;
 
@@ -1978,7 +1980,7 @@ void P_CrossCompatibleSpecialLine(line_t *line, int side, mobj_t *thing, dboolea
     case 125:
       // TELEPORT MonsterONLY
       if (!thing->player &&
-          (map_format.ev_teleport(line->tag, line, side, thing, TELF_VANILLA) || demo_compatibility))
+          (map_format.ev_teleport(0, line->tag, line, side, thing, TELF_VANILLA) || demo_compatibility))
         line->special = 0;
       break;
 
@@ -2115,7 +2117,7 @@ void P_CrossCompatibleSpecialLine(line_t *line, int side, mobj_t *thing, dboolea
 
     case 97:
       // TELEPORT!
-      map_format.ev_teleport( line->tag, line, side, thing, TELF_VANILLA );
+      map_format.ev_teleport( 0, line->tag, line, side, thing, TELF_VANILLA );
       break;
 
     case 98:
@@ -2146,7 +2148,7 @@ void P_CrossCompatibleSpecialLine(line_t *line, int side, mobj_t *thing, dboolea
     case 126:
       // TELEPORT MonsterONLY.
       if (!thing->player)
-        map_format.ev_teleport( line->tag, line, side, thing, TELF_VANILLA );
+        map_format.ev_teleport( 0, line->tag, line, side, thing, TELF_VANILLA );
       break;
 
     case 128:
@@ -2227,7 +2229,7 @@ void P_CrossCompatibleSpecialLine(line_t *line, int side, mobj_t *thing, dboolea
 
           case 207:
             // killough 2/16/98: W1 silent teleporter (normal kind)
-            if (map_format.ev_teleport(line->tag, line, side, thing, TELF_SILENT))
+            if (map_format.ev_teleport(0, line->tag, line, side, thing, TELF_SILENT))
               line->special = 0;
             break;
 
@@ -2298,7 +2300,7 @@ void P_CrossCompatibleSpecialLine(line_t *line, int side, mobj_t *thing, dboolea
             break;
 
           case 268: //jff 4/14/98 add monster-only silent
-            if (!thing->player && map_format.ev_teleport(line->tag, line, side, thing, TELF_SILENT))
+            if (!thing->player && map_format.ev_teleport(0, line->tag, line, side, thing, TELF_SILENT))
               line->special = 0;
             break;
 
@@ -2393,7 +2395,7 @@ void P_CrossCompatibleSpecialLine(line_t *line, int side, mobj_t *thing, dboolea
 
           case 208:
             // killough 2/16/98: WR silent teleporter (normal kind)
-            map_format.ev_teleport(line->tag, line, side, thing, TELF_SILENT);
+            map_format.ev_teleport(0, line->tag, line, side, thing, TELF_SILENT);
             break;
 
           case 212: //jff 3/14/98 create instant toggle floor type
@@ -2460,7 +2462,7 @@ void P_CrossCompatibleSpecialLine(line_t *line, int side, mobj_t *thing, dboolea
 
           case 269: //jff 4/14/98 add monster-only silent
             if (!thing->player)
-              map_format.ev_teleport(line->tag, line, side, thing, TELF_SILENT);
+              map_format.ev_teleport(0, line->tag, line, side, thing, TELF_SILENT);
             break;
 
             //jff 1/29/98 end of added WR linedef types
@@ -4076,8 +4078,8 @@ void P_SpawnZDoomScroller(line_t *l, int i)
     else
     {
       // The speed and direction are parameters to the special.
-      dx = (l->arg4 - 128) / 32;
-      dy = (l->arg5 - 128) / 32;
+      dx = (fixed_t) (l->arg4 - 128) * FRACUNIT / 32;
+      dy = (fixed_t) (l->arg5 - 128) * FRACUNIT / 32;
     }
   }
 
@@ -5194,7 +5196,7 @@ void P_CrossHereticSpecialLine(line_t * line, int side, mobj_t * thing, dboolean
             line->special = 0;
             break;
         case 39:               // TELEPORT!
-            map_format.ev_teleport(line->tag, line, side, thing, TELF_VANILLA);
+            map_format.ev_teleport(0, line->tag, line, side, thing, TELF_VANILLA);
             line->special = 0;
             break;
         case 40:               // RaiseCeilingLowerFloor
@@ -5321,7 +5323,7 @@ void P_CrossHereticSpecialLine(line_t * line, int side, mobj_t * thing, dboolean
             EV_DoFloor(line, raiseToTexture);
             break;
         case 97:               // TELEPORT!
-            map_format.ev_teleport(line->tag, line, side, thing, TELF_VANILLA);
+            map_format.ev_teleport(0, line->tag, line, side, thing, TELF_VANILLA);
             break;
         case 98:               // Lower Floor (TURBO)
             EV_DoFloor(line, turboLower);
@@ -5869,6 +5871,11 @@ static fixed_t P_ArgToSpeed(byte arg)
 static fixed_t P_ArgsToFixed(fixed_t arg_i, fixed_t arg_f)
 {
   return (arg_i << FRACBITS) + (arg_f << FRACBITS) / 100;
+}
+
+static angle_t P_ArgToAngle(angle_t arg)
+{
+  return arg * (ANG180 / 128);
 }
 
 dboolean P_ExecuteZDoomLineSpecial(int special, byte * args, line_t * line, int side, mobj_t * mo)
@@ -6812,6 +6819,38 @@ dboolean P_ExecuteZDoomLineSpecial(int special, byte * args, line_t * line, int 
       G_SecretExitLevel(); // args[0] is position
       buttonSuccess = 1;
       break;
+    case zl_thing_move:
+      {
+        mobj_t *target;
+        mobj_t *dest;
+        thing_id_search_t search;
+
+        dsda_ResetThingIDSearch(&search);
+        target = dsda_FindMobjFromThingIDOrMobj(args[0], mo, &search);
+        dsda_ResetThingIDSearch(&search);
+        dest = dsda_FindMobjFromThingID(args[1], &search);
+
+        if (target && dest)
+        {
+          buttonSuccess = P_MoveThing(target, dest->x, dest->y, dest->z, args[2] ? false : true);
+        }
+      }
+      break;
+    case zl_teleport_other:
+      if (args[0] && args[1])
+      {
+        mobj_t *target;
+        thing_id_search_t search;
+
+        dsda_ResetThingIDSearch(&search);
+        while ((target = dsda_FindMobjFromThingID(args[0], &search)))
+        {
+          buttonSuccess |= map_format.ev_teleport(args[1], 0, NULL, 0, target,
+                                                  args[2] ? (TELF_DESTFOG | TELF_SOURCEFOG) :
+                                                            TELF_KEEPORIENTATION);
+        }
+      }
+      break;
     case zl_teleport:
       {
         int flags = TELF_DESTFOG;
@@ -6819,7 +6858,7 @@ dboolean P_ExecuteZDoomLineSpecial(int special, byte * args, line_t * line, int 
         if (!args[2])
           flags |= TELF_SOURCEFOG;
 
-        buttonSuccess = map_format.ev_teleport(args[1], line, side, mo, flags);
+        buttonSuccess = map_format.ev_teleport(args[0], args[1], line, side, mo, flags);
       }
       break;
     case zl_teleport_no_fog:
@@ -6849,7 +6888,7 @@ dboolean P_ExecuteZDoomLineSpecial(int special, byte * args, line_t * line, int 
         if (args[3])
           flags |= TELF_KEEPHEIGHT;
 
-        buttonSuccess = map_format.ev_teleport(args[2], line, side, mo, flags);
+        buttonSuccess = map_format.ev_teleport(args[0], args[2], line, side, mo, flags);
       }
       break;
     case zl_teleport_no_stop:
@@ -6859,7 +6898,18 @@ dboolean P_ExecuteZDoomLineSpecial(int special, byte * args, line_t * line, int 
         if (!args[2])
           flags |= TELF_SOURCEFOG;
 
-        buttonSuccess = map_format.ev_teleport(args[1], line, side, mo, flags);
+        buttonSuccess = map_format.ev_teleport(args[0], args[1], line, side, mo, flags);
+      }
+      break;
+    case zl_teleport_zombie_changer:
+      if (mo)
+      {
+        map_format.ev_teleport(args[0], args[1], line, side, mo, 0);
+        if (mo->health >= 0 && mo->info->painstate)
+        {
+          P_SetMobjState(mo, mo->info->painstate);
+        }
+        buttonSuccess = 1;
       }
       break;
     case zl_teleport_line:
@@ -6907,6 +6957,347 @@ dboolean P_ExecuteZDoomLineSpecial(int special, byte * args, line_t * line, int 
       break;
     case zl_light_stop:
       EV_StopLightEffect(args[0]);
+      buttonSuccess = 1;
+      break;
+    case zl_thing_spawn:
+      buttonSuccess =
+        P_SpawnThing(args[0], mo, args[1], P_ArgToAngle(args[2]), true, args[3]);
+      break;
+    case zl_thing_spawn_no_fog:
+      buttonSuccess =
+        P_SpawnThing(args[0], mo, args[1], P_ArgToAngle(args[2]), false, args[3]);
+      break;
+    case zl_thing_spawn_facing:
+      buttonSuccess =
+        P_SpawnThing(args[0], mo, args[1], ANGLE_MAX, args[2] ? false : true, args[3]);
+      break;
+    case zl_thing_projectile:
+      buttonSuccess = P_SpawnProjectile(args[0], mo, args[1], P_ArgToAngle(args[2]),
+                                        P_ArgToSpeed(args[3]), P_ArgToSpeed(args[4]),
+                                        0, NULL, 0, 0);
+      break;
+    case zl_thing_projectile_gravity:
+      buttonSuccess = P_SpawnProjectile(args[0], mo, args[1], P_ArgToAngle(args[2]),
+                                        P_ArgToSpeed(args[3]), P_ArgToSpeed(args[4]),
+                                        0, NULL, 1, 0);
+      break;
+    case zl_thing_projectile_aimed:
+      buttonSuccess = P_SpawnProjectile(args[0], mo, args[1], 0,
+                                        P_ArgToSpeed(args[2]), 0,
+                                        args[3], mo, 0, args[4]);
+      break;
+    case zl_thing_projectile_intercept:
+      // ZDoom's implementation relies on a bunch of trigonometry
+      // I tried converting this to fixed points,
+      //   but the calculations easily go out of bounds (dot products).
+      // Needs a different implementation, or 64 bit fixed point conversions
+      // Falling back on the default aimed behaviour for now
+      buttonSuccess = P_SpawnProjectile(args[0], mo, args[1], 0,
+                                        P_ArgToSpeed(args[2]), 0,
+                                        args[3], mo, 0, args[4]);
+      break;
+    case zl_thing_stop:
+      {
+        mobj_t *target;
+        thing_id_search_t search;
+
+        dsda_ResetThingIDSearch(&search);
+        while ((target = dsda_FindMobjFromThingIDOrMobj(args[0], mo, &search)))
+        {
+          buttonSuccess = 1;
+
+          target->momx = 0;
+          target->momy = 0;
+          target->momz = 0;
+
+          if (target->player)
+          {
+            target->player->momx = 0;
+            target->player->momy = 0;
+          }
+        }
+      }
+      break;
+    case zl_thing_change_tid:
+      {
+        mobj_t *target;
+        thing_id_search_t search;
+
+        dsda_ResetThingIDSearch(&search);
+        while ((target = dsda_FindMobjFromThingIDOrMobj(args[0], mo, &search)))
+        {
+          dsda_RemoveMobjThingID(target);
+          target->tid = args[1];
+          if (target->tid)
+            dsda_AddMobjThingID(target, args[1]);
+        }
+      }
+      buttonSuccess = 1;
+      break;
+    case zl_thing_hate:
+      {
+        mobj_t *hater;
+        mobj_t *target;
+        thing_id_search_t search;
+        thing_id_search_t target_search;
+
+        // Currently no support for this arg
+        if (args[2])
+        {
+          break;
+        }
+
+        if (!args[0] && mo && mo->player)
+        {
+          break;
+        }
+
+        buttonSuccess = 1;
+
+        dsda_ResetThingIDSearch(&target_search);
+        while ((target = dsda_FindMobjFromThingIDOrMobj(args[1], mo, &target_search)))
+        {
+          if (
+            target->flags & MF_SHOOTABLE &&
+            target->health > 0 &&
+            !(target->flags2 & MF2_DORMANT)
+          )
+          {
+            break;
+          }
+        }
+
+        if (!target)
+        {
+          break;
+        }
+
+        dsda_ResetThingIDSearch(&search);
+        while ((hater = dsda_FindMobjFromThingIDOrMobj(args[0], mo, &search)))
+        {
+          if (
+            hater->health > 0 &&
+            hater->flags & MF_SHOOTABLE &&
+            hater->info->seestate
+          )
+          {
+            while ((target = dsda_FindMobjFromThingIDOrMobj(args[1], mo, &target_search)))
+            {
+              if (
+                target->flags & MF_SHOOTABLE &&
+                target->health > 0 &&
+                !(target->flags2 & MF2_DORMANT) &&
+                target != hater
+              )
+              {
+                break;
+              }
+            }
+
+            // Restart from beginning of list
+            if (!target)
+            {
+              dsda_ResetThingIDSearch(&target_search);
+              while ((target = dsda_FindMobjFromThingIDOrMobj(args[1], mo, &target_search)))
+              {
+                if (
+                  target->flags & MF_SHOOTABLE &&
+                  target->health > 0 &&
+                  !(target->flags2 & MF2_DORMANT) &&
+                  target != hater
+                )
+                {
+                  break;
+                }
+              }
+            }
+
+            // We might have no target if the hater is the only possible target
+            if (target)
+            {
+              P_SetTarget(&hater->lastenemy, hater->target);
+              P_SetTarget(&hater->target, target);
+
+              if (!(hater->flags2 & MF2_DORMANT))
+              {
+                P_SetMobjState(hater, hater->info->seestate);
+              }
+            }
+          }
+        }
+      }
+      break;
+    case zl_thing_remove:
+      {
+        mobj_t *target;
+        thing_id_search_t search;
+
+        dsda_ResetThingIDSearch(&search);
+        while ((target = dsda_FindMobjFromThingIDOrMobj(args[0], mo, &search)))
+        {
+          if (!target->player)
+          {
+            if (target->flags & MF_COUNTKILL)
+              dsda_WatchKill(&players[consoleplayer], target);
+
+            P_RemoveMobj(target);
+          }
+        }
+      }
+      buttonSuccess = 1;
+      break;
+    case zl_thing_activate:
+      {
+        mobj_t *target;
+        thing_id_search_t search;
+
+        dsda_ResetThingIDSearch(&search);
+        while ((target = dsda_FindMobjFromThingIDOrMobj(args[0], mo, &search)))
+        {
+          if (target->flags2 & MF2_DORMANT)
+          {
+            target->flags2 &= ~MF2_DORMANT;
+            target->tics = 1;
+          }
+
+          buttonSuccess = 1;
+        }
+      }
+      break;
+    case zl_thing_deactivate:
+      {
+        mobj_t *target;
+        thing_id_search_t search;
+
+        dsda_ResetThingIDSearch(&search);
+        while ((target = dsda_FindMobjFromThingIDOrMobj(args[0], mo, &search)))
+        {
+          if (!(target->flags2 & MF2_DORMANT))
+          {
+            target->flags2 |= MF2_DORMANT;
+            target->tics = -1;
+          }
+
+          buttonSuccess = 1;
+        }
+      }
+      break;
+    case zl_thrust_thing:
+      {
+        fixed_t thrust;
+        mobj_t *target;
+        thing_id_search_t search;
+
+        thrust = args[1] * FRACUNIT;
+
+        dsda_ResetThingIDSearch(&search);
+        while ((target = dsda_FindMobjFromThingIDOrMobj(args[3], mo, &search)))
+        {
+          P_ThrustMobj(target, P_ArgToAngle(args[0]), thrust);
+        }
+
+        buttonSuccess = (args[3] != 0 || mo);
+      }
+      break;
+    case zl_thrust_thing_z:
+      {
+        fixed_t thrust;
+        mobj_t *target;
+        thing_id_search_t search;
+
+        thrust = args[1] * FRACUNIT / 4;
+
+        if (args[2])
+          thrust = -thrust;
+
+        dsda_ResetThingIDSearch(&search);
+        while ((target = dsda_FindMobjFromThingIDOrMobj(args[0], mo, &search)))
+        {
+          if (!args[3])
+            target->momz = thrust;
+          else
+            target->momz += thrust;
+
+          buttonSuccess = 1;
+        }
+      }
+      break;
+    case zl_thing_raise:
+      {
+        mobj_t *target;
+        thing_id_search_t search;
+
+        dsda_ResetThingIDSearch(&search);
+        while ((target = dsda_FindMobjFromThingIDOrMobj(args[0], mo, &search)))
+        {
+          buttonSuccess |= P_RaiseThing(target, NULL);
+        }
+      }
+    	break;
+    case zl_damage_thing:
+      if (mo)
+      {
+        P_DamageMobj(mo, NULL, NULL, args[0] ? args[0] : 10000);
+        buttonSuccess = 1;
+      }
+      break;
+    case zl_thing_damage:
+      {
+        mobj_t *target;
+        thing_id_search_t search;
+
+        dsda_ResetThingIDSearch(&search);
+        while ((target = dsda_FindMobjFromThingIDOrMobj(args[0], mo, &search)))
+        {
+          if (target->flags & MF_SHOOTABLE)
+            P_DamageMobj(target, NULL, mo, args[1]);
+        }
+      }
+      buttonSuccess = 1;
+      break;
+    case zl_thing_destroy:
+      if (!args[0] && !args[2])
+      {
+        P_Massacre();
+      }
+      else if (!args[0])
+      {
+        int s = -1;
+
+        while ((s = P_FindSectorFromTag(args[2], s)) >= 0)
+        {
+          msecnode_t *n;
+          sector_t *sec;
+
+          sec = &sectors[s];
+          for (n = sec->touching_thinglist; n;)
+          {
+            mobj_t *target = n->m_thing;
+
+            // Not sure if n might be freed when an enemy dies,
+            //   so let's get the next node before applying the damage
+            n = n->m_snext;
+
+            if (target->flags & MF_SHOOTABLE)
+              P_DamageMobj(target, NULL, mo, args[1] ? 10000 : target->health);
+          }
+        }
+      }
+      else
+      {
+        mobj_t *target;
+        thing_id_search_t search;
+
+        dsda_ResetThingIDSearch(&search);
+        while ((target = dsda_FindMobjFromThingID(args[0], &search)))
+        {
+          if (
+            target->flags & MF_SHOOTABLE &&
+            (!args[2] || target->subsector->sector->tag == args[2])
+          )
+            P_DamageMobj(target, NULL, mo, args[1] ? 10000 : target->health);
+        }
+      }
       buttonSuccess = 1;
       break;
     default:

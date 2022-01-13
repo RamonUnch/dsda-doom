@@ -68,6 +68,8 @@ set(COMMON_SRC
     dsda/settings.h
     dsda/sfx.c
     dsda/sfx.h
+    dsda/spawn_number.c
+    dsda/spawn_number.h
     dsda/split_tracker.c
     dsda/split_tracker.h
     dsda/sprite.c
@@ -78,6 +80,8 @@ set(COMMON_SRC
     dsda/tas.h
     dsda/text_file.c
     dsda/text_file.h
+    dsda/thing_id.c
+    dsda/thing_id.h
     dsda/time.c
     dsda/time.h
     dstrings.c

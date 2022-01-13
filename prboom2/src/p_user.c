@@ -254,7 +254,7 @@ void P_CalcHeight (player_t* player)
   }
 
   angle = (FINEANGLES / 20 * leveltime) & FINEMASK;
-  bob = FixedMul(player->bob / 2, finesine[angle]);
+  bob = dsda_ViewBob() ? FixedMul(player->bob / 2, finesine[angle]) : 0;
 
   // move viewheight
 
@@ -1935,7 +1935,7 @@ void P_TeleportOther(mobj_t * victim)
         // If death action, run it upon teleport
         if (victim->flags & MF_COUNTKILL && victim->special)
         {
-            P_RemoveMobjFromTIDList(victim);
+            map_format.remove_mobj_thing_id(victim);
             map_format.execute_line_special(victim->special, victim->args, NULL, 0, victim);
             victim->special = 0;
         }

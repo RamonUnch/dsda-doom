@@ -1540,9 +1540,10 @@ void P_TrueUnArchiveThinkers(void) {
 
   free(mobj_p);    // free translation table
 
-  if (map_format.acs)
+  // TODO: not in sync, need to save and load existing order
+  if (map_format.thing_id)
   {
-    P_CreateTIDList();
+    map_format.build_mobj_thing_id_list();
   }
 
   if (hexen)

@@ -27,6 +27,7 @@ typedef struct {
   dboolean hexen;
   dboolean polyobjs;
   dboolean acs;
+  dboolean thing_id;
   dboolean mapinfo;
   dboolean sndseq;
   dboolean sndinfo;
@@ -58,8 +59,12 @@ typedef struct {
   void (*t_move_ceiling)(ceiling_t *);
   void (*t_build_pillar)(pillar_t *);
   void (*t_plat_raise)(plat_t *);
-  int (*ev_teleport)(int, line_t *, int, mobj_t *, int);
+  int (*ev_teleport)(short, int, line_t *, int, mobj_t *, int);
   void (*player_thrust)(player_t* player, angle_t angle, fixed_t move);
+  void (*build_mobj_thing_id_list)(void);
+  void (*add_mobj_thing_id)(mobj_t *, short);
+  void (*remove_mobj_thing_id)(mobj_t *);
+  void (*iterate_spechit)(mobj_t *, fixed_t, fixed_t);
   size_t mapthing_size;
   size_t maplinedef_size;
   int mt_push;
