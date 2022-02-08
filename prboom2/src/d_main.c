@@ -83,7 +83,6 @@
 #include "d_deh.h"  // Ty 04/08/98 - Externalizations
 #include "lprintf.h"  // jff 08/03/98 - declaration of lprintf
 #include "am_map.h"
-#include "umapinfo.h"
 
 //e6y
 #include "r_demo.h"
@@ -96,6 +95,8 @@
 #include "dsda/save.h"
 #include "dsda/data_organizer.h"
 #include "dsda/map_format.h"
+#include "dsda/mapinfo.h"
+#include "dsda/mobjinfo.h"
 #include "dsda/settings.h"
 #include "dsda/time.h"
 
@@ -109,7 +110,6 @@
 
 #include "i_glob.h"
 
-void GetFirstMap(int *ep, int *map); // Ty 08/29/98 - add "-warp x" functionality
 static void D_PageDrawer(void);
 
 // CPhipps - removed wadfiles[] stuff
@@ -133,7 +133,6 @@ dboolean singletics = false; // debug flag to cancel adaptiveness
 //jff 1/22/98 parms for disabling music and sound
 dboolean nosfxparm;
 dboolean nomusicparm;
-dboolean umapinfo_loaded;
 
 //jff 4/18/98
 extern dboolean inhelpscreens;
@@ -871,9 +870,11 @@ void CheckIWAD(const char *iwadname,GameMode_t *gmode,dboolean *hassec)
         length = header.numlumps;
         fileinfo = malloc(length*sizeof(filelump_t));
         if (fseek (fp, header.infotableofs, SEEK_SET) ||
-            fread (fileinfo, sizeof(filelump_t), length, fp) != length ||
-            fclose(fp))
+            fread (fileinfo, sizeof(filelump_t), length, fp) != length)
+        {
+          fclose(fp);
           I_Error("CheckIWAD: failed to read directory %s",iwadname);
+        }
 
         // scan directory for levelname lumps
         while (length--)
@@ -911,6 +912,8 @@ void CheckIWAD(const char *iwadname,GameMode_t *gmode,dboolean *hassec)
         free(fileinfo);
 
       }
+
+      fclose(fp);
     }
     else // error from open call
       I_Error("CheckIWAD: Can't open IWAD %s", iwadname);
@@ -1631,54 +1634,15 @@ static void HandleWarp(void)
 {
   int p;
 
-  if ((p = M_CheckParm ("-warp")) ||      // killough 5/2/98
-       (p = M_CheckParm ("-wart")))
-       // Ty 08/29/98 - moved this check later so we can have -warp alone: && p < myargc-1)
+  if ((p = M_CheckParm ("-warp")) || (p = M_CheckParm ("-wart")))
   {
     startmap = 0; // Ty 08/29/98 - allow "-warp x" to go to first map in wad(s)
     autostart = true; // Ty 08/29/98 - move outside the decision tree
 
-    if (map_format.mapinfo)
-    {
-      if (p < myargc - 1)
-        startmap = P_TranslateMap(atoi(myargv[p + 1]));
-      else
-        startmap = P_TranslateMap(1);
-      if (startmap == -1)
-      {                       // Couldn't find real map number
-        I_Error("-warp: Invalid map number.\n");
-      }
+    dsda_ResolveWarp(p, &warpepisode, &warpmap);
 
-      warpepisode = 1;
-      warpmap = startmap;
-    }
-    else if (gamemode == commercial)
-    {
-      if (p < myargc-1)
-        startmap = atoi(myargv[p+1]);   // Ty 08/29/98 - add test if last parm
-
-      warpepisode = 1;
-      warpmap = startmap;
-    }
-    else    // 1/25/98 killough: fix -warp xxx from crashing Doom 1 / UD
-    {
-      if (p < myargc-1)
-      {
-        int episode, map;
-        if (sscanf(myargv[p+1], "%d", &episode) == 1)
-        {
-          startepisode = episode;
-          startmap = 1;
-          if (p < myargc-2 && sscanf(myargv[p+2], "%d", &map) == 1)
-          {
-            startmap = map;
-          }
-
-          warpepisode = startepisode;
-          warpmap = startmap;
-        }
-      }
-    }
+    startmap = warpmap;
+    startepisode = warpepisode;
   }
   // Ty 08/29/98 - later we'll check for startmap=0 and autostart=true
   // as a special case that -warp * was used.  Actually -warp with any
@@ -2161,43 +2125,15 @@ static void D_DoomMainSetup(void)
     }
   }
 
-  if (!M_CheckParm("-nomapinfo"))
-  {
-    int p;
-    for (p = -1; (p = W_ListNumFromName("UMAPINFO", p)) >= 0; )
-    {
-      const unsigned char * lump = (const unsigned char *)W_CacheLumpNum(p);
-      ParseUMapInfo(lump, W_LumpLength(p), I_Error);
-      umapinfo_loaded = true;
-    }
-  }
-
   PostProcessDeh();
-
+  dsda_AppendZDoomMobjInfo();
   dsda_ApplyDefaultMapFormat();
 
   V_InitColorTranslation(); //jff 4/24/98 load color translation lumps
 
-  // killough 2/22/98: copyright / "modified game" / SPA banners removed
-
-  // Ty 04/08/98 - Add 5 lines of misc. data, only if nonblank
-  // The expectation is that these will be set in a .bex file
-  //jff 9/3/98 use logical output routine
-  if (*startup1) lprintf(LO_INFO,"%s",startup1);
-  if (*startup2) lprintf(LO_INFO,"%s",startup2);
-  if (*startup3) lprintf(LO_INFO,"%s",startup3);
-  if (*startup4) lprintf(LO_INFO,"%s",startup4);
-  if (*startup5) lprintf(LO_INFO,"%s",startup5);
-  // End new startup strings
-
   //jff 9/3/98 use logical output routine
   lprintf(LO_INFO,"M_Init: Init miscellaneous info.\n");
   M_Init();
-
-  if (map_format.mapinfo)
-  {
-    InitMapMusicInfo();
-  }
 
   if (map_format.sndinfo)
   {
@@ -2212,6 +2148,8 @@ static void D_DoomMainSetup(void)
   //jff 9/3/98 use logical output routine
   lprintf(LO_INFO,"R_Init: Init DOOM refresh daemon - ");
   R_Init();
+
+  dsda_LoadMapInfo();
 
   //jff 9/3/98 use logical output routine
   lprintf(LO_INFO,"\nP_Init: Init Playloop state.\n");
@@ -2291,15 +2229,11 @@ static void D_DoomMainSetup(void)
     if (autostart || netgame)
     {
       // sets first map and first episode if unknown
-      if (autostart)
+      if (autostart && !startmap)
       {
-        GetFirstMap(&startepisode, &startmap);
+        dsda_FirstMap(&startepisode, &startmap);
       }
-      if (map_format.mapinfo)
-      {
-        G_StartNewInit();
-      }
-      G_InitNew(startskill, startepisode, startmap);
+      G_InitNew(startskill, startepisode, startmap, true);
       if (demorecording)
         G_BeginRecording();
     }
@@ -2320,89 +2254,4 @@ void D_DoomMain(void)
   D_DoomMainSetup(); // CPhipps - setup out of main execution stack
 
   D_DoomLoop ();  // never returns
-}
-
-//
-// GetFirstMap
-//
-// Ty 08/29/98 - determine first available map from the loaded wads and run it
-//
-
-void GetFirstMap(int *ep, int *map)
-{
-  int i,j; // used to generate map name
-  dboolean done = false;  // Ty 09/13/98 - to exit inner loops
-  char test[6];  // MAPxx or ExMx plus terminator for testing
-  char name[6];  // MAPxx or ExMx plus terminator for display
-  dboolean newlevel = false;  // Ty 10/04/98 - to test for new level
-  int ix;  // index for lookup
-
-  strcpy(name,""); // initialize
-  if (*map == 0) // unknown so go search for first changed one
-  {
-    *ep = 1;
-    *map = 1; // default E1M1 or MAP01
-    if (map_format.mapinfo)
-    {
-      *map = P_TranslateMap(1);
-      if (*map == -1)
-      {                       // Couldn't find real map number
-        I_Error("Unable to autostart.\n");
-      }
-    }
-    else if (gamemode == commercial)
-    {
-      for (i=1;!done && i<33;i++)  // Ty 09/13/98 - add use of !done
-      {
-        snprintf(test,sizeof(test),"MAP%02d",i);
-        ix = W_CheckNumForName(test);
-        if (ix != -1)  // Ty 10/04/98 avoid -1 subscript
-        {
-          if (lumpinfo[ix].source == source_pwad)
-          {
-            *map = i;
-            strcpy(name,test);  // Ty 10/04/98
-            done = true;  // Ty 09/13/98
-            newlevel = true; // Ty 10/04/98
-          }
-          else
-          {
-            if (!*name)  // found one, not pwad.  First default.
-               strcpy(name,test);
-          }
-        }
-      }
-    }
-    else // one of the others
-    {
-      strcpy(name,"E1M1");  // Ty 10/04/98 - default for display
-      for (i=1;!done && i<5;i++)  // Ty 09/13/98 - add use of !done
-      {
-        for (j=1;!done && j<10;j++)  // Ty 09/13/98 - add use of !done
-        {
-          snprintf(test,sizeof(test),"E%dM%d",i,j);
-          ix = W_CheckNumForName(test);
-          if (ix != -1)  // Ty 10/04/98 avoid -1 subscript
-          {
-            if (lumpinfo[ix].source == source_pwad)
-            {
-              *ep = i;
-              *map = j;
-              strcpy(name,test); // Ty 10/04/98
-              done = true;  // Ty 09/13/98
-              newlevel = true; // Ty 10/04/98
-            }
-            else
-            {
-              if (!*name)  // found one, not pwad.  First default.
-                 strcpy(name,test);
-            }
-          }
-        }
-      }
-    }
-    //jff 9/3/98 use logical output routine
-    lprintf(LO_INFO,"Auto-warping to first %slevel: %s\n",
-      newlevel ? "new " : "", name);  // Ty 10/04/98 - new level test
-  }
 }

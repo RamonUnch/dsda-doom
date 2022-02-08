@@ -93,6 +93,7 @@
 #include "dsda/settings.h"
 #include "dsda/input.h"
 #include "dsda/map_format.h"
+#include "dsda/mapinfo.h"
 #include "dsda/mouse.h"
 #include "dsda/options.h"
 #include "dsda/tas.h"
@@ -101,8 +102,6 @@
 
 #define SAVEGAMESIZE  0x20000
 #define SAVESTRINGSIZE  24
-
-struct MapEntry *G_LookupMapinfo(int gameepisode, int gamemap);
 
 struct
 {
@@ -148,7 +147,6 @@ skill_t         gameskill;
 dboolean         respawnmonsters;
 int             gameepisode;
 int             gamemap;
-struct MapEntry    *gamemapinfo;
 dboolean         paused;
 // CPhipps - moved *_loadgame vars here
 static dboolean forced_loadgame = false;
@@ -1077,57 +1075,7 @@ static void G_DoLoadLevel (void)
   //  setting one.
 
   skyflatnum = R_FlatNumForName(g_skyflatname);
-
-  if (map_format.doublesky)
-  {
-    skytexture = Sky1Texture;
-  }
-  else if (gamemapinfo && gamemapinfo->skytexture[0])
-  {
-    skytexture = R_TextureNumForName(gamemapinfo->skytexture);
-  }
-  else if (heretic)
-  {
-    static const char *sky_lump_names[5] = {
-        "SKY1", "SKY2", "SKY3", "SKY1", "SKY3"
-    };
-
-    if (gameepisode < 6)
-      skytexture = R_TextureNumForName(sky_lump_names[gameepisode - 1]);
-    else
-      skytexture = R_TextureNumForName("SKY1");
-  }
-  // DOOM determines the sky texture to be used
-  // depending on the current episode, and the game version.
-  else if (gamemode == commercial)
-    // || gamemode == pack_tnt   //jff 3/27/98 sorry guys pack_tnt,pack_plut
-    // || gamemode == pack_plut) //aren't gamemodes, this was matching retail
-  {
-    skytexture = R_TextureNumForName ("SKY3");
-    if (gamemap < 12)
-      skytexture = R_TextureNumForName ("SKY1");
-    else
-      if (gamemap < 21)
-        skytexture = R_TextureNumForName ("SKY2");
-  }
-  else //jff 3/27/98 and lets not forget about DOOM and Ultimate DOOM huh?
-  {
-    switch (gameepisode)
-    {
-      case 1:
-        skytexture = R_TextureNumForName ("SKY1");
-        break;
-      case 2:
-        skytexture = R_TextureNumForName ("SKY2");
-        break;
-      case 3:
-        skytexture = R_TextureNumForName ("SKY3");
-        break;
-      case 4: // Special Edition sky
-        skytexture = R_TextureNumForName ("SKY4");
-        break;
-    }//jff 3/27/98 end sky setting fix
-  }
+  skytexture = dsda_SkyTexture();
 
   // [RH] Set up details about sky rendering
   R_InitSkyMap ();
@@ -1967,6 +1915,7 @@ void G_SecretExitLevel (void)
 void G_DoCompleted (void)
 {
   int i;
+  int completed_behaviour;
 
   if (hexen)
     return Hexen_G_DoCompleted();
@@ -1983,132 +1932,17 @@ void G_DoCompleted (void)
   wminfo.nextep = wminfo.epsd = gameepisode -1;
   wminfo.last = gamemap -1;
 
-  wminfo.lastmapinfo = gamemapinfo;
-  wminfo.nextmapinfo = NULL;
-  if (gamemapinfo)
+  dsda_UpdateLastMapInfo();
+
+  dsda_PrepareIntermission(&completed_behaviour);
+
+  if (completed_behaviour & DC_VICTORY)
   {
-    const char *next = "";
-    if (gamemapinfo->endpic[0] && (strcmp(gamemapinfo->endpic, "-") != 0) && gamemapinfo->nointermission)
-    {
-      gameaction = ga_victory;
-      return;
-    }
-    if (secretexit) next = gamemapinfo->nextsecret;
-    if (next[0] == 0) next = gamemapinfo->nextmap;
-    if (next[0])
-    {
-      G_ValidateMapName(next, &wminfo.nextep, &wminfo.next);
-      wminfo.nextep--;
-      wminfo.next--;
-      // episode change
-      if (wminfo.nextep != wminfo.epsd)
-      {
-        for (i = 0; i < g_maxplayers; i++)
-          players[i].didsecret = false;
-      }
-      wminfo.didsecret = players[consoleplayer].didsecret;
-      wminfo.partime = gamemapinfo->partime;
-      goto frommapinfo;  // skip past the default setup.
-    }
+    gameaction = ga_victory;
+    return;
   }
 
-  if (gamemode != commercial) // kilough 2/7/98
-  {
-    if (gamemap == 9)
-    {
-      for (i = 0; i < g_maxplayers; i++)
-        players[i].didsecret = true;
-    }
-  }
-
-  wminfo.didsecret = players[consoleplayer].didsecret;
-
-  // wminfo.next is 0 biased, unlike gamemap
-  if (gamemode == commercial)
-    {
-      if (secretexit)
-        switch(gamemap)
-          {
-          case 15:
-            wminfo.next = 30; break;
-          case 31:
-            wminfo.next = 31; break;
-          case 2:
-            if (bfgedition && singleplayer)
-              wminfo.next = 32;
-            break;
-          case 4:
-            if (gamemission == pack_nerve && singleplayer)
-              wminfo.next = 8;
-            break;
-          }
-      else
-        switch(gamemap)
-          {
-          case 31:
-          case 32:
-            wminfo.next = 15; break;
-          case 33:
-            if (bfgedition && singleplayer)
-            {
-              wminfo.next = 2;
-              break;
-            }
-            // fallthrough
-          default:
-            wminfo.next = gamemap;
-          }
-      if (gamemission == pack_nerve && singleplayer && gamemap == 9)
-        wminfo.next = 4;
-    }
-  else
-    {
-      if (secretexit)
-        wminfo.next = 8;  // go to secret level
-      else
-        if (gamemap == 9)
-          {
-            // returning from secret level
-            if (heretic)
-            {
-              static int after_secret[5] = { 6, 4, 4, 4, 3 };
-              wminfo.next = after_secret[gameepisode - 1];
-            }
-            else
-              switch (gameepisode)
-                {
-                case 1:
-                  wminfo.next = 3;
-                  break;
-                case 2:
-                  wminfo.next = 5;
-                  break;
-                case 3:
-                  wminfo.next = 6;
-                  break;
-                case 4:
-                  wminfo.next = 2;
-                  break;
-                }
-          }
-        else
-          wminfo.next = gamemap;          // go to next level
-    }
-
-  if ( gamemode == commercial )
-  {
-    if (gamemap >= 1 && gamemap <= 34)
-      wminfo.partime = TICRATE*cpars[gamemap-1];
-  }
-  else
-  {
-    if (gameepisode >= 1 && gameepisode <= 4 && gamemap >= 1 && gamemap <= 9)
-      wminfo.partime = TICRATE*pars[gameepisode][gamemap];
-  }
-
-frommapinfo:
-
-  wminfo.nextmapinfo = G_LookupMapinfo(wminfo.nextep+1, wminfo.next+1);
+  dsda_UpdateNextMapInfo();
   wminfo.maxkills = totalkills;
   wminfo.maxitems = totalitems;
   wminfo.maxsecret = totalsecret;
@@ -2158,59 +1992,28 @@ frommapinfo:
 
 void G_WorldDone (void)
 {
+  int done_behaviour;
+
   gameaction = ga_worlddone;
 
   if (secretexit)
     players[consoleplayer].didsecret = true;
 
-  if (gamemapinfo)
+  dsda_PrepareFinale(&done_behaviour);
+
+  if (done_behaviour & WD_VICTORY)
   {
-    if (gamemapinfo->intertextsecret && secretexit)
-    {
-      if (gamemapinfo->intertextsecret[0] != '-') // '-' means that any default intermission was cleared.
-      F_StartFinale();
+    gameaction = ga_victory;
 
-      return;
-    }
-    else if (gamemapinfo->intertext && !secretexit)
-    {
-      if (gamemapinfo->intertext[0] != '-') // '-' means that any default intermission was cleared.
-      F_StartFinale();
-
-      return;
-    }
-    else if (gamemapinfo->endpic[0] && (strcmp(gamemapinfo->endpic, "-") != 0))
-    {
-      // game ends without a status screen.
-      gameaction = ga_victory;
-      return;
-    }
-    // if nothing applied, use the defaults.
+    return;
   }
 
-  if (gamemode == commercial && gamemission != pack_nerve)
-    {
-      switch (gamemap)
-        {
-        case 15:
-        case 31:
-          if (!secretexit)
-            break;
-          // fallthrough
-        case 6:
-        case 11:
-        case 20:
-        case 30:
-          F_StartFinale ();
-          break;
-        }
-    }
-  else if (gamemission == pack_nerve && singleplayer && gamemap == 8)
-         F_StartFinale ();
-  else if (gamemap == 8)
-    gameaction = ga_victory; // cph - after ExM8 summary screen, show victory stuff
-  else if (gamemap == 5 && gamemission == chex)
-    gameaction = ga_victory;
+  if (done_behaviour & WD_START_FINALE)
+  {
+    F_StartFinale();
+
+    return;
+  }
 }
 
 void G_DoWorldDone (void)
@@ -2219,7 +2022,7 @@ void G_DoWorldDone (void)
   gamestate = GS_LEVEL;
   gameepisode = wminfo.nextep + 1;
   gamemap = wminfo.next + 1;
-  gamemapinfo = G_LookupMapinfo(gameepisode, gamemap);
+  dsda_UpdateMapInfo();
   G_DoLoadLevel();
   gameaction = ga_nothing;
   AM_clearMarks();           //jff 4/12/98 clear any marks on the automap
@@ -2462,7 +2265,7 @@ void G_DoLoadGame(void)
   gameskill = *save_p++;
   gameepisode = *save_p++;
   gamemap = *save_p++;
-  gamemapinfo = G_LookupMapinfo(gameepisode, gamemap);
+  dsda_UpdateMapInfo();
 
   for (i = 0; i < g_maxplayers; i++)
     playeringame[i] = *save_p++;
@@ -2479,7 +2282,7 @@ void G_DoLoadGame(void)
   save_p += (G_ReadOptions(save_p) - save_p);
 
   // load a base level
-  G_InitNew (gameskill, gameepisode, gamemap);
+  G_InitNew (gameskill, gameepisode, gamemap, false);
 
   /* get the times - killough 11/98: save entire word */
   memcpy(&leveltime, save_p, sizeof leveltime);
@@ -2966,18 +2769,9 @@ void G_DoNewGame (void)
   netgame = solo_net;
   deathmatch = false;
 
-  if (map_format.mapinfo)
-  {
-    G_StartNewInit();
-    realMap = P_TranslateMap(d_map);
-    if (realMap == -1)
-    {
-        realMap = 1;
-    }
-    realEpisode = 1;
-  }
+  dsda_NewGameMap(&realEpisode, &realMap);
 
-  G_InitNew (d_skill, realEpisode, realMap);
+  G_InitNew (d_skill, realEpisode, realMap, true);
   gameaction = ga_nothing;
 
   dsda_WatchNewGame();
@@ -3035,35 +2829,6 @@ void G_SetFastParms(int fast_pending)
   }
 }
 
-struct MapEntry *G_LookupMapinfo(int gameepisode, int gamemap)
-{
-  char lumpname[9];
-  unsigned i;
-  if (gamemode == commercial) snprintf(lumpname, 9, "MAP%02d", gamemap);
-  else snprintf(lumpname, 9, "E%dM%d", gameepisode, gamemap);
-  for (i = 0; i < Maps.mapcount; i++)
-  {
-    if (!stricmp(lumpname, Maps.maps[i].mapname))
-    {
-      return &Maps.maps[i];
-    }
-  }
-  return NULL;
-}
-
-struct MapEntry *G_LookupMapinfoByName(const char *lumpname)
-{
-  unsigned i;
-  for (i = 0; i < Maps.mapcount; i++)
-  {
-    if (!stricmp(lumpname, Maps.maps[i].mapname))
-    {
-      return &Maps.maps[i];
-    }
-  }
-  return NULL;
-}
-
 int G_ValidateMapName(const char *mapname, int *pEpi, int *pMap)
 {
   // Check if the given map name can be expressed as a gameepisode/gamemap pair and be reconstructed from it.
@@ -3099,7 +2864,7 @@ int G_ValidateMapName(const char *mapname, int *pEpi, int *pMap)
 
 extern int EpiCustom;
 
-void G_InitNew(skill_t skill, int episode, int map)
+void G_InitNew(skill_t skill, int episode, int map, dboolean prepare)
 {
   int i;
 
@@ -3111,6 +2876,9 @@ void G_InitNew(skill_t skill, int episode, int map)
   dboolean fake_episode_check =
     compatibility_level == ultdoom_compatibility ||
     compatibility_level == finaldoom_compatibility;
+
+  if (prepare)
+    dsda_PrepareInitNew();
 
   if (paused)
   {
@@ -3212,7 +2980,7 @@ void G_InitNew(skill_t skill, int episode, int map)
   gameepisode = episode;
   gamemap = map;
   gameskill = skill;
-  gamemapinfo = G_LookupMapinfo(gameepisode, gamemap);
+  dsda_UpdateMapInfo();
 
   totalleveltimes = 0; // cph
 
@@ -4073,10 +3841,7 @@ const byte* G_ReadDemoHeaderEx(const byte *demo_p, size_t size, unsigned int par
 
   if (!(params & RDH_SKIP_HEADER))
   {
-    if (map_format.mapinfo)
-      G_StartNewInit();
-
-    G_InitNew(skill, episode, map);
+    G_InitNew(skill, episode, map, true);
   }
 
   for (i = 0; i < g_maxplayers; i++)         // killough 4/24/98
@@ -4483,23 +4248,6 @@ void G_Completed(int map, int position)
     gameaction = ga_completed;
     LeaveMap = map;
     LeavePosition = position;
-}
-
-dboolean partial_reset = false;
-
-void G_StartNewInit(void)
-{
-    SV_Init();
-
-    if (partial_reset)
-    {
-      partial_reset = false;
-      return;
-    }
-
-    P_ACSInitNewGame();
-    // Default the player start spot group to 0
-    RebornPosition = 0;
 }
 
 void G_TeleportNewMap(int map, int position)

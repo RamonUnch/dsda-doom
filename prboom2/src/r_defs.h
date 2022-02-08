@@ -531,9 +531,11 @@ typedef struct polyobj_s
   int validcount;
   int validcount2;
   dboolean crush;              // should the polyobj attempt to crush mobjs?
+  dboolean hurt;
   int seqType;
   fixed_t size;               // polyobj size (area of POLY_AREAUNIT == size of FRACUNIT)
   void *specialdata;          // pointer a thinker, if the poly is moving
+  subsector_t *subsector;
 } polyobj_t;
 
 typedef struct polyblock_s
@@ -542,13 +544,6 @@ typedef struct polyblock_s
   struct polyblock_s *prev;
   struct polyblock_s *next;
 } polyblock_t;
-
-enum
-{
-  PO_ANCHOR_TYPE = 3000,
-  PO_SPAWN_TYPE,
-  PO_SPAWNCRUSH_TYPE
-};
 
 #define PO_LINE_START 1         // polyobj line start special
 #define PO_LINE_EXPLICIT 5

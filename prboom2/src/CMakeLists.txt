@@ -46,6 +46,14 @@ set(COMMON_SRC
     dsda/line_special.h
     dsda/map_format.c
     dsda/map_format.h
+    dsda/mapinfo.c
+    dsda/mapinfo.h
+    dsda/mapinfo/hexen.c
+    dsda/mapinfo/hexen.h
+    dsda/mapinfo/legacy.c
+    dsda/mapinfo/legacy.h
+    dsda/mapinfo/u.c
+    dsda/mapinfo/u.h
     dsda/memory.c
     dsda/memory.h
     dsda/mobjinfo.c
@@ -102,7 +110,6 @@ set(COMMON_SRC
     e6y.h
     f_finale.c
     f_finale.h
-    f_finale2.c
     f_wipe.c
     f_wipe.h
     g_game.c
@@ -490,73 +497,3 @@ function(AddGameExecutable TARGET SOURCES)
 endfunction()
 
 AddGameExecutable(dsda-doom "${PRBOOM_PLUS_SOURCES}")
-
-
-# PrBoom-Plus macOS launcher
-
-if(APPLE)
-    set(LAUNCHER_SOURCES
-        MAC/ANSIString.m
-        MAC/ConsoleController.h
-        MAC/ConsoleController.m
-        MAC/DrawerButton.h
-        MAC/DrawerButton.m
-        MAC/FileButtonController.h
-        MAC/FileButtonController.m
-        MAC/LauncherApp.h
-        MAC/LauncherApp.m
-        MAC/LauncherMain.m
-        MAC/ResolutionDataSource.h
-        MAC/ResolutionDataSource.m
-        MAC/UKFileWatcher.h
-        MAC/UKKQueue.h
-        MAC/UKKQueue.m
-        MAC/UKMainThreadProxy.h
-        MAC/UKMainThreadProxy.m
-        MAC/WadViewController.h
-        MAC/WadViewController.m
-    )
-
-    set(LAUNCHER_RESOURCES
-        MAC/Launcher.icns
-        MAC/PrBoom.icns
-        MAC/PrBoom.sdef
-    )
-    set_source_files_properties(${LAUNCHER_RESOURCES} PROPERTIES
-        MACOSX_PACKAGE_LOCATION Resources
-    )
-
-    set(LAUNCHER_MAINMENU_RESOURCES
-        MAC/English.lproj/MainMenu.nib/classes.nib
-        MAC/English.lproj/MainMenu.nib/info.nib
-        MAC/English.lproj/MainMenu.nib/keyedobjects.nib
-    )
-    set_source_files_properties(${LAUNCHER_MAINMENU_RESOURCES} PROPERTIES
-        MACOSX_PACKAGE_LOCATION Resources/English.lproj/MainMenu.nib
-    )
-
-    add_executable(prboom-plus-launcher MACOSX_BUNDLE
-        ${LAUNCHER_SOURCES}
-        ${LAUNCHER_RESOURCES}
-        ${LAUNCHER_MAINMENU_RESOURCES}
-    )
-    target_include_directories(prboom-plus-launcher PRIVATE
-        ${CMAKE_BINARY_DIR}
-        ${CMAKE_CURRENT_SOURCE_DIR}
-    )
-    set_target_properties(prboom-plus-launcher PROPERTIES
-        LINK_FLAGS "-framework Cocoa"
-        MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/MAC/Info.plist"
-        OUTPUT_NAME "Launcher"
-        RUNTIME_OUTPUT_DIRECTORY ${PRBOOM_OUTPUT_PATH}
-        XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY ""
-    )
-    add_dependencies(prboom-plus-launcher dsda-doom)
-
-    set(BUNDLE_GAME_EXECUTABLE dsda-doom)
-
-    add_custom_command(TARGET prboom-plus-launcher POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:${BUNDLE_GAME_EXECUTABLE}> $<TARGET_FILE_DIR:prboom-plus-launcher>/PrBoom-Plus
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${WAD_DATA_PATH} $<TARGET_FILE_DIR:prboom-plus-launcher>
-    )
-endif()

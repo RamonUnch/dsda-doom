@@ -63,6 +63,8 @@
 #include "heretic/def.h"
 #include "heretic/sb_bar.h"
 
+#include "hexen/po_man.h"
+
 // heretic_note: static NUMSTATES arrays here - probably fine?
 // NUMSTATES > HERETIC_NUMSTATES
 
@@ -1430,28 +1432,37 @@ mobj_t *P_SubstNullMobj(mobj_t *mobj)
  * killough 8/24/98: rewrote to use hashing
  */
 
+static dboolean P_IsTypeMatch(unsigned doomednum, int type)
+{
+  return (unsigned) mobjinfo[type].doomednum == doomednum &&
+         mobjinfo[type].visibility & map_format.visibility;
+}
+
 static PUREFUNC int P_FindDoomedNum(unsigned type)
 {
   static struct { int first, next; } *hash;
   register int i;
 
   if (!hash)
-    {
-      hash = Z_Malloc(sizeof *hash * num_mobj_types, PU_CACHE, (void **) &hash);
-      for (i=0; i<num_mobj_types; i++)
-  hash[i].first = num_mobj_types;
-      for (i=mobj_types_zero; i<num_mobj_types; i++)
-  if (mobjinfo[i].doomednum != -1)
-    {
-      unsigned h = (unsigned) mobjinfo[i].doomednum % num_mobj_types;
-      hash[i].next = hash[h].first;
-      hash[h].first = i;
-    }
-    }
+  {
+    hash = Z_Malloc(sizeof *hash * num_mobj_types, PU_CACHE, (void **) &hash);
+
+    for (i = 0; i < num_mobj_types; i++)
+      hash[i].first = num_mobj_types;
+
+    for (i = mobj_types_zero; i < num_mobj_types; i++)
+      if (mobjinfo[i].doomednum != -1)
+      {
+        unsigned h = (unsigned) mobjinfo[i].doomednum % num_mobj_types;
+        hash[i].next = hash[h].first;
+        hash[h].first = i;
+      }
+  }
 
   i = hash[type % num_mobj_types].first;
-  while ((i < num_mobj_types) && ((unsigned)mobjinfo[i].doomednum != type))
+  while (i < num_mobj_types && !P_IsTypeMatch(type, i))
     i = hash[i].next;
+
   return i;
 }
 
@@ -2185,18 +2196,9 @@ mobj_t* P_SpawnMapThing (const mapthing_t* mthing, int index)
   	}
   }
 
-  if (map_format.polyobjs)
+  if (PO_Detect(mthing->type))
   {
-    // MAP_FORMAT_TODO: PO types vary between games
-    if (mthing->type == PO_ANCHOR_TYPE)
-    {                           // Polyobj Anchor Pt.
-      return NULL;
-    }
-    else if (mthing->type == PO_SPAWN_TYPE || mthing->type == PO_SPAWNCRUSH_TYPE)
-    {                           // Polyobj Anchor Pt.
-      po_NumPolyobjs++;
-      return NULL;
-    }
+    return NULL;
   }
 
   // check for players specially
