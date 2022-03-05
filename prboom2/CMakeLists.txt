@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.0)
 
-project("dsda-doom" VERSION 0.24.1)
+project("dsda-doom" VERSION 0.24.2)
 
 # Set a default build type if none was specified
 set(default_build_type "RelWithDebInfo")
@@ -24,11 +24,13 @@ include(GNUInstallDirs)
 
 # Automated dependencies discovery, mostly needed for MSVC
 target_architecture(TARGET_ARCH)
-if(${TARGET_ARCH} MATCHES "i386")
-    set(DEPENDENCY_SUFFIX x86)
-elseif(${TARGET_ARCH} MATCHES "x86_64")
-    set(DEPENDENCY_SUFFIX x64)
-endif()
+foreach(target ${TARGET_ARCH})
+    if(${target} MATCHES "i386")
+        set(DEPENDENCY_SUFFIX x86)
+    elseif(${target} MATCHES "x86_64")
+        set(DEPENDENCY_SUFFIX x64)
+    endif()
+endforeach()
 set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/../dependencies_${DEPENDENCY_SUFFIX}")
 
 set(PACKAGE_NAME "${PROJECT_NAME}")
@@ -51,15 +53,6 @@ endif()
 check_symbol_exists(getopt "unistd.h" HAVE_GETOPT)
 check_symbol_exists(mmap "sys/mman.h" HAVE_MMAP)
 check_symbol_exists(CreateFileMapping "windows.h" HAVE_CREATE_FILE_MAPPING)
-if(NOT WIN32)
-    set(CMAKE_REQUIRED_DEFINITIONS_PREV ${CMAKE_REQUIRED_DEFINITIONS})
-    set(CMAKE_REQUIRED_DEFINITIONS ${CMAKE_REQUIRED_DEFINITIONS} -D_GNU_SOURCE)
-    check_symbol_exists(sched_setaffinity "sched.h" HAVE_SCHED_SETAFFINITY)
-    set(CMAKE_REQUIRED_DEFINITIONS ${CMAKE_REQUIRED_DEFINITIONS_PREV})
-    if(HAVE_SCHED_SETAFFINITY)
-        add_definitions(-D_GNU_SOURCE)
-    endif()
-endif()
 check_symbol_exists(strsignal "string.h" HAVE_STRSIGNAL)
 check_symbol_exists(mkstemp "stdlib.h" HAVE_MKSTEMP)
 

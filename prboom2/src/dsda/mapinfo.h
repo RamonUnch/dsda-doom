@@ -36,7 +36,7 @@ int dsda_NameToMap(const char* name, int* episode, int* map);
 void dsda_NextMap(int* episode, int* map);
 void dsda_ShowNextLocBehaviour(int* behaviour);
 int dsda_SkipDrawShowNextLoc(void);
-void dsda_UpdateMapInfo(void);
+void dsda_UpdateGameMap(int episode, int map);
 void dsda_UpdateLastMapInfo(void);
 void dsda_UpdateNextMapInfo(void);
 int dsda_ResolveCLEV(int* episode, int* map);
@@ -58,7 +58,11 @@ const char* dsda_ExitPic(void);
 const char* dsda_EnterPic(void);
 void dsda_PrepareEntering(void);
 void dsda_PrepareFinished(void);
-int dsda_MapLightning(int map);
+int dsda_MapLightning(void);
 void dsda_ApplyFadeTable(void);
+int dsda_MapCluster(int map);
+short dsda_Sky1Texture(void);
+short dsda_Sky2Texture(void);
+void dsda_InitSky(void);
 
 #endif

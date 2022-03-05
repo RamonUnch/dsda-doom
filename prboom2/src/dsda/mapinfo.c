@@ -120,10 +120,16 @@ int dsda_SkipDrawShowNextLoc(void) {
   return skip;
 }
 
-void dsda_UpdateMapInfo(void) {
+static void dsda_UpdateMapInfo(void) {
   dsda_HexenUpdateMapInfo();
   dsda_UUpdateMapInfo();
   dsda_LegacyUpdateMapInfo();
+}
+
+void dsda_UpdateGameMap(int episode, int map) {
+  gameepisode = episode;
+  gamemap = map;
+  dsda_UpdateMapInfo();
 }
 
 void dsda_UpdateLastMapInfo(void) {
@@ -376,16 +382,16 @@ void dsda_PrepareFinished(void) {
   dsda_LegacyPrepareFinished();
 }
 
-int dsda_MapLightning(int map) {
+int dsda_MapLightning(void) {
   int lightning;
 
-  if (dsda_HexenMapLightning(&lightning, map))
+  if (dsda_HexenMapLightning(&lightning))
     return lightning;
 
-  if (dsda_UMapLightning(&lightning, map))
+  if (dsda_UMapLightning(&lightning))
     return lightning;
 
-  dsda_LegacyMapLightning(&lightning, map);
+  dsda_LegacyMapLightning(&lightning);
 
   return lightning;
 }
@@ -398,4 +404,56 @@ void dsda_ApplyFadeTable(void) {
     return;
 
   dsda_LegacyApplyFadeTable();
+}
+
+int dsda_MapCluster(int map) {
+  int cluster;
+
+  if (dsda_HexenMapCluster(&cluster, map))
+    return cluster;
+
+  if (dsda_UMapCluster(&cluster, map))
+    return cluster;
+
+  dsda_LegacyMapCluster(&cluster, map);
+
+  return cluster;
+}
+
+short dsda_Sky1Texture(void) {
+  short texture;
+
+  if (dsda_HexenSky1Texture(&texture))
+    return texture;
+
+  if (dsda_USky1Texture(&texture))
+    return texture;
+
+  dsda_LegacySky1Texture(&texture);
+
+  return texture;
+}
+
+short dsda_Sky2Texture(void) {
+  short texture;
+
+  if (dsda_HexenSky2Texture(&texture))
+    return texture;
+
+  if (dsda_USky2Texture(&texture))
+    return texture;
+
+  dsda_LegacySky2Texture(&texture);
+
+  return texture;
+}
+
+void dsda_InitSky(void) {
+  if (dsda_HexenInitSky())
+    return;
+
+  if (dsda_UInitSky())
+    return;
+
+  dsda_LegacyInitSky();
 }

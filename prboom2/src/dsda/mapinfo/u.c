@@ -538,10 +538,26 @@ int dsda_UPrepareFinished(void) {
   return false;
 }
 
-int dsda_UMapLightning(int* lightning, int map) {
+int dsda_UMapLightning(int* lightning) {
   return false;
 }
 
 int dsda_UApplyFadeTable(void) {
+  return false;
+}
+
+int dsda_UMapCluster(int* cluster, int map) {
+  return false;
+}
+
+int dsda_USky1Texture(short* texture) {
+  return false;
+}
+
+int dsda_USky2Texture(short* texture) {
+  return false;
+}
+
+int dsda_UInitSky(void) {
   return false;
 }
